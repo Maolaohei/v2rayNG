@@ -69,16 +69,37 @@ jobs:
         echo "Latest tag is $LATEST_TAG"
 
     - name: Download libv2ray from latest release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         REPO="Maolaohei/AndroidLibXrayLite-Bray-Core-项目"
-        # 获取最新 release 信息
-        RELEASE_INFO=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
+        # 对仓库名进行 URL 编码（中文转为 %E9%A1%B9%E7%9B%AE 形式）
+        ENCODED_REPO=$(printf "%s" "$REPO" | jq -sRr @uri)
+        echo "Encoded repo: $ENCODED_REPO"
+        
+        # 获取最新 release 信息（带认证，避免限流）
+        API_URL="https://api.github.com/repos/$REPO/releases/latest"
+        RELEASE_INFO=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$API_URL")
+        
+        # 调试：保存返回内容
+        echo "$RELEASE_INFO" > release_info.json
+        cat release_info.json
+        
+        # 检查是否有错误
+        if echo "$RELEASE_INFO" | jq -e '.message' > /dev/null; then
+          echo "GitHub API error: $(echo "$RELEASE_INFO" | jq -r '.message')"
+          exit 1
+        fi
+        
         # 提取下载链接
         DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name=="libv2ray.aar") | .browser_download_url')
         if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
           echo "libv2ray.aar not found in latest release"
+          echo "Available assets:"
+          echo "$RELEASE_INFO" | jq '.assets[].name'
           exit 1
         fi
+        
         mkdir -p V2rayNG/app/libs/
         curl -L -o V2rayNG/app/libs/libv2ray.aar "$DOWNLOAD_URL"
         echo "libv2ray.aar downloaded successfully"
