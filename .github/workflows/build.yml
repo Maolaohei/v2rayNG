@@ -68,13 +68,20 @@ jobs:
         echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
         echo "Latest tag is $LATEST_TAG"
 
-    - name: Download libv2ray
-      uses: robinraju/release-downloader@v1.13
-      with:
-        repository: 'Maolaohei/AndroidLibXrayLite-Bray-Core-项目'
-        tag: ${{ env.LATEST_TAG }}
-        fileName: 'libv2ray.aar'
-        out-file-path: V2rayNG/app/libs/
+    - name: Download libv2ray from latest release
+      run: |
+        REPO="Maolaohei/AndroidLibXrayLite-Bray-Core-项目"
+        # 获取最新 release 信息
+        RELEASE_INFO=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
+        # 提取下载链接
+        DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name=="libv2ray.aar") | .browser_download_url')
+        if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+          echo "libv2ray.aar not found in latest release"
+          exit 1
+        fi
+        mkdir -p V2rayNG/app/libs/
+        curl -L -o V2rayNG/app/libs/libv2ray.aar "$DOWNLOAD_URL"
+        echo "libv2ray.aar downloaded successfully"
 
     - name: Setup Java
       uses: actions/setup-java@v5
