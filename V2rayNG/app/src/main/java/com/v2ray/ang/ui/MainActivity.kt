@@ -83,7 +83,9 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
 
         setupGroupTab()
         setupViewModel()
-        SubscriptionUpdater.sync()
+        lifecycleScope.launch(Dispatchers.IO) {
+            SubscriptionUpdater.sync()
+        }
         mainViewModel.reloadServerList()
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {

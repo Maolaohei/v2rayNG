@@ -40,7 +40,7 @@ object MmkvManager {
     private val assetStorage by lazy { MMKV.mmkvWithID(ID_ASSET, MMKV.MULTI_PROCESS_MODE) }
     private val settingsStorage by lazy { MMKV.mmkvWithID(ID_SETTING, MMKV.MULTI_PROCESS_MODE) }
 
-    private var remarkToGuidMap: Map<String, String>? = null
+    private var remarkToGuidMap: MutableMap<String, String>? = null
 
     fun rebuildRemarkIndex() {
         val map = mutableMapOf<String, String>()
@@ -52,6 +52,18 @@ object MmkvManager {
             }
         }
         remarkToGuidMap = map
+    }
+
+    private fun updateRemarkIndex(guid: String, remark: String) {
+        val map = remarkToGuidMap ?: return
+        map.entries.removeAll { it.value == guid }
+        if (remark.isNotEmpty()) {
+            map[remark] = guid
+        }
+    }
+
+    private fun removeFromRemarkIndex(guid: String) {
+        remarkToGuidMap?.entries?.removeAll { it.value == guid }
     }
 
     fun findGuidByRemark(remark: String): String? {
@@ -189,18 +201,8 @@ object MmkvManager {
             }
         }
 
-        rebuildRemarkIndex()
+        updateRemarkIndex(key, config.remarks.trim())
         return key
-    }
-
-    /**
-     * Encodes the server configuration directly without updating serverList.
-     *
-     * @param key The server GUID.
-     * @param configJson The server configuration JSON string.
-     */
-    fun encodeProfileDirect(key: String, configJson: String) {
-        profileFullStorage.encode(key, configJson)
     }
 
     /**
@@ -228,7 +230,7 @@ object MmkvManager {
         }
         profileFullStorage.remove(guid)
         serverAffStorage.remove(guid)
-        rebuildRemarkIndex()
+        removeFromRemarkIndex(guid)
     }
 
     /**
