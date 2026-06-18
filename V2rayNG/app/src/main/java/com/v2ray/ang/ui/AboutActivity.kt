@@ -35,7 +35,9 @@ class AboutActivity : BaseActivity() {
         }
 
         binding.layoutTgChannel.setOnClickListener {
-            Utils.openUri(this, AppConfig.TG_CHANNEL_URL)
+            if (AppConfig.TG_CHANNEL_URL.isNotEmpty()) {
+                Utils.openUri(this, AppConfig.TG_CHANNEL_URL)
+            }
         }
 
         binding.layoutPrivacyPolicy.setOnClickListener {
