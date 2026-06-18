@@ -31,7 +31,7 @@ class AngApplication : MultiDexApplication() {
     override fun onCreate() {
         super.onCreate()
 
-        MMKV.initializeAsync(this)
+        MMKV.initialize(this)
 
         WorkManager.initialize(this, workManagerConfiguration)
 
