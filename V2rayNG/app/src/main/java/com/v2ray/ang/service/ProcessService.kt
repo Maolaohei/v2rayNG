@@ -29,7 +29,8 @@ class ProcessService {
                 .directory(context.filesDir)
                 .start()
 
-            scope = CoroutineScope(Dispatchers.IO).launch {
+            scope = CoroutineScope(Dispatchers.IO)
+            scope!!.launch {
                 LogUtil.i(AppConfig.TAG, "runProcess check")
                 process?.waitFor()
                 LogUtil.i(AppConfig.TAG, "runProcess exited")
