@@ -7,18 +7,16 @@ import androidx.work.WorkManager
 import com.tencent.mmkv.MMKV
 import com.v2ray.ang.AppConfig.ANG_PACKAGE
 import com.v2ray.ang.handler.SettingsManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 class AngApplication : MultiDexApplication() {
     companion object {
         lateinit var application: AngApplication
     }
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
+    /**
+     * Attaches the base context to the application.
+     * @param base The base context.
+     */
     override fun attachBaseContext(base: Context?) {
         super.attachBaseContext(base)
         application = this
@@ -28,19 +26,20 @@ class AngApplication : MultiDexApplication() {
         .setDefaultProcessName("${ANG_PACKAGE}:bg")
         .build()
 
+    /**
+     * Initializes the application.
+     */
     override fun onCreate() {
         super.onCreate()
 
         MMKV.initialize(this)
 
+        // Initialize WorkManager with the custom configuration
         WorkManager.initialize(this, workManagerConfiguration)
 
-        SettingsManager.ensureDefaultSettings()
+        // Ensure critical preference defaults are present in MMKV early
+        SettingsManager.initApp(this)
         SettingsManager.setNightMode()
-
-        appScope.launch {
-            SettingsManager.initBackground(this@AngApplication)
-        }
 
         es.dmoral.toasty.Toasty.Config.getInstance()
             .setGravity(android.view.Gravity.BOTTOM, 0, 300)

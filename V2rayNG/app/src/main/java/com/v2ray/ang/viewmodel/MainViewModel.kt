@@ -78,18 +78,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Reloads the server list based on current subscription filter.
      */
     fun reloadServerList() {
-        viewModelScope.launch(Dispatchers.IO) {
-            serverList = if (subscriptionId.isEmpty()) {
-                MmkvManager.decodeAllServerList()
-            } else {
-                MmkvManager.decodeServerList(subscriptionId)
-            }
-
-            updateCache()
-            withContext(Dispatchers.Main) {
-                updateListAction.value = -1
-            }
+        serverList = if (subscriptionId.isEmpty()) {
+            MmkvManager.decodeAllServerList()
+        } else {
+            MmkvManager.decodeServerList(subscriptionId)
         }
+
+        updateCache()
+        updateListAction.value = -1
     }
 
     /**

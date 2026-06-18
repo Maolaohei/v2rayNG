@@ -126,8 +126,7 @@ class BackupActivity : HelperBaseActivity() {
         SettingsChangeManager.makeSetupGroupTab()
         SettingsChangeManager.makeRestartService()
 
-        SettingsManager.ensureDefaultSettings()
-        SettingsManager.initBackground(this)
+        SettingsManager.initApp(this)
         return count > 0
     }
 
