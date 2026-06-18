@@ -22,7 +22,9 @@ import com.v2ray.ang.util.PackageUidResolver
 import com.v2ray.ang.util.Utils
 
 object CoreConfigManager {
+    @Volatile
     private var initConfigCache: String? = null
+    @Volatile
     private var initConfigCacheWithTun: String? = null
 
     //region get config function
@@ -164,10 +166,11 @@ object CoreConfigManager {
         }
 
         // User routing rules (policyGroupBalancerTags rewrites TAG_PROXY→balancer when main is POLICYGROUP).
-        configureRouting(configContext, v2rayConfig, policyGroupBalancerTags)
+        val routingRulesets = MmkvManager.decodeRoutingRulesets()
+        configureRouting(configContext, v2rayConfig, policyGroupBalancerTags, routingRulesets)
         configureFakeDns(v2rayConfig)
-        configureDns(v2rayConfig, policyGroupBalancerTags)
-        configureLocalDns(v2rayConfig)
+        configureDns(v2rayConfig, policyGroupBalancerTags, routingRulesets)
+        configureLocalDns(v2rayConfig, routingRulesets)
 
         // (added by getDns / getCustomLocalDns) to use the balancer, then add
         // the catch-all balancer rule.
@@ -494,8 +497,7 @@ object CoreConfigManager {
         }
 
         if (!Utils.isXray()) {
-            val inbound2 = JsonUtil.fromJson(JsonUtil.toJson(inbound1), V2rayConfig.InboundBean::class.java)
-                ?: error("Failed to clone inbound template")
+            val inbound2 = inbound1.copy()
             inbound2.tag = EConfigType.HTTP.name.lowercase()
             inbound2.port = SettingsManager.getHttpPort()
             inbound2.protocol = EConfigType.HTTP.name.lowercase()
@@ -529,11 +531,10 @@ object CoreConfigManager {
     /**
      * Collect domain rules that target one outbound tag.
      */
-    private fun collectUserRuleDomainsByTag(tag: String): ArrayList<String> {
+    private fun collectUserRuleDomainsByTag(tag: String, rulesetItems: List<RulesetItem>? = null): ArrayList<String> {
         val domain = ArrayList<String>()
-
-        val rulesetItems = MmkvManager.decodeRoutingRulesets()
-        rulesetItems?.forEach { key ->
+        val items = rulesetItems ?: MmkvManager.decodeRoutingRulesets()
+        items?.forEach { key ->
             if (key.enabled && key.outboundTag == tag && !key.domain.isNullOrEmpty()) {
                 key.domain?.forEach {
                     domain.add(it)
@@ -547,11 +548,10 @@ object CoreConfigManager {
     /**
      * Collect domain rules that target non-builtin outbound tags.
      */
-    private fun collectCustomOutboundDomains(): ArrayList<String> {
+    private fun collectCustomOutboundDomains(rulesetItems: List<RulesetItem>? = null): ArrayList<String> {
         val domain = ArrayList<String>()
-
-        val rulesetItems = MmkvManager.decodeRoutingRulesets()
-        rulesetItems?.forEach { key ->
+        val items = rulesetItems ?: MmkvManager.decodeRoutingRulesets()
+        items?.forEach { key ->
             if (key.enabled && !AppConfig.BUILTIN_OUTBOUND_TAGS.contains(key.outboundTag)
                 && !key.domain.isNullOrEmpty()
             ) {
@@ -567,15 +567,15 @@ object CoreConfigManager {
     /**
      * Configure local DNS inbounds, outbounds, and routing rules.
      */
-    private fun configureLocalDns(v2rayConfig: V2rayConfig) {
+    private fun configureLocalDns(v2rayConfig: V2rayConfig, routingRulesets: List<RulesetItem>? = null) {
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_LOCAL_DNS_ENABLED) != true) {
             return
         }
 
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_FAKE_DNS_ENABLED) == true) {
             val geositeCn = arrayListOf(AppConfig.GEOSITE_CN)
-            val proxyDomain = collectUserRuleDomainsByTag(AppConfig.TAG_PROXY)
-            val directDomain = collectUserRuleDomainsByTag(AppConfig.TAG_DIRECT)
+            val proxyDomain = collectUserRuleDomainsByTag(AppConfig.TAG_PROXY, routingRulesets)
+            val directDomain = collectUserRuleDomainsByTag(AppConfig.TAG_DIRECT, routingRulesets)
             val finalDomain = geositeCn.plus(proxyDomain).plus(directDomain).distinct()
             // fakedns with all domains to make it always top priority
             v2rayConfig.dns?.servers?.add(
@@ -638,13 +638,14 @@ object CoreConfigManager {
     private fun configureDns(
         v2rayConfig: V2rayConfig,
         policyGroupBalancerTags: Map<String, String>,
+        routingRulesets: List<RulesetItem>? = null,
     ) {
         val hosts = mutableMapOf<String, Any>()
         val servers = ArrayList<Any>()
 
         //remote Dns
         val remoteDns = SettingsManager.getRemoteDnsServers()
-        val proxyDomain = (collectUserRuleDomainsByTag(AppConfig.TAG_PROXY) + collectCustomOutboundDomains()).distinct()
+        val proxyDomain = (collectUserRuleDomainsByTag(AppConfig.TAG_PROXY, routingRulesets) + collectCustomOutboundDomains(routingRulesets)).distinct()
         remoteDns.forEach {
             servers.add(it)
         }
@@ -659,7 +660,7 @@ object CoreConfigManager {
 
         // domestic DNS
         val domesticDns = SettingsManager.getDomesticDnsServers()
-        val directDomain = collectUserRuleDomainsByTag(AppConfig.TAG_DIRECT)
+        val directDomain = collectUserRuleDomainsByTag(AppConfig.TAG_DIRECT, routingRulesets)
         val isCnRoutingMode = directDomain.contains(AppConfig.GEOSITE_CN)
         val cnRegionFilter = { domain: String ->
             domain.startsWith("geosite:") && (domain.endsWith("-cn") || domain.endsWith("@cn"))
@@ -700,7 +701,7 @@ object CoreConfigManager {
         }
 
         //block dns
-        val blkDomain = collectUserRuleDomainsByTag(AppConfig.TAG_BLOCKED)
+        val blkDomain = collectUserRuleDomainsByTag(AppConfig.TAG_BLOCKED, routingRulesets)
         if (blkDomain.isNotEmpty()) {
             hosts.putAll(blkDomain.map { it to AppConfig.LOOPBACK })
         }
@@ -877,14 +878,15 @@ object CoreConfigManager {
     private fun configureRouting(
         configContext: CoreConfigContext,
         v2rayConfig: V2rayConfig,
-        policyGroupBalancerTags: Map<String, String>
+        policyGroupBalancerTags: Map<String, String>,
+        routingRulesets: List<RulesetItem>? = null,
     ) {
 
         v2rayConfig.routing.domainStrategy =
             MmkvManager.decodeSettingsString(AppConfig.PREF_ROUTING_DOMAIN_STRATEGY)
                 ?: "AsIs"
 
-        val rulesetItems = MmkvManager.decodeRoutingRulesets()
+        val rulesetItems = routingRulesets ?: MmkvManager.decodeRoutingRulesets()
         rulesetItems?.forEach { key ->
             appendRoutingUserRule(configContext, key, v2rayConfig, policyGroupBalancerTags)
         }

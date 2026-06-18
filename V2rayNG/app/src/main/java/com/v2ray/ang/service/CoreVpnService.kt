@@ -13,7 +13,6 @@ import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.os.StrictMode
 import androidx.annotation.RequiresApi
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.LOOPBACK
@@ -32,6 +31,7 @@ import java.lang.ref.SoftReference
 @SuppressLint("VpnServicePolicy")
 class CoreVpnService : VpnService(), ServiceControl {
     private lateinit var mInterface: ParcelFileDescriptor
+    @Volatile
     private var isRunning = false
     private var tun2SocksService: Tun2SocksControl? = null
 
@@ -75,8 +75,6 @@ class CoreVpnService : VpnService(), ServiceControl {
     override fun onCreate() {
         super.onCreate()
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service created")
-        val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
-        StrictMode.setThreadPolicy(policy)
         CoreServiceManager.serviceControl = SoftReference(this)
     }
 
@@ -376,7 +374,7 @@ class CoreVpnService : VpnService(), ServiceControl {
             // before closing the VPN interface, preventing a race condition that can
             // leave the VPN icon in the status bar after stopping the service.
             try {
-                Thread.sleep(100)
+                Thread.sleep(50)
             } catch (e: InterruptedException) {
                 LogUtil.w(AppConfig.TAG, "StartCore-VPN: Sleep interrupted", e)
             }

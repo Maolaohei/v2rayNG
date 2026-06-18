@@ -17,9 +17,25 @@ import java.net.MalformedURLException
 import java.net.Proxy
 import java.net.URI
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 object HttpUtil {
+
+    private val clientCache = ConcurrentHashMap<String, OkHttpClient>()
+
+    private fun getCachedClient(
+        timeout: Int,
+        httpPort: Int,
+        proxyUsername: String?,
+        proxyPassword: String?,
+        followRedirects: Boolean
+    ): OkHttpClient {
+        val key = "$timeout:$httpPort:$proxyUsername:$proxyPassword:$followRedirects"
+        return clientCache.getOrPut(key) {
+            buildOkHttpClient(timeout, httpPort, proxyUsername, proxyPassword, followRedirects)
+        }
+    }
 
     /**
      * Converts the domain part of a URL string to its IDN (Punycode, ASCII Compatible Encoding) format.
@@ -111,7 +127,7 @@ object HttpUtil {
      */
     fun getUrlContent(request: UrlContentRequest): String? {
         val url = request.url ?: return null
-        val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = true)
+        val client = getCachedClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = true)
         val requestBuilder = Request.Builder()
             .url(url)
             .get()
@@ -150,7 +166,7 @@ object HttpUtil {
 
         while (redirects++ < maxRedirects) {
             if (currentUrl == null) continue
-            val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = false)
+            val client = getCachedClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = false)
             val finalUserAgent = if (request.userAgent.isNullOrBlank()) {
                 "v2rayNG/${BuildConfig.VERSION_NAME}"
             } else {
@@ -264,7 +280,7 @@ object HttpUtil {
         targetFile: File
     ): Boolean {
         val url = request.url ?: return false
-        val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = true)
+        val client = getCachedClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = true)
         val requestBuilder = Request.Builder()
             .url(url)
             .get()

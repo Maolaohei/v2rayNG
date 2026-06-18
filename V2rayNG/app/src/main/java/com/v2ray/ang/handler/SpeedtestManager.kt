@@ -12,10 +12,11 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.UnknownHostException
+import java.util.concurrent.ConcurrentLinkedQueue
 
 object SpeedtestManager {
 
-    private val tcpTestingSockets = ArrayList<Socket?>()
+    private val tcpTestingSockets = ConcurrentLinkedQueue<Socket>()
 
     /**
      * Measures the TCP connection time to a given URL and port.
@@ -48,15 +49,11 @@ object SpeedtestManager {
     fun socketConnectTime(url: String, port: Int): Long {
         try {
             val socket = Socket()
-            synchronized(this) {
-                tcpTestingSockets.add(socket)
-            }
+            tcpTestingSockets.add(socket)
             val start = System.currentTimeMillis()
             socket.connect(InetSocketAddress(url, port), 3000)
             val time = System.currentTimeMillis() - start
-            synchronized(this) {
-                tcpTestingSockets.remove(socket)
-            }
+            tcpTestingSockets.remove(socket)
             socket.close()
             return time
         } catch (e: UnknownHostException) {
@@ -73,11 +70,12 @@ object SpeedtestManager {
      * Closes all TCP sockets that are currently being tested.
      */
     fun closeAllTcpSockets() {
-        synchronized(this) {
-            tcpTestingSockets.forEach {
-                it?.close()
+        while (true) {
+            val socket = tcpTestingSockets.poll() ?: break
+            try {
+                socket.close()
+            } catch (_: Exception) {
             }
-            tcpTestingSockets.clear()
         }
     }
 

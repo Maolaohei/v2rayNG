@@ -26,6 +26,7 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SpeedtestManager
+import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
@@ -35,6 +36,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.util.Collections
 import java.util.regex.PatternSyntaxException
 
@@ -47,6 +50,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
     private val tcpingTestScope by lazy { CoroutineScope(Dispatchers.IO) }
+    private var selectedServer: String? = null
 
     /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
@@ -119,16 +123,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Synchronized
     fun updateCache() {
         serversCache.clear()
+        selectedServer = MmkvManager.getSelectServer()
         val kw = keywordFilter.trim()
         val searchRegex = try {
             if (kw.isNotEmpty()) Regex(kw, setOf(RegexOption.IGNORE_CASE)) else null
         } catch (e: PatternSyntaxException) {
-            null // Fallback to literal search if regex is invalid
+            null
         }
         for (guid in serverList) {
             val profile = MmkvManager.decodeServerConfig(guid) ?: continue
+            val testDelay = MmkvManager.decodeServerAffiliationInfo(guid)?.testDelayMillis ?: 0L
             if (kw.isEmpty()) {
-                serversCache.add(ServersCache(guid, profile))
+                serversCache.add(ServersCache(guid, profile, testDelay))
                 continue
             }
 
@@ -141,7 +147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 || server.matchesPattern(searchRegex, kw)
                 || protocol.matchesPattern(searchRegex, kw)
             ) {
-                serversCache.add(ServersCache(guid, profile))
+                serversCache.add(ServersCache(guid, profile, testDelay))
             }
         }
     }
@@ -187,16 +193,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         MmkvManager.clearAllTestDelayResults(serversCache.map { it.guid }.toList())
 
         val serversCopy = serversCache.toList()
+        val concurrency = SettingsManager.getRealPingConcurrency()
+        val semaphore = Semaphore(concurrency)
         for (item in serversCopy) {
             item.profile.let { outbound ->
                 val serverAddress = outbound.server
                 val serverPort = outbound.serverPort
                 if (serverAddress != null && serverPort != null) {
                     tcpingTestScope.launch {
-                        val testResult = SpeedtestManager.tcping(serverAddress, serverPort.toInt())
-                        launch(Dispatchers.Main) {
-                            MmkvManager.encodeServerTestDelayMillis(item.guid, testResult)
-                            updateListAction.value = getPosition(item.guid)
+                        semaphore.withPermit {
+                            val testResult = SpeedtestManager.tcping(serverAddress, serverPort.toInt())
+                            launch(Dispatchers.Main) {
+                                MmkvManager.encodeServerTestDelayMillis(item.guid, testResult)
+                                updateListAction.value = getPosition(item.guid)
+                            }
                         }
                     }
                 }
@@ -282,6 +292,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return groups
     }
 
+    fun getSelectedServer(): String? = selectedServer
+
     /**
      * Gets the position of a server by its GUID.
      * @param guid The GUID of the server.
@@ -301,28 +313,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * @return The number of removed servers.
      */
     fun removeDuplicateServer(): Int {
-        val serversCacheCopy = serversCache.toList().toMutableList()
         val deleteServer = mutableListOf<String>()
+        val seen = HashSet<String>()
 
-        serversCacheCopy.forEachIndexed { index, sc ->
+        for (sc in serversCache) {
             val profile = sc.profile
-            // Skip if this profile has a complex config type
             if (profile.configType.isComplexType()) {
-                return@forEachIndexed
+                continue
             }
-
-            serversCacheCopy.forEachIndexed { index2, sc2 ->
-                if (index2 > index) {
-                    val profile2 = sc2.profile
-                    // Skip if the second profile has a complex config type
-                    if (profile2.configType.isComplexType()) {
-                        return@forEachIndexed
-                    }
-
-                    if (profile == profile2 && !deleteServer.contains(sc2.guid)) {
-                        deleteServer.add(sc2.guid)
-                    }
-                }
+            if (!seen.add(JsonUtil.toJson(profile))) {
+                deleteServer.add(sc.guid)
             }
         }
         for (it in deleteServer) {

@@ -40,6 +40,24 @@ object MmkvManager {
     private val assetStorage by lazy { MMKV.mmkvWithID(ID_ASSET, MMKV.MULTI_PROCESS_MODE) }
     private val settingsStorage by lazy { MMKV.mmkvWithID(ID_SETTING, MMKV.MULTI_PROCESS_MODE) }
 
+    private var remarkToGuidMap: Map<String, String>? = null
+
+    fun rebuildRemarkIndex() {
+        val map = mutableMapOf<String, String>()
+        for (guid in decodeAllServerList()) {
+            val profile = decodeServerConfig(guid) ?: continue
+            val remark = profile.remarks.trim()
+            if (remark.isNotEmpty()) {
+                map[remark] = guid
+            }
+        }
+        remarkToGuidMap = map
+    }
+
+    fun findGuidByRemark(remark: String): String? {
+        return remarkToGuidMap?.get(remark.trim())
+    }
+
     //endregion
 
     //region Server
@@ -171,6 +189,7 @@ object MmkvManager {
             }
         }
 
+        rebuildRemarkIndex()
         return key
     }
 
@@ -209,6 +228,7 @@ object MmkvManager {
         }
         profileFullStorage.remove(guid)
         serverAffStorage.remove(guid)
+        rebuildRemarkIndex()
     }
 
     /**
@@ -231,6 +251,7 @@ object MmkvManager {
 
         serverList.clear()
         encodeServerList(serverList, subId)
+        rebuildRemarkIndex()
     }
 
     /**
@@ -289,6 +310,7 @@ object MmkvManager {
         mainStorage.clearAll()
         profileFullStorage.clearAll()
         serverAffStorage.clearAll()
+        rebuildRemarkIndex()
         return count
     }
 

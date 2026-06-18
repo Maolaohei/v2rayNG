@@ -6,11 +6,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Example local unit test, which will execute on the development machine (host).
- *
- * See [testing documentation](http://d.android.com/tools/testing).
- */
 class UtilsTest {
 
     @Test
@@ -59,4 +54,30 @@ class UtilsTest {
         assertFalse(Utils.isIpInCidr("192.168.1.1", "invalid-cidr"))
     }
 
+    @Test
+    fun test_IsIpInCidr_edgeCases() {
+        // /32 single host
+        assertTrue(Utils.isIpInCidr("192.168.1.100", "192.168.1.100/32"))
+        assertFalse(Utils.isIpInCidr("192.168.1.101", "192.168.1.100/32"))
+
+        // /0 matches all
+        assertTrue(Utils.isIpInCidr("0.0.0.0", "0.0.0.0/0"))
+        assertTrue(Utils.isIpInCidr("255.255.255.255", "0.0.0.0/0"))
+
+        // /16
+        assertTrue(Utils.isIpInCidr("172.16.5.1", "172.16.0.0/16"))
+        assertFalse(Utils.isIpInCidr("172.17.0.1", "172.16.0.0/16"))
+
+        // boundary addresses
+        assertTrue(Utils.isIpInCidr("192.168.0.0", "192.168.0.0/24"))
+        assertTrue(Utils.isIpInCidr("192.168.0.255", "192.168.0.0/24"))
+        assertFalse(Utils.isIpInCidr("192.168.1.0", "192.168.0.0/24"))
+
+        // no slash in cidr
+        assertFalse(Utils.isIpInCidr("192.168.1.1", "nodash"))
+
+        // empty strings
+        assertFalse(Utils.isIpInCidr("", "192.168.1.0/24"))
+        assertFalse(Utils.isIpInCidr("192.168.1.1", ""))
+    }
 }

@@ -5,10 +5,13 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class ProcessService {
+    @Volatile
     private var process: Process? = null
+    private var scope: CoroutineScope? = null
 
     /**
      * Runs a process with the given command.
@@ -19,14 +22,14 @@ class ProcessService {
         LogUtil.i(AppConfig.TAG, cmd.toString())
 
         try {
+            stopProcess()
             val proBuilder = ProcessBuilder(cmd)
             proBuilder.redirectErrorStream(true)
             process = proBuilder
                 .directory(context.filesDir)
                 .start()
 
-            CoroutineScope(Dispatchers.IO).launch {
-                Thread.sleep(50L)
+            scope = CoroutineScope(Dispatchers.IO).launch {
                 LogUtil.i(AppConfig.TAG, "runProcess check")
                 process?.waitFor()
                 LogUtil.i(AppConfig.TAG, "runProcess exited")
@@ -42,6 +45,8 @@ class ProcessService {
      * Stops the running process.
      */
     fun stopProcess() {
+        scope?.cancel()
+        scope = null
         try {
             LogUtil.i(AppConfig.TAG, "runProcess destroy")
             process?.destroy()

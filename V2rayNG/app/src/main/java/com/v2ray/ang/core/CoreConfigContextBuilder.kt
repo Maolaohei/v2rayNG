@@ -139,6 +139,15 @@ object CoreConfigContextBuilder {
     private fun resolvePolicyGroupProfiles(config: ProfileItem): List<ProfileItem> {
         try {
             val serverList = MmkvManager.decodeAllServerList()
+            val filter = config.policyGroupFilter
+            val filterRegex = if (!filter.isNullOrBlank()) {
+                try {
+                    Regex(filter)
+                } catch (_: Exception) {
+                    null
+                }
+            } else null
+
             return serverList
                 .asSequence()
                 .mapNotNull { id -> MmkvManager.decodeServerConfig(id) }
@@ -151,15 +160,10 @@ object CoreConfigContextBuilder {
                     }
                 }
                 .filter { profile ->
-                    val filter = config.policyGroupFilter
-                    if (filter.isNullOrBlank()) {
+                    if (filterRegex == null) {
                         true
                     } else {
-                        try {
-                            Regex(filter).containsMatchIn(profile.remarks)
-                        } catch (_: Exception) {
-                            profile.remarks.contains(filter)
-                        }
+                        filterRegex.containsMatchIn(profile.remarks)
                     }
                 }
                 .filter { it.server.isNotNullEmpty() }

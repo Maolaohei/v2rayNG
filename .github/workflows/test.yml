@@ -1,20 +1,17 @@
-name: Build APK
+name: Unit Tests
 
 on:
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        required: false
-        type: string
   push:
-    branches:
-      - master
+    branches: [master]
+  pull_request:
+    branches: [master]
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +19,6 @@ jobs:
       uses: actions/checkout@v6
       with:
         submodules: 'recursive'
-        fetch-depth: '0'
 
     - name: Setup Java
       uses: actions/setup-java@v5
@@ -54,64 +50,50 @@ jobs:
         REPO="Maolaohei/AndroidLibXrayLite-Bray-Core-"
         API_URL="https://api.github.com/repos/$REPO/releases/latest"
         RELEASE_INFO=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$API_URL")
-
-        if echo "$RELEASE_INFO" | jq -e '.message' > /dev/null 2>&1; then
-          echo "GitHub API error: $(echo "$RELEASE_INFO" | jq -r '.message')"
-          exit 1
-        fi
-
         DOWNLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name=="libv2ray.aar") | .browser_download_url')
         if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
           echo "libv2ray.aar not found in latest release"
-          echo "Available assets:"
-          echo "$RELEASE_INFO" | jq '.assets[].name'
           exit 1
         fi
-
         mkdir -p V2rayNG/app/libs/
         curl -L -o V2rayNG/app/libs/libv2ray.aar "$DOWNLOAD_URL"
         echo "libv2ray.aar downloaded successfully"
 
-    - name: Build APK
+    - name: Run Unit Tests (fdroid)
       run: |
         cd ${{ github.workspace }}/V2rayNG
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
-        ./gradlew assembleDebug
+        ./gradlew testFdroidDebugUnitTest --no-daemon --stacktrace
 
-    - name: Upload arm64-v8a APK
+    - name: Run Unit Tests (playstore)
+      run: |
+        cd ${{ github.workspace }}/V2rayNG
+        ./gradlew testPlaystoreDebugUnitTest --no-daemon --stacktrace
+
+    - name: Upload Test Reports
+      if: always()
       uses: actions/upload-artifact@v7
-      if: success()
       with:
-        name: arm64-v8a
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/debug/*arm64-v8a*.apk
+        name: test-reports
+        path: |
+          ${{ github.workspace }}/V2rayNG/app/build/reports/tests/
+          ${{ github.workspace }}/V2rayNG/app/build/test-results/
+        retention-days: 14
 
-    - name: Upload armeabi-v7a APK
-      uses: actions/upload-artifact@v7
-      if: success()
-      with:
-        name: armeabi-v7a
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/debug/*armeabi-v7a*.apk
-
-    - name: Upload x86 APK
-      uses: actions/upload-artifact@v7
-      if: success()
-      with:
-        name: x86-apk
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/debug/*x86.apk
-
-    - name: Upload x86_64 APK
-      uses: actions/upload-artifact@v7
-      if: success()
-      with:
-        name: x86_64-apk
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/debug/*x86_64*.apk
-
-    - name: Upload to release
-      uses: svenstaro/upload-release-action@v2
-      if: github.event.inputs.release_tag != ''
-      with:
-        file: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/debug/*.apk
-        tag: ${{ github.event.inputs.release_tag }}
-        file_glob: true
-        prerelease: true
+    - name: Publish Test Summary
+      if: always()
+      run: |
+        echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        for report in ${{ github.workspace }}/V2rayNG/app/build/test-results/**/TEST-*.xml; do
+          if [ -f "$report" ]; then
+            tests=$(grep -o 'tests="[0-9]*"' "$report" | head -1 | grep -o '[0-9]*')
+            failures=$(grep -o 'failures="[0-9]*"' "$report" | head -1 | grep -o '[0-9]*')
+            errors=$(grep -o 'errors="[0-9]*"' "$report" | head -1 | grep -o '[0-9]*')
+            name=$(basename "$report" .xml | sed 's/TEST-//')
+            echo "| Test Suite | Tests | Failures | Errors |" >> $GITHUB_STEP_SUMMARY
+            echo "|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
+            echo "| $name | $tests | $failures | $errors |" >> $GITHUB_STEP_SUMMARY
+          fi
+        done

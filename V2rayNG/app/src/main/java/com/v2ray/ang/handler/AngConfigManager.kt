@@ -240,12 +240,16 @@ object AngConfigManager {
             val subItem = MmkvManager.decodeSubscription(subid)
 
             // Parse all configs first (no I/O during parsing)
+            val filterRegex = if (subItem?.filter.isNotNullEmpty()) {
+                Regex(pattern = subItem!!.filter!!)
+            } else null
+
             val configs = mutableListOf<ProfileItem>()
             servers.lines()
                 .distinct()
                 .reversed()
                 .forEach {
-                    val config = parseConfig(it, subid, subItem)
+                    val config = parseConfig(it, subid, filterRegex)
                     if (config != null) {
                         configs.add(config)
                     }
@@ -469,7 +473,7 @@ object AngConfigManager {
     private fun parseConfig(
         str: String?,
         subid: String,
-        subItem: SubscriptionItem?
+        filterRegex: Regex?
     ): ProfileItem? {
         try {
             if (str == null || TextUtils.isEmpty(str)) {
@@ -485,10 +489,8 @@ object AngConfigManager {
             }
 
             // Apply filter
-            if (subItem?.filter.isNotNullEmpty() && config.remarks.isNotNullEmpty()) {
-                val matched = Regex(pattern = subItem?.filter.orEmpty())
-                    .containsMatchIn(input = config.remarks)
-                if (!matched) return null
+            if (filterRegex != null && config.remarks.isNotNullEmpty()) {
+                if (!filterRegex.containsMatchIn(input = config.remarks)) return null
             }
 
             config.subscriptionId = subid

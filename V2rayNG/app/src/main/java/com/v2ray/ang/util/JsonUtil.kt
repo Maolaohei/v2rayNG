@@ -12,7 +12,20 @@ import com.v2ray.ang.AppConfig
 import java.lang.reflect.Type
 
 object JsonUtil {
-    private var gson = Gson()
+    private val gson = Gson()
+
+    private val gsonPretty by lazy {
+        GsonBuilder()
+            .setPrettyPrinting()
+            .disableHtmlEscaping()
+            .registerTypeAdapter(
+                object : TypeToken<Double>() {}.type,
+                JsonSerializer { src: Double?, _: Type?, _: JsonSerializationContext? ->
+                    JsonPrimitive(src?.toInt())
+                }
+            )
+            .create()
+    }
 
     /**
      * Converts an object to its JSON representation.
@@ -61,19 +74,7 @@ object JsonUtil {
     fun toJsonPretty(src: Any?): String? {
         if (src == null)
             return null
-        val gsonPre = GsonBuilder()
-            .setPrettyPrinting()
-            .disableHtmlEscaping()
-            .registerTypeAdapter( // custom serializer is needed here since JSON by default parse number as Double, core will fail to start
-                object : TypeToken<Double>() {}.type,
-                JsonSerializer { src: Double?, _: Type?, _: JsonSerializationContext? ->
-                    JsonPrimitive(
-                        src?.toInt()
-                    )
-                }
-            )
-            .create()
-        return gsonPre.toJson(src)
+        return gsonPretty.toJson(src)
     }
 
     /**

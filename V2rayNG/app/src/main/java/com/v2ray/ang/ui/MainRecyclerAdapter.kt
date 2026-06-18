@@ -1,12 +1,12 @@
 
 package com.v2ray.ang.ui
 
-import android.annotation.SuppressLint
 import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
@@ -28,62 +28,66 @@ class MainRecyclerAdapter(
     private val mainViewModel: MainViewModel,
     private val adapterListener: MainAdapterListener?
 ) : RecyclerView.Adapter<MainRecyclerAdapter.BaseViewHolder>(), ItemTouchHelperAdapter {
+
     companion object {
         private const val VIEW_TYPE_ITEM = 1
         private const val VIEW_TYPE_FOOTER = 2
     }
 
     private val doubleColumnDisplay = MmkvManager.decodeSettingsBool(AppConfig.PREF_DOUBLE_COLUMN_DISPLAY, false)
-    private var data: MutableList<ServersCache> = mutableListOf()
+    private var data: List<ServersCache> = emptyList()
 
-    @SuppressLint("NotifyDataSetChanged")
-    fun setData(newData: MutableList<ServersCache>?, position: Int = -1) {
-        data = newData?.toMutableList() ?: mutableListOf()
+    fun setData(newData: List<ServersCache>?, position: Int = -1) {
+        val oldData = data
+        val updatedData = newData?.toList() ?: emptyList()
+        data = updatedData
 
         if (position >= 0 && position in data.indices) {
             notifyItemChanged(position)
         } else {
-            notifyDataSetChanged()
+            val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize() = oldData.size
+                override fun getNewListSize() = data.size
+                override fun areItemsTheSame(oldPos: Int, newPos: Int) = oldData[oldPos].guid == data[newPos].guid
+                override fun areContentsTheSame(oldPos: Int, newPos: Int) = oldData[oldPos] == data[newPos]
+            })
+            diffResult.dispatchUpdatesTo(this)
         }
     }
 
     override fun getItemCount() = data.size + 1
 
     override fun onBindViewHolder(holder: BaseViewHolder, position: Int) {
-        if (holder is MainViewHolder) {
+        if (holder is MainViewHolder && position < data.size) {
             val context = holder.itemMainBinding.root.context
-            val guid = data[position].guid
-            val profile = data[position].profile
+            val item = data[position]
+            val guid = item.guid
+            val profile = item.profile
 
             holder.itemView.setBackgroundColor(Color.TRANSPARENT)
 
-            //Name address
             holder.itemMainBinding.tvName.text = profile.remarks
             holder.itemMainBinding.tvStatistics.text = getAddress(profile)
             holder.itemMainBinding.tvType.text = getProtocolDescription(profile)
 
-            //TestResult
-            val aff = MmkvManager.decodeServerAffiliationInfo(guid)
-            holder.itemMainBinding.tvTestResult.text = aff?.getTestDelayString().orEmpty()
-            if ((aff?.testDelayMillis ?: 0L) < 0L) {
+            val testDelay = item.testDelayMillis
+            holder.itemMainBinding.tvTestResult.text = if (testDelay != 0L) "${testDelay}ms" else ""
+            if (testDelay < 0L) {
                 holder.itemMainBinding.tvTestResult.setTextColor(ContextCompat.getColor(context, R.color.colorPingRed))
             } else {
                 holder.itemMainBinding.tvTestResult.setTextColor(ContextCompat.getColor(context, R.color.colorPing))
             }
 
-            //layoutIndicator
-            if (guid == MmkvManager.getSelectServer()) {
+            if (guid == mainViewModel.getSelectedServer()) {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(R.color.colorIndicator)
             } else {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(0)
             }
 
-            //subscription remarks
             val subRemarks = getSubscriptionRemarks(profile)
             holder.itemMainBinding.tvSubscription.text = subRemarks
             holder.itemMainBinding.layoutSubscription.visibility = if (subRemarks.isEmpty()) View.GONE else View.VISIBLE
 
-            //layout
             if (doubleColumnDisplay) {
                 holder.itemMainBinding.layoutShare.visibility = View.GONE
                 holder.itemMainBinding.layoutEdit.visibility = View.GONE
@@ -115,24 +119,12 @@ class MainRecyclerAdapter(
                 adapterListener?.onSelectServer(guid)
             }
         }
-
     }
 
-    /**
-     * Gets the server address information
-     * Hides part of IP or domain information for privacy protection
-     * @param profile The server configuration
-     * @return Formatted address string
-     */
     private fun getAddress(profile: ProfileItem): String {
         return profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile)
     }
 
-    /**
-     * Gets the subscription remarks information
-     * @param profile The server configuration
-     * @return Subscription remarks string, or empty string if none
-     */
     private fun getSubscriptionRemarks(profile: ProfileItem): String {
         val subRemarks =
             if (mainViewModel.subscriptionId.isEmpty())
@@ -150,18 +142,16 @@ class MainRecyclerAdapter(
         val parts = mutableListOf<String>()
         parts.add(profile.configType.name)
 
-        // Transport: hide tcp or blank
         profile.network?.let { net ->
             if (net.isNotBlank() && !net.equals("tcp", ignoreCase = true)) {
                 parts.add(net)
             }
         }
 
-        // Security: hide blank or tls
         profile.security?.let { sec ->
             if (sec.isNotBlank()) {
                 if (profile.insecure == true && sec.equals("tls", ignoreCase = true)) {
-                    parts.add("$sec insecure") // TODO
+                    parts.add("$sec insecure")
                 } else {
                     parts.add(sec)
                 }
@@ -172,9 +162,11 @@ class MainRecyclerAdapter(
     }
 
     fun removeServerSub(guid: String, position: Int) {
-        val idx = data.indexOfFirst { it.guid == guid }
+        val mutable = data.toMutableList()
+        val idx = mutable.indexOfFirst { it.guid == guid }
         if (idx >= 0) {
-            data.removeAt(idx)
+            mutable.removeAt(idx)
+            data = mutable
             notifyItemRemoved(idx)
             notifyItemRangeChanged(idx, data.size - idx)
         }
@@ -222,14 +214,15 @@ class MainRecyclerAdapter(
     override fun onItemMove(fromPosition: Int, toPosition: Int): Boolean {
         mainViewModel.swapServer(fromPosition, toPosition)
         if (fromPosition < data.size && toPosition < data.size) {
-            Collections.swap(data, fromPosition, toPosition)
+            val mutable = data.toMutableList()
+            Collections.swap(mutable, fromPosition, toPosition)
+            data = mutable
         }
         notifyItemMoved(fromPosition, toPosition)
         return true
     }
 
     override fun onItemMoveCompleted() {
-        // do nothing
     }
 
     override fun onItemDismiss(position: Int) {

@@ -34,8 +34,8 @@ object CoreNativeManager {
                 Libv2ray.initCoreEnv(assetPath, deviceId)
                 LogUtil.i(AppConfig.TAG, "V2Ray core environment initialized successfully")
             } catch (e: Exception) {
-                LogUtil.e(AppConfig.TAG, "Failed to initialize V2Ray core environment", e)
                 initialized.set(false)
+                LogUtil.e(AppConfig.TAG, "Failed to initialize V2Ray core environment", e)
                 throw e
             }
         } else {

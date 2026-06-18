@@ -19,7 +19,6 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.LOOPBACK
 import com.v2ray.ang.BuildConfig
 import java.io.IOException
-import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.URI
 import java.net.URLDecoder
@@ -552,21 +551,6 @@ object Utils {
     fun isGoogleFlavor(): Boolean = BuildConfig.FLAVOR == "playstore"
 
     /**
-     * Converts an InetAddress to its long representation
-     *
-     * @param ip The InetAddress to convert
-     * @return The long representation of the IP address
-     */
-    private fun inetAddressToLong(ip: InetAddress): Long {
-        val bytes = ip.address
-        var result: Long = 0
-        for (i in bytes.indices) {
-            result = result shl 8 or (bytes[i].toInt() and 0xff).toLong()
-        }
-        return result
-    }
-
-    /**
      * Check if an IP address is within a CIDR range
      *
      * @param ip The IP address to check
@@ -577,23 +561,33 @@ object Utils {
         try {
             if (!isIpAddress(ip)) return false
 
-            // Parse CIDR (e.g., "192.168.1.0/24")
-            val (cidrIp, prefixLen) = cidr.split("/")
-            val prefixLength = prefixLen.toInt()
+            val slashIdx = cidr.indexOf('/')
+            if (slashIdx < 0) return false
+            val cidrIp = cidr.substring(0, slashIdx)
+            val prefixLength = cidr.substring(slashIdx + 1).toIntOrNull() ?: return false
 
-            // Convert IP and CIDR's IP portion to Long
-            val ipLong = inetAddressToLong(InetAddress.getByName(ip))
-            val cidrIpLong = inetAddressToLong(InetAddress.getByName(cidrIp))
+            val ipLong = ipv4ToLong(ip) ?: return false
+            val cidrIpLong = ipv4ToLong(cidrIp) ?: return false
 
-            // Calculate subnet mask (e.g., /24 → 0xFFFFFF00)
             val mask = if (prefixLength == 0) 0L else (-1L shl (32 - prefixLength))
 
-            // Check if they're in the same subnet
             return (ipLong and mask) == (cidrIpLong and mask)
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Failed to check if IP is in CIDR", e)
             return false
         }
+    }
+
+    private fun ipv4ToLong(ip: String): Long? {
+        val parts = ip.split('.')
+        if (parts.size != 4) return null
+        var result = 0L
+        for (part in parts) {
+            val octet = part.toIntOrNull() ?: return null
+            if (octet < 0 || octet > 255) return null
+            result = (result shl 8) or octet.toLong()
+        }
+        return result
     }
 
     /**

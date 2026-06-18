@@ -163,7 +163,6 @@ object CoreServiceManager {
 
         if (config.insecure == true) {
             context.toastError(R.string.toast_allow_insecure_deprecated)
-            context.toastError(R.string.toast_allow_insecure_deprecated)
         }
 
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING)) {
@@ -514,8 +513,7 @@ object CoreServiceManager {
                 AppConfig.MSG_STATE_RESTART -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Restart service")
                     serviceControl.stopService()
-                    Thread.sleep(500L)
-                    startVService(serviceControl.getService())
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ startVService(serviceControl.getService()) }, 500L)
                 }
 
                 AppConfig.MSG_MEASURE_DELAY -> {
