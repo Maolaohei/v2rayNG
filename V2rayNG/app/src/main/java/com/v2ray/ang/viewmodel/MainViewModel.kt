@@ -298,6 +298,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getSelectedServer(): String? = selectedServer
 
+    fun setSelectedServer(guid: String) {
+        selectedServer = guid
+    }
+
     /**
      * Gets the position of a server by its GUID.
      * @param guid The GUID of the server.
