@@ -6,38 +6,12 @@ import com.v2ray.ang.dto.UrlContentRequest
 import com.v2ray.ang.util.HttpUtil
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.UnknownHostException
-import java.util.concurrent.ConcurrentLinkedQueue
 
 object SpeedtestManager {
-
-    private val tcpTestingSockets = ConcurrentLinkedQueue<Socket>()
-
-    /**
-     * Measures the TCP connection time to a given URL and port.
-     *
-     * @param url The URL to connect to.
-     * @param port The port to connect to.
-     * @return The connection time in milliseconds, or -1 if the connection failed.
-     */
-    suspend fun tcping(url: String, port: Int): Long {
-        var time = -1L
-        for (k in 0 until 2) {
-            val one = socketConnectTime(url, port)
-            if (!currentCoroutineContext().isActive) {
-                break
-            }
-            if (one != -1L && (time == -1L || one < time)) {
-                time = one
-            }
-        }
-        return time
-    }
 
     /**
      * Measures the time taken to establish a TCP connection to a given URL and port.
@@ -46,37 +20,32 @@ object SpeedtestManager {
      * @param port The port to connect to.
      * @return The connection time in milliseconds, or -1 if the connection failed.
      */
-    fun socketConnectTime(url: String, port: Int): Long {
+    fun socketConnectTime(url: String, port: Int, timeoutMs: Int = 1500): Long {
+        var socket: Socket? = null
+        val start = System.currentTimeMillis()
+
         try {
-            val socket = Socket()
-            tcpTestingSockets.add(socket)
-            val start = System.currentTimeMillis()
-            socket.connect(InetSocketAddress(url, port), 3000)
-            val time = System.currentTimeMillis() - start
-            tcpTestingSockets.remove(socket)
-            socket.close()
-            return time
+            socket = Socket()
+            socket.connect(InetSocketAddress(url, port), timeoutMs)
+
+            return System.currentTimeMillis() - start
         } catch (e: UnknownHostException) {
             LogUtil.e(AppConfig.TAG, "Unknown host: $url", e)
         } catch (e: IOException) {
-            LogUtil.e(AppConfig.TAG, "socketConnectTime IOException: $e")
+            LogUtil.e(AppConfig.TAG, "socketConnectTime IOException: ${e.message}")
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Failed to establish socket connection to $url:$port", e)
-        }
-        return -1
-    }
-
-    /**
-     * Closes all TCP sockets that are currently being tested.
-     */
-    fun closeAllTcpSockets() {
-        while (true) {
-            val socket = tcpTestingSockets.poll() ?: break
-            try {
-                socket.close()
-            } catch (_: Exception) {
+        } finally {
+            socket?.let { s ->
+                try {
+                    if (!s.isClosed) {
+                        s.close()
+                    }
+                } catch (closeEx: IOException) {
+                }
             }
         }
+        return -1
     }
 
     fun getRemoteIPInfo(): String? {

@@ -25,19 +25,13 @@ import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
-import com.v2ray.ang.handler.SpeedtestManager
-import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import java.util.Collections
 import java.util.regex.PatternSyntaxException
 
@@ -50,7 +44,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
     val selectionChangedAction by lazy { MutableLiveData<String?>() }
-    private val tcpingTestScope by lazy { CoroutineScope(Dispatchers.IO) }
     private var selectedServer: String? = null
 
     /**
@@ -69,8 +62,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     override fun onCleared() {
         getApplication<AngApplication>().unregisterReceiver(mMsgReceiver)
-        tcpingTestScope.coroutineContext[Job]?.cancelChildren()
-        SpeedtestManager.closeAllTcpSockets()
         LogUtil.i(AppConfig.TAG, "Main ViewModel is cleared")
         super.onCleared()
     }
@@ -187,36 +178,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             serverListCopy
         )
         return ret
-    }
-
-    /**
-     * Tests the TCP ping for all servers.
-     */
-    fun testAllTcping() {
-        tcpingTestScope.coroutineContext[Job]?.cancelChildren()
-        SpeedtestManager.closeAllTcpSockets()
-        MmkvManager.clearAllTestDelayResults(serversCache.map { it.guid }.toList())
-
-        val serversCopy = serversCache.toList()
-        val concurrency = SettingsManager.getRealPingConcurrency()
-        val semaphore = Semaphore(concurrency)
-        for (item in serversCopy) {
-            item.profile.let { outbound ->
-                val serverAddress = outbound.server
-                val serverPort = outbound.serverPort
-                if (serverAddress != null && serverPort != null) {
-                    tcpingTestScope.launch {
-                        semaphore.withPermit {
-                            val testResult = SpeedtestManager.tcping(serverAddress, serverPort.toInt())
-                            launch(Dispatchers.Main) {
-                                MmkvManager.encodeServerTestDelayMillis(item.guid, testResult)
-                                updateListAction.value = getPosition(item.guid)
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /**
@@ -351,11 +312,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (subscriptionId.isEmpty() && keywordFilter.isEmpty()) {
                 MmkvManager.removeAllServer()
             } else {
-                val serverList = MmkvManager.decodeServerList(subscriptionId)
-                for (guid in serverList) {
-                    MmkvManager.removeServer(guid)
+                val serversCopy = serversCache.toList()
+                for (item in serversCopy) {
+                    MmkvManager.removeServer(item.guid)
                 }
-                serverList.count()
+                serversCache.toList().count()
             }
         return count
     }
