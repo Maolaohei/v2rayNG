@@ -36,14 +36,17 @@ class MainRecyclerAdapter(
 
     private val doubleColumnDisplay = MmkvManager.decodeSettingsBool(AppConfig.PREF_DOUBLE_COLUMN_DISPLAY, false)
     private var data: List<ServersCache> = emptyList()
+    private var selectedGuid: String? = null
 
     fun setData(newData: List<ServersCache>?, position: Int = -1) {
         val oldData = data
         val updatedData = newData?.toList() ?: emptyList()
         data = updatedData
+        selectedGuid = mainViewModel.getSelectedServer()
 
         if (position >= 0 && position in data.indices) {
             notifyItemChanged(position)
+            ensureSelectedIndicator()
         } else {
             val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
                 override fun getOldListSize() = oldData.size
@@ -52,6 +55,7 @@ class MainRecyclerAdapter(
                 override fun areContentsTheSame(oldPos: Int, newPos: Int) = oldData[oldPos] == data[newPos]
             })
             diffResult.dispatchUpdatesTo(this)
+            ensureSelectedIndicator()
         }
     }
 
@@ -78,7 +82,7 @@ class MainRecyclerAdapter(
                 holder.itemMainBinding.tvTestResult.setTextColor(ContextCompat.getColor(context, R.color.colorPing))
             }
 
-            if (guid == mainViewModel.getSelectedServer()) {
+            if (guid == selectedGuid) {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(R.color.colorIndicator)
             } else {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(0)
@@ -169,12 +173,40 @@ class MainRecyclerAdapter(
             data = mutable
             notifyItemRemoved(idx)
             notifyItemRangeChanged(idx, data.size - idx)
+            ensureSelectedIndicator()
+        }
+    }
+
+    private fun ensureSelectedIndicator() {
+        val guid = selectedGuid ?: return
+        val idx = data.indexOfFirst { it.guid == guid }
+        if (idx >= 0) {
+            notifyItemChanged(idx)
         }
     }
 
     fun setSelectServer(fromPosition: Int, toPosition: Int) {
-        notifyItemChanged(fromPosition)
-        notifyItemChanged(toPosition)
+        selectedGuid = mainViewModel.getSelectedServer()
+        if (fromPosition >= 0 && fromPosition < data.size) {
+            notifyItemChanged(fromPosition)
+        }
+        if (toPosition >= 0 && toPosition < data.size) {
+            notifyItemChanged(toPosition)
+        }
+    }
+
+    fun setSelectedGuid(guid: String?) {
+        if (guid == selectedGuid) return
+        val oldGuid = selectedGuid
+        selectedGuid = guid
+        if (oldGuid != null) {
+            val oldIdx = data.indexOfFirst { it.guid == oldGuid }
+            if (oldIdx >= 0) notifyItemChanged(oldIdx)
+        }
+        if (guid != null) {
+            val newIdx = data.indexOfFirst { it.guid == guid }
+            if (newIdx >= 0) notifyItemChanged(newIdx)
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BaseViewHolder {
@@ -219,6 +251,7 @@ class MainRecyclerAdapter(
             data = mutable
         }
         notifyItemMoved(fromPosition, toPosition)
+        ensureSelectedIndicator()
         return true
     }
 

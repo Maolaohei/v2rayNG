@@ -91,6 +91,10 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
             adapter.setData(mainViewModel.serversCache, index)
         }
 
+        mainViewModel.selectionChangedAction.observe(viewLifecycleOwner) {
+            adapter.setSelectedGuid(mainViewModel.getSelectedServer())
+        }
+
         // LogUtil.d(TAG, "GroupServerFragment onViewCreated: subId=$subId")
     }
 

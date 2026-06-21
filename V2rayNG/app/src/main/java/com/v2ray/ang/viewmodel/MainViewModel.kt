@@ -49,6 +49,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRunning by lazy { MutableLiveData<Boolean>() }
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
+    val selectionChangedAction by lazy { MutableLiveData<String?>() }
     private val tcpingTestScope by lazy { CoroutineScope(Dispatchers.IO) }
     private var selectedServer: String? = null
 
@@ -300,6 +301,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSelectedServer(guid: String) {
         selectedServer = guid
+        selectionChangedAction.value = guid
     }
 
     /**
