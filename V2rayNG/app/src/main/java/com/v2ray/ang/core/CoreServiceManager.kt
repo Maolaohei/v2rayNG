@@ -23,6 +23,7 @@ import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SpeedtestManager
+import com.v2ray.ang.service.ConnectionWatchdog
 import com.v2ray.ang.service.CoreProxyOnlyService
 import com.v2ray.ang.service.CoreVpnService
 import com.v2ray.ang.service.DialerNativeService
@@ -42,7 +43,7 @@ import java.net.InetSocketAddress
 
 object CoreServiceManager {
 
-    private val coreController: CoreController = CoreNativeManager.newCoreController(CoreCallback())
+    internal val coreController: CoreController = CoreNativeManager.newCoreController(CoreCallback())
     private val mMsgReceive = ReceiveMessageHandler()
     private var currentConfig: ProfileItem? = null
     private var processFinder: XrayProcessFinder? = null
@@ -276,6 +277,7 @@ object CoreServiceManager {
 
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, "")
         NotificationManager.startSpeedNotification()
+        ConnectionWatchdog.start()
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
     }
 
@@ -306,6 +308,7 @@ object CoreServiceManager {
 
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_STOP_SUCCESS, "")
         NotificationManager.cancelNotification()
+        ConnectionWatchdog.stop()
 
         try {
             service.unregisterReceiver(mMsgReceive)

@@ -72,11 +72,31 @@ object CoreOutboundBuilder {
                 outbound.mux?.concurrency = -1
             }
 
+            applyTcpKeepAlive(outbound)
+
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Failed to update outbound with global settings", e)
             return false
         }
         return true
+    }
+
+    private fun applyTcpKeepAlive(outbound: OutboundBean) {
+        val streamSettings = outbound.streamSettings ?: return
+        val protocol = outbound.protocol
+        if (protocol.equals(EConfigType.WIREGUARD.name, true)
+            || protocol.equals(EConfigType.HYSTERIA.name, true)
+            || protocol.equals(EConfigType.HYSTERIA2.name, true)
+        ) {
+            return
+        }
+        val sockopt = streamSettings.ensureSockopt()
+        if (sockopt.tcpKeepAliveIdle == null) {
+            sockopt.tcpKeepAliveIdle = 60
+        }
+        if (sockopt.tcpKeepAliveInterval == null) {
+            sockopt.tcpKeepAliveInterval = 5
+        }
     }
 
     /** Creates an initial outbound template for a protocol type. */

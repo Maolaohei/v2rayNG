@@ -33,6 +33,8 @@ class CoreVpnService : VpnService(), ServiceControl {
     private lateinit var mInterface: ParcelFileDescriptor
     @Volatile
     private var isRunning = false
+    @Volatile
+    private var pendingRestart = false
     private var tun2SocksService: Tun2SocksControl? = null
 
     /**destroy
@@ -59,15 +61,30 @@ class CoreVpnService : VpnService(), ServiceControl {
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 setUnderlyingNetworks(arrayOf(network))
+                if (pendingRestart) {
+                    pendingRestart = false
+                    LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, restarting core")
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        if (isRunning) {
+                            CoreServiceManager.stopCoreLoop()
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                if (isRunning) {
+                                    CoreServiceManager.startCoreLoop(mInterface)
+                                }
+                            }, 300L)
+                        }
+                    }, 200L)
+                }
             }
 
             override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                // it's a good idea to refresh capabilities
                 setUnderlyingNetworks(arrayOf(network))
             }
 
             override fun onLost(network: Network) {
                 setUnderlyingNetworks(null)
+                pendingRestart = true
+                LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network lost, will restart core on new network")
             }
         }
     }
