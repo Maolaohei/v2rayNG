@@ -90,7 +90,7 @@ object CoreOutboundBuilder {
         ) {
             return
         }
-        val sockopt = streamSettings.ensureSockopt()
+        val sockopt = outbound.ensureSockopt()
         if (sockopt.tcpKeepAliveIdle == null) {
             sockopt.tcpKeepAliveIdle = 60
         }
