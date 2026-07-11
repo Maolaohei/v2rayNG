@@ -390,6 +390,8 @@
     <string name="home_nav_routing">Routing</string>
     <string name="home_nav_subscription">Subscription</string>
     <string name="home_nav_home">Home</string>
+    <string name="home_more_tools">Tools</string>
+    <string name="home_nav_more">More</string>
 
     <string name="connection_runing_task_left">Number of running test tasks: %s</string>
 

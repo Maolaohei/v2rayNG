@@ -38,7 +38,7 @@ abstract class HelperBaseActivity : BaseActivity() {
      * @param permissionType The type of permission to check and request
      * @param onGranted Callback to execute when permission is granted
      */
-    protected fun checkAndRequestPermission(
+    fun checkAndRequestPermission(
         permissionType: PermissionType,
         onGranted: () -> Unit
     ) {
@@ -52,7 +52,7 @@ abstract class HelperBaseActivity : BaseActivity() {
      * @param mimeType MIME type filter for files
      * @param onResult Callback invoked with the selected file URI (null if cancelled)
      */
-    protected fun launchFileChooser(
+    fun launchFileChooser(
         mimeType: String = "*/*",
         onResult: (Uri?) -> Unit
     ) {
@@ -67,7 +67,7 @@ abstract class HelperBaseActivity : BaseActivity() {
      * @param fileName Default file name for the new document
      * @param onResult Callback invoked with the created file URI (null if cancelled)
      */
-    protected fun launchCreateDocument(
+    fun launchCreateDocument(
         fileName: String,
         onResult: (Uri?) -> Unit
     ) {
@@ -80,7 +80,7 @@ abstract class HelperBaseActivity : BaseActivity() {
      *
      * @param onResult Callback invoked with the scan result string (null if cancelled or failed)
      */
-    protected fun launchQRCodeScanner(onResult: (String?) -> Unit) {
+    fun launchQRCodeScanner(onResult: (String?) -> Unit) {
         checkAndRequestPermission(PermissionType.CAMERA) {
             qrCodeScanner.launch(onResult)
         }

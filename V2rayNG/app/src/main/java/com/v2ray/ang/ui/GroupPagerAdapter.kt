@@ -1,14 +1,15 @@
 package com.v2ray.ang.ui
 
 import android.annotation.SuppressLint
-import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.Fragment
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.v2ray.ang.dto.GroupMapItem
 
 /**
  * Pager adapter for subscription groups.
+ * Hosted by [HomeFragment] so group pages share its child FragmentManager.
  */
-class GroupPagerAdapter(activity: FragmentActivity, var groups: List<GroupMapItem>) : FragmentStateAdapter(activity) {
+class GroupPagerAdapter(fragment: Fragment, var groups: List<GroupMapItem>) : FragmentStateAdapter(fragment) {
     override fun getItemCount(): Int = groups.size
     override fun createFragment(position: Int) = GroupServerFragment.newInstance(groups[position].id)
     override fun getItemId(position: Int): Long = groups[position].id.hashCode().toLong()
