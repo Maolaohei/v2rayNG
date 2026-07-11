@@ -43,19 +43,23 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var trafficListening: Boolean = false
 
     private val speedListener: (TrafficStatsManager.SpeedSample) -> Unit = { sample ->
-        if (!isAdded) return@speedListener
-        view?.post {
-            if (!isAdded || view == null) return@post
-            binding.tvSpeedUpload.text = sample.upBytesPerSec.toSpeedString()
-            binding.tvSpeedDownload.text = sample.downBytesPerSec.toSpeedString()
+        if (isAdded) {
+            view?.post {
+                if (isAdded && view != null) {
+                    binding.tvSpeedUpload.text = sample.upBytesPerSec.toSpeedString()
+                    binding.tvSpeedDownload.text = sample.downBytesPerSec.toSpeedString()
+                }
+            }
         }
     }
 
     private val dayListener: (Long) -> Unit = { total ->
-        if (!isAdded) return@dayListener
-        view?.post {
-            if (!isAdded || view == null) return@post
-            binding.tvTraffic24h.text = total.toTrafficString()
+        if (isAdded) {
+            view?.post {
+                if (isAdded && view != null) {
+                    binding.tvTraffic24h.text = total.toTrafficString()
+                }
+            }
         }
     }
 
