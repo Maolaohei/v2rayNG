@@ -1,11 +1,13 @@
 package com.v2ray.ang.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
+import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.VPN
@@ -193,6 +195,7 @@ class SettingsActivity : BaseActivity() {
             }
 
             preferenceScreen?.let { traverse(it) }
+            setupToolEntryClicks()
         }
 
         private suspend fun checkAndRequestRoot(): Boolean {
@@ -249,6 +252,22 @@ class SettingsActivity : BaseActivity() {
                     )
                 )
             }
+        }
+
+
+        private fun setupToolEntryClicks() {
+            fun bind(key: String, activityClass: Class<*>) {
+                findPreference<Preference>(key)?.setOnPreferenceClickListener {
+                    startActivity(Intent(requireContext(), activityClass))
+                    true
+                }
+            }
+            bind("pref_entry_per_app_proxy", PerAppProxyActivity::class.java)
+            bind("pref_entry_user_asset", UserAssetActivity::class.java)
+            bind("pref_entry_logcat", LogcatActivity::class.java)
+            bind("pref_entry_backup", BackupActivity::class.java)
+            bind("pref_entry_check_update", CheckUpdateActivity::class.java)
+            bind("pref_entry_about", AboutActivity::class.java)
         }
 
         private fun updateLocalDns(enabled: Boolean) {

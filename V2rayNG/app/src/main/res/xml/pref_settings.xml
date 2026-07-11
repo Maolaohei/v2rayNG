@@ -123,6 +123,17 @@
             android:key="pref_hev_tunnel_rw_timeout_v2"
             android:summary="300,60"
             android:title="@string/title_pref_hev_tunnel_rw_timeout" />
+
+        <PreferenceCategory android:title="@string/title_settings_tools_vpn">
+            <Preference
+                android:key="pref_entry_per_app_proxy"
+                android:summary="@string/summary_pref_per_app_proxy_entry"
+                android:title="@string/title_pref_per_app_proxy_entry" />
+            <Preference
+                android:key="pref_entry_user_asset"
+                android:summary="@string/summary_pref_user_asset_entry"
+                android:title="@string/title_pref_user_asset_entry" />
+        </PreferenceCategory>
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/title_core_settings">
@@ -211,6 +222,25 @@
             android:summary="%s"
             android:title="@string/title_outbound_domain_resolve_method" />
 
+
+        <PreferenceCategory android:title="@string/title_settings_tools_core">
+            <Preference
+                android:key="pref_entry_logcat"
+                android:summary="@string/summary_pref_logcat_entry"
+                android:title="@string/title_pref_logcat_entry" />
+            <Preference
+                android:key="pref_entry_backup"
+                android:summary="@string/summary_pref_backup_entry"
+                android:title="@string/title_pref_backup_entry" />
+            <Preference
+                android:key="pref_entry_check_update"
+                android:summary="@string/summary_pref_check_update_entry"
+                android:title="@string/title_pref_check_update_entry" />
+            <Preference
+                android:key="pref_entry_about"
+                android:summary="@string/summary_pref_about_entry"
+                android:title="@string/title_pref_about_entry" />
+        </PreferenceCategory>
     </PreferenceCategory>
 
     <PreferenceCategory

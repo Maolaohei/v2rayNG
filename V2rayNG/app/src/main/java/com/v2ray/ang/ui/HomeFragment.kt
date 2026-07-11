@@ -1,11 +1,9 @@
 package com.v2ray.ang.ui
 
-import android.content.res.ColorStateList
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.view.View
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import com.v2ray.ang.AppConfig
@@ -15,21 +13,20 @@ import com.v2ray.ang.databinding.FragmentHomeBinding
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toSpeedString
+import com.v2ray.ang.extension.toTrafficString
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
+import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
- * Slim home: power, connectivity test, speeds, mode (VPN / Proxy only), current node summary.
- * Node selection lives in [SubSettingFragment].
+ * Slim home: system switch, connectivity test, live speeds, 24h proxy traffic,
+ * mode (VPN / Proxy only), current node summary.
  */
 class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     override fun inflateBinding(inflater: android.view.LayoutInflater, container: android.view.ViewGroup?) =
@@ -39,30 +36,46 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         get() = requireActivity() as MainActivity
 
     val mainViewModel: MainViewModel by activityViewModels()
-    private var speedJob: Job? = null
     private var isServiceRunning: Boolean = false
     private var broadcastStarted: Boolean = false
     private var modeToggleReady: Boolean = false
+    private var switchReady: Boolean = false
+    private var trafficListening: Boolean = false
+
+    private val speedListener: (TrafficStatsManager.SpeedSample) -> Unit = { sample ->
+        if (!isAdded) return@speedListener
+        view?.post {
+            if (!isAdded || view == null) return@post
+            binding.tvSpeedUpload.text = sample.upBytesPerSec.toSpeedString()
+            binding.tvSpeedDownload.text = sample.downBytesPerSec.toSpeedString()
+        }
+    }
+
+    private val dayListener: (Long) -> Unit = { total ->
+        if (!isAdded) return@dayListener
+        view?.post {
+            if (!isAdded || view == null) return@post
+            binding.tvTraffic24h.text = total.toTrafficString()
+        }
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.fab.setOnClickListener { handleFabAction() }
         binding.tvTestState.setOnClickListener { handleLayoutTestClick() }
-        binding.layoutCurrentNode.setOnClickListener {
-            host.openSubscriptionTab()
-        }
+        binding.layoutCurrentNode.setOnClickListener { host.openSubscriptionTab() }
 
+        setupConnectionSwitch()
         setupModeToggle()
         refreshModeToggle()
         refreshSelectedServerMeta()
+        binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         setupViewModel()
 
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             SubscriptionUpdater.sync()
         }
         mainViewModel.reloadServerList()
-
         host.checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
     }
 
@@ -82,6 +95,16 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             broadcastStarted = true
         }
         mainViewModel.initAssets(requireContext().assets)
+    }
+
+    private fun setupConnectionSwitch() {
+        switchReady = false
+        binding.switchConnection.setOnCheckedChangeListener { _, isChecked ->
+            if (!switchReady) return@setOnCheckedChangeListener
+            if (isChecked == isServiceRunning) return@setOnCheckedChangeListener
+            handleConnectionToggle(isChecked)
+        }
+        switchReady = true
     }
 
     private fun setupModeToggle() {
@@ -127,12 +150,13 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
     }
 
-    private fun handleFabAction() {
+    private fun handleConnectionToggle(wantStart: Boolean) {
         applyRunningState(isLoading = true, isRunning = false)
-
-        if (mainViewModel.isRunning.value == true) {
+        if (!wantStart) {
             CoreServiceManager.stopVService(requireContext())
-        } else if (SettingsManager.isVpnMode()) {
+            return
+        }
+        if (SettingsManager.isVpnMode()) {
             val intent = VpnService.prepare(requireContext())
             if (intent == null) {
                 startV2Ray()
@@ -153,52 +177,26 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
     }
 
-    private fun startSpeedUpdates() {
-        stopSpeedUpdates()
-        if (!isAdded || view == null) return
-        binding.tvSpeedUpload.text = "0 B/s"
-        binding.tvSpeedDownload.text = "0 B/s"
-
-        // Always poll core stats for home UI. Notification speed is independent
-        // and may be off; previously home reused notification listeners only when
-        // pref_speed_enabled, which left UI stuck at 0 when that pref was false.
-        speedJob = viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            var lastQueryTime = System.currentTimeMillis()
-            while (isActive) {
-                delay(1000L)
-                if (!CoreServiceManager.isRunning()) continue
-                val now = System.currentTimeMillis()
-                val elapsed = ((now - lastQueryTime).coerceAtLeast(1L)) / 1000.0
-                var up = 0L
-                var down = 0L
-                try {
-                    CoreServiceManager.queryAllOutboundTrafficStats().forEach { stat ->
-                        if (stat.tag.startsWith(AppConfig.TAG_PROXY)) {
-                            when (stat.direction) {
-                                AppConfig.UPLINK -> up += stat.value
-                                AppConfig.DOWNLINK -> down += stat.value
-                            }
-                        }
-                    }
-                } catch (_: Exception) {
-                    // core may restart; keep UI stable
-                }
-                lastQueryTime = now
-                val upText = (up / elapsed).toLong().toSpeedString()
-                val downText = (down / elapsed).toLong().toSpeedString()
-                withContext(Dispatchers.Main) {
-                    if (isAdded && view != null) {
-                        binding.tvSpeedUpload.text = upText
-                        binding.tvSpeedDownload.text = downText
-                    }
-                }
+    private fun startTrafficUpdates() {
+        // Day total always while Home is visible; speed only when connected.
+        TrafficStatsManager.addDayTrafficListener(dayListener)
+        if (isServiceRunning) {
+            TrafficStatsManager.addSpeedListener(speedListener)
+            trafficListening = true
+        } else {
+            TrafficStatsManager.removeSpeedListener(speedListener)
+            trafficListening = false
+            if (view != null) {
+                binding.tvSpeedUpload.text = "0 B/s"
+                binding.tvSpeedDownload.text = "0 B/s"
             }
         }
     }
 
-    private fun stopSpeedUpdates() {
-        speedJob?.cancel()
-        speedJob = null
+    private fun stopTrafficUpdates() {
+        TrafficStatsManager.removeSpeedListener(speedListener)
+        TrafficStatsManager.removeDayTrafficListener(dayListener)
+        trafficListening = false
         if (view != null) {
             binding.tvSpeedUpload.text = "0 B/s"
             binding.tvSpeedDownload.text = "0 B/s"
@@ -211,11 +209,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             applyRunningState(isLoading = false, isRunning = false)
             return
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN && MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING)) {
             host.checkAndRequestPermission(PermissionType.ACCESS_LOCAL_NETWORK) {}
         }
-
         CoreServiceManager.startVService(requireContext())
     }
 
@@ -236,28 +232,34 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private fun applyRunningState(isLoading: Boolean, isRunning: Boolean) {
         if (!isAdded || view == null) return
+
         if (isLoading) {
             binding.tvStatusState.text = getString(R.string.home_status_connecting)
-            binding.fab.setImageResource(R.drawable.ic_fab_check)
-            binding.fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.color_fab_active))
+            binding.tvSwitchCaption.text = getString(R.string.home_status_connecting)
+            switchReady = false
+            binding.switchConnection.isEnabled = false
             return
         }
 
         isServiceRunning = isRunning
+        switchReady = false
+        binding.switchConnection.isEnabled = true
+        binding.switchConnection.isChecked = isRunning
+        switchReady = true
+
         if (isRunning) {
-            binding.fab.setImageResource(R.drawable.ic_stop_24dp)
-            binding.fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.color_fab_active))
-            binding.fab.contentDescription = getString(R.string.action_stop_service)
             binding.tvStatusState.text = getString(R.string.home_status_running)
+            binding.tvSwitchCaption.text = getString(R.string.home_status_running)
+            binding.switchConnection.contentDescription = getString(R.string.action_stop_service)
             setTestState(getString(R.string.connection_connected))
-            startSpeedUpdates()
+            startTrafficUpdates()
         } else {
-            binding.fab.setImageResource(R.drawable.ic_power_24dp)
-            binding.fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.color_fab_inactive))
-            binding.fab.contentDescription = getString(R.string.tasker_start_service)
             binding.tvStatusState.text = getString(R.string.home_status_stopped)
+            binding.tvSwitchCaption.text = getString(R.string.home_status_stopped)
+            binding.switchConnection.contentDescription = getString(R.string.tasker_start_service)
             setTestState(getString(R.string.home_tap_to_test))
-            stopSpeedUpdates()
+            stopTrafficUpdates()
+            binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         }
         refreshSelectedServerMeta()
     }
@@ -267,11 +269,10 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         if (!hidden) {
             refreshModeToggle()
             refreshSelectedServerMeta()
-            if (isServiceRunning) {
-                startSpeedUpdates()
-            }
+            binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
+            startTrafficUpdates()
         } else {
-            stopSpeedUpdates()
+            stopTrafficUpdates()
         }
     }
 
@@ -279,18 +280,17 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         super.onResume()
         refreshModeToggle()
         refreshSelectedServerMeta()
-        if (isServiceRunning) {
-            startSpeedUpdates()
-        }
+        binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
+        startTrafficUpdates()
     }
 
     override fun onPause() {
-        stopSpeedUpdates()
+        stopTrafficUpdates()
         super.onPause()
     }
 
     override fun onDestroyView() {
-        stopSpeedUpdates()
+        stopTrafficUpdates()
         super.onDestroyView()
     }
 }

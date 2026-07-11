@@ -20,6 +20,7 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.NotificationManager
+import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.root.RootManager
@@ -230,6 +231,7 @@ object CoreServiceManager {
             val message = e.message?.takeUnless { it.isBlank() } ?: e.javaClass.simpleName
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: $message", e)
             MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, message)
+            TrafficStatsManager.stopServiceTracking()
             NotificationManager.cancelNotification()
             return false
         }
@@ -285,6 +287,7 @@ object CoreServiceManager {
         }
 
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, "")
+        TrafficStatsManager.startServiceTracking()
         NotificationManager.startSpeedNotification()
         ConnectionWatchdog.start()
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
@@ -316,6 +319,7 @@ object CoreServiceManager {
         }
 
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+        TrafficStatsManager.stopServiceTracking()
         NotificationManager.cancelNotification()
         ConnectionWatchdog.stop()
 
@@ -541,7 +545,10 @@ object CoreServiceManager {
 
                 Intent.ACTION_SCREEN_ON -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Screen on")
-                    NotificationManager.startSpeedNotification()
+                    if (isRunning()) {
+                        TrafficStatsManager.startServiceTracking()
+                        NotificationManager.startSpeedNotification()
+                    }
                 }
             }
         }
