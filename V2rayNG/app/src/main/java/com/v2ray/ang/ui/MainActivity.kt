@@ -25,12 +25,12 @@ class MainActivity : HelperBaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        setupToolbar(binding.toolbar, false, getString(R.string.title_server))
+        setupToolbar(binding.toolbar, false, getString(R.string.home_nav_home))
 
         binding.bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.nav_home -> switchTab(R.id.nav_home, ::HomeFragment, getString(R.string.title_server))
-                R.id.nav_subscription -> switchTab(R.id.nav_subscription, ::SubSettingFragment, getString(R.string.title_sub_setting))
+                R.id.nav_home -> switchTab(R.id.nav_home, ::HomeFragment, getString(R.string.home_nav_home))
+                R.id.nav_subscription -> switchTab(R.id.nav_subscription, ::SubSettingFragment, getString(R.string.home_nav_subscription))
                 R.id.nav_routing -> switchTab(R.id.nav_routing, ::RoutingSettingFragment, getString(R.string.routing_settings_title))
                 R.id.nav_settings -> switchTab(R.id.nav_settings, ::MoreFragment, getString(R.string.home_nav_more))
                 else -> false
@@ -41,10 +41,10 @@ class MainActivity : HelperBaseActivity() {
             binding.bottomNav.selectedItemId = R.id.nav_home
         } else {
             supportActionBar?.title = when (binding.bottomNav.selectedItemId) {
-                R.id.nav_subscription -> getString(R.string.title_sub_setting)
+                R.id.nav_subscription -> getString(R.string.home_nav_subscription)
                 R.id.nav_routing -> getString(R.string.routing_settings_title)
                 R.id.nav_settings -> getString(R.string.home_nav_more)
-                else -> getString(R.string.title_server)
+                else -> getString(R.string.home_nav_home)
             }
         }
     }
@@ -78,8 +78,16 @@ class MainActivity : HelperBaseActivity() {
         return supportFragmentManager.findFragmentByTag(tabTag(R.id.nav_home)) as? HomeFragment
     }
 
+    private fun subscriptionFragment(): SubSettingFragment? {
+        return supportFragmentManager.findFragmentByTag(tabTag(R.id.nav_subscription)) as? SubSettingFragment
+    }
+
+    fun openSubscriptionTab() {
+        binding.bottomNav.selectedItemId = R.id.nav_subscription
+    }
+
     fun refreshGroupTabTitles(refreshAll: Boolean = false) {
-        homeFragment()?.refreshGroupTabTitles(refreshAll)
+        subscriptionFragment()?.refreshGroupTabTitles(refreshAll)
     }
 
     fun restartV2Ray() {
@@ -87,12 +95,16 @@ class MainActivity : HelperBaseActivity() {
     }
 
     fun importConfigViaSub(): Boolean {
-        return homeFragment()?.importConfigViaSub() ?: false
+        return subscriptionFragment()?.importConfigViaSub() ?: false
     }
 
     override fun onResume() {
         super.onResume()
         processPendingSettingsChanges()
+        // Settings may change mode; refresh home toggle when returning.
+        homeFragment()?.let {
+            // refresh via resume of fragment already; still process flags.
+        }
     }
 
     private fun processPendingSettingsChanges() {
@@ -100,7 +112,7 @@ class MainActivity : HelperBaseActivity() {
             homeFragment()?.restartV2Ray()
         }
         if (SettingsChangeManager.consumeSetupGroupTab()) {
-            homeFragment()?.setupGroupTab()
+            subscriptionFragment()?.setupGroupTab()
         }
     }
 

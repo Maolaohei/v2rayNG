@@ -24,12 +24,15 @@ class ConnectionKeepaliveTest {
 
     @Test
     fun test_ensureSockopt_createsSockoptIfNull() {
-        val streamSettings = StreamSettingsBean()
-        assertNull(streamSettings.sockopt)
+        val outbound = OutboundBean(
+            protocol = EConfigType.VMESS.name.lowercase(),
+            streamSettings = null
+        )
 
-        val sockopt = streamSettings.ensureSockopt()
+        val sockopt = outbound.ensureSockopt()
         assertNotNull(sockopt)
-        assertNotNull(streamSettings.sockopt)
+        assertNotNull(outbound.streamSettings)
+        assertNotNull(outbound.streamSettings?.sockopt)
     }
 
     @Test
@@ -38,8 +41,12 @@ class ConnectionKeepaliveTest {
         val existingSockopt = StreamSettingsBean.SockoptBean()
         existingSockopt.tcpKeepAliveIdle = 60
         streamSettings.sockopt = existingSockopt
+        val outbound = OutboundBean(
+            protocol = EConfigType.VMESS.name.lowercase(),
+            streamSettings = streamSettings
+        )
 
-        val sockopt = streamSettings.ensureSockopt()
+        val sockopt = outbound.ensureSockopt()
         assertEquals(existingSockopt, sockopt)
         assertEquals(60, sockopt.tcpKeepAliveIdle)
     }
@@ -152,10 +159,9 @@ class ConnectionKeepaliveTest {
             protocol = EConfigType.VMESS.name.lowercase(),
             streamSettings = StreamSettingsBean()
         )
-        outbound.streamSettings?.ensureSockopt()?.let {
-            it.tcpKeepAliveIdle = 60
-            it.tcpKeepAliveInterval = 5
-        }
+        val preset = outbound.ensureSockopt()
+        preset.tcpKeepAliveIdle = 60
+        preset.tcpKeepAliveInterval = 5
 
         applyTcpKeepAlive(outbound)
 
@@ -195,8 +201,12 @@ class ConnectionKeepaliveTest {
         assert(sockopt.tcpKeepAliveInterval!! <= 15)
     }
 
+    /**
+     * Mirrors CoreOutboundBuilder.applyTcpKeepAlive:
+     * uses OutboundBean.ensureSockopt() and skips when streamSettings is null
+     * or protocol is WireGuard/Hysteria/Hysteria2.
+     */
     private fun applyTcpKeepAlive(outbound: OutboundBean) {
-        val streamSettings = outbound.streamSettings ?: return
         val protocol = outbound.protocol
         if (protocol.equals(EConfigType.WIREGUARD.name, true)
             || protocol.equals(EConfigType.HYSTERIA.name, true)
@@ -204,7 +214,9 @@ class ConnectionKeepaliveTest {
         ) {
             return
         }
-        val sockopt = streamSettings.ensureSockopt()
+        // Production only applies when streamSettings already exists.
+        if (outbound.streamSettings == null) return
+        val sockopt = outbound.ensureSockopt()
         if (sockopt.tcpKeepAliveIdle == null) {
             sockopt.tcpKeepAliveIdle = 60
         }

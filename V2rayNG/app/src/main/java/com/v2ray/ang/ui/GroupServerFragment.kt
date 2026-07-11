@@ -9,7 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.v2ray.ang.AppConfig
@@ -67,11 +67,8 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
 
         adapter = MainRecyclerAdapter(mainViewModel, ActivityAdapterListener())
         binding.recyclerView.setHasFixedSize(true)
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_DOUBLE_COLUMN_DISPLAY, false)) {
-            binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 2)
-        } else {
-            binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 1)
-        }
+        // Single-column list so long node names stay fully readable.
+        binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         // Card spacing is handled by item layout margins.
         binding.recyclerView.adapter = adapter
 
@@ -312,7 +309,7 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
 
         if (position >= 0) {
             // Get the layout manager
-            val layoutManager = recyclerView.layoutManager as? GridLayoutManager
+            val layoutManager = recyclerView.layoutManager as? LinearLayoutManager
 
             if (layoutManager != null) {
                 // Scroll to position with offset to center it on screen
@@ -321,7 +318,7 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
                     layoutManager.scrollToPositionWithOffset(position, recyclerView.height / 3)
                 }
             } else {
-                // Fallback to smooth scroll if layout manager is not GridLayoutManager
+                // Fallback to smooth scroll if layout manager is not LinearLayoutManager
                 recyclerView.smoothScrollToPosition(position)
             }
         } else {

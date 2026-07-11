@@ -7,7 +7,6 @@ import android.view.ViewGroup
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
-import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.contracts.MainAdapterListener
 import com.v2ray.ang.databinding.ItemRecyclerFooterBinding
@@ -33,7 +32,6 @@ class MainRecyclerAdapter(
         private const val VIEW_TYPE_FOOTER = 2
     }
 
-    private val doubleColumnDisplay = MmkvManager.decodeSettingsBool(AppConfig.PREF_DOUBLE_COLUMN_DISPLAY, false)
     private var data: List<ServersCache> = emptyList()
     private var selectedGuid: String? = null
 
@@ -93,31 +91,20 @@ class MainRecyclerAdapter(
             holder.itemMainBinding.tvSubscription.text = subRemarks
             holder.itemMainBinding.layoutSubscription.visibility = if (subRemarks.isEmpty()) View.GONE else View.VISIBLE
 
-            if (doubleColumnDisplay) {
-                holder.itemMainBinding.layoutShare.visibility = View.GONE
-                holder.itemMainBinding.layoutEdit.visibility = View.GONE
-                holder.itemMainBinding.layoutRemove.visibility = View.GONE
-                holder.itemMainBinding.layoutMore.visibility = View.VISIBLE
+            // Always single-column actions: full-width row for long node names.
+            holder.itemMainBinding.layoutShare.visibility = View.VISIBLE
+            holder.itemMainBinding.layoutEdit.visibility = View.VISIBLE
+            holder.itemMainBinding.layoutRemove.visibility = View.VISIBLE
+            holder.itemMainBinding.layoutMore.visibility = View.GONE
 
-                holder.itemMainBinding.layoutMore.setOnClickListener {
-                    adapterListener?.onShare(guid, profile, position, true)
-                }
-            } else {
-                holder.itemMainBinding.layoutShare.visibility = View.VISIBLE
-                holder.itemMainBinding.layoutEdit.visibility = View.VISIBLE
-                holder.itemMainBinding.layoutRemove.visibility = View.VISIBLE
-                holder.itemMainBinding.layoutMore.visibility = View.GONE
-
-                holder.itemMainBinding.layoutShare.setOnClickListener {
-                    adapterListener?.onShare(guid, profile, position, false)
-                }
-
-                holder.itemMainBinding.layoutEdit.setOnClickListener {
-                    adapterListener?.onEdit(guid, position, profile)
-                }
-                holder.itemMainBinding.layoutRemove.setOnClickListener {
-                    adapterListener?.onRemove(guid, position)
-                }
+            holder.itemMainBinding.layoutShare.setOnClickListener {
+                adapterListener?.onShare(guid, profile, position, false)
+            }
+            holder.itemMainBinding.layoutEdit.setOnClickListener {
+                adapterListener?.onEdit(guid, position, profile)
+            }
+            holder.itemMainBinding.layoutRemove.setOnClickListener {
+                adapterListener?.onRemove(guid, position)
             }
 
             holder.itemMainBinding.infoContainer.setOnClickListener {

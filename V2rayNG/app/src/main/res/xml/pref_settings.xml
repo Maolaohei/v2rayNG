@@ -19,11 +19,6 @@
             android:title="@string/title_pref_start_scan_immediate" />
 
         <CheckBoxPreference
-            android:key="pref_double_column_display"
-            android:summary="@string/summary_pref_double_column_display"
-            android:title="@string/title_pref_double_column_display" />
-
-        <CheckBoxPreference
             android:key="pref_group_all_display"
             android:summary="@string/summary_pref_group_all_display"
             android:title="@string/title_pref_group_all_display" />

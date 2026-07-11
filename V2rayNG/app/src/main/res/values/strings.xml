@@ -380,6 +380,10 @@
     <string name="home_speed_upload">Upload</string>
     <string name="home_speed_download">Download</string>
     <string name="home_mode_label">Mode</string>
+    <string name="home_mode_vpn">VPN</string>
+    <string name="home_current_node">Current node</string>
+    <string name="home_goto_subscription_hint">Switch nodes in the Subscription tab</string>
+    <string name="home_manage_subscriptions">Manage subscriptions</string>
     <string name="home_nodes_count">Configs · %d</string>
     <string name="home_test_all">Test all</string>
     <string name="home_connectivity">Connectivity</string>

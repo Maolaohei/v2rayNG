@@ -45,15 +45,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val updateTestResultAction by lazy { MutableLiveData<String>() }
     val selectionChangedAction by lazy { MutableLiveData<String?>() }
     private var selectedServer: String? = null
+    private var broadcastRegistered: Boolean = false
 
     /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
      * `registerReceiver(Context, BroadcastReceiver, IntentFilter, int)`.
      */
     fun startListenBroadcast() {
-        isRunning.value = false
-        val mFilter = IntentFilter(AppConfig.BROADCAST_ACTION_ACTIVITY)
-        ContextCompat.registerReceiver(getApplication(), mMsgReceiver, mFilter, Utils.receiverFlags())
+        if (!broadcastRegistered) {
+            val mFilter = IntentFilter(AppConfig.BROADCAST_ACTION_ACTIVITY)
+            ContextCompat.registerReceiver(getApplication(), mMsgReceiver, mFilter, Utils.receiverFlags())
+            broadcastRegistered = true
+            isRunning.value = false
+        }
         MessageUtil.sendMsg2Service(getApplication(), AppConfig.MSG_REGISTER_CLIENT, "")
     }
 
@@ -61,7 +65,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Called when the ViewModel is cleared.
      */
     override fun onCleared() {
-        getApplication<AngApplication>().unregisterReceiver(mMsgReceiver)
+        if (broadcastRegistered) {
+            getApplication<AngApplication>().unregisterReceiver(mMsgReceiver)
+            broadcastRegistered = false
+        }
         LogUtil.i(AppConfig.TAG, "Main ViewModel is cleared")
         super.onCleared()
     }

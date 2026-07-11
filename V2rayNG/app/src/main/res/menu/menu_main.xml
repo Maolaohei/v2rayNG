@@ -67,6 +67,10 @@
         </menu>
     </item>
     <item
+        android:id="@+id/manage_subscriptions"
+        android:title="@string/home_manage_subscriptions"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/service_restart"
         android:title="@string/title_service_restart"
         app:showAsAction="never" />

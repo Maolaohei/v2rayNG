@@ -6,72 +6,132 @@
     android:orientation="vertical"
     android:paddingTop="@dimen/padding_spacing_dp8">
 
-    <HorizontalScrollView
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingStart="@dimen/padding_spacing_dp16"
         android:paddingEnd="@dimen/padding_spacing_dp16"
-        android:scrollbars="none">
+        android:paddingBottom="@dimen/padding_spacing_dp4"
+        android:text="@string/home_more_tools"
+        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_home_list_card"
+        android:orientation="vertical">
 
         <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/item_per_app"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
+            android:id="@+id/item_per_app"
+            style="@style/HomeMoreItem">
+            <TextView
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/per_app_proxy_settings" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/item_assets"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/title_user_asset_setting" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/item_logcat"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/title_logcat" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/item_backup"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/title_configuration_backup_restore" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/item_update"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/update_check_for_update" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/item_about"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/title_about" />
+                android:layout_weight="1"
+                android:text="@string/per_app_proxy_settings"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
-    </HorizontalScrollView>
+
+        <LinearLayout
+            android:id="@+id/item_assets"
+            style="@style/HomeMoreItem">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/title_user_asset_setting"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/item_logcat"
+            style="@style/HomeMoreItem">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/title_logcat"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/item_backup"
+            style="@style/HomeMoreItem">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/title_configuration_backup_restore"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/item_update"
+            style="@style/HomeMoreItem">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/update_check_for_update"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/item_about"
+            style="@style/HomeMoreItem">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/title_about"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right_24dp"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+    </LinearLayout>
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingStart="@dimen/padding_spacing_dp16"
-        android:paddingTop="@dimen/padding_spacing_dp8"
+        android:paddingTop="@dimen/padding_spacing_dp16"
         android:paddingEnd="@dimen/padding_spacing_dp16"
         android:paddingBottom="@dimen/padding_spacing_dp4"
         android:text="@string/title_settings"

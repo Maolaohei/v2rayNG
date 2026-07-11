@@ -7,7 +7,7 @@ import com.v2ray.ang.dto.GroupMapItem
 
 /**
  * Pager adapter for subscription groups.
- * Hosted by [HomeFragment] so group pages share its child FragmentManager.
+ * Hosted by [SubSettingFragment] so group pages share its child FragmentManager.
  */
 class GroupPagerAdapter(fragment: Fragment, var groups: List<GroupMapItem>) : FragmentStateAdapter(fragment) {
     override fun getItemCount(): Int = groups.size
