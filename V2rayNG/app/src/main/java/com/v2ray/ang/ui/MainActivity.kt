@@ -19,12 +19,7 @@ class MainActivity : HelperBaseActivity() {
     }
 
     val requestActivityLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (SettingsChangeManager.consumeRestartService() && mainViewModel.isRunning.value == true) {
-            homeFragment()?.restartV2Ray()
-        }
-        if (SettingsChangeManager.consumeSetupGroupTab()) {
-            homeFragment()?.setupGroupTab()
-        }
+        processPendingSettingsChanges()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +88,20 @@ class MainActivity : HelperBaseActivity() {
 
     fun importConfigViaSub(): Boolean {
         return homeFragment()?.importConfigViaSub() ?: false
+    }
+
+    override fun onResume() {
+        super.onResume()
+        processPendingSettingsChanges()
+    }
+
+    private fun processPendingSettingsChanges() {
+        if (SettingsChangeManager.consumeRestartService() && mainViewModel.isRunning.value == true) {
+            homeFragment()?.restartV2Ray()
+        }
+        if (SettingsChangeManager.consumeSetupGroupTab()) {
+            homeFragment()?.setupGroupTab()
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

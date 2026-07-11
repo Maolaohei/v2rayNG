@@ -56,8 +56,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var speedJob: Job? = null
     private var isServiceRunning: Boolean = false
     private var broadcastStarted: Boolean = false
-    private val speedListener: (Long, Long) -> Unit = { up, down ->
-        if (!isAdded) return@speedListener
+    private val speedListener: (Long, Long) -> Unit = listener@{ up, down ->
+        if (!isAdded) return@listener
         view?.post {
             if (!isAdded) return@post
             binding.tvSpeedUpload.text = up.toSpeedString()
@@ -748,11 +748,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
      */
     private fun showFileChooser() {
         host.launchFileChooser { uri ->
-            if (uri == null) {
-                return@host.launchFileChooser
+            if (uri != null) {
+                readContentFromUri(uri)
             }
-
-            readContentFromUri(uri)
         }
     }
 
