@@ -83,8 +83,10 @@ class MainRecyclerAdapter(
 
             if (guid == selectedGuid) {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(R.color.colorIndicator)
+                holder.itemMainBinding.infoContainer.setBackgroundResource(R.drawable.bg_home_node_item_selected)
             } else {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(0)
+                holder.itemMainBinding.infoContainer.setBackgroundResource(R.drawable.bg_home_node_item)
             }
 
             val subRemarks = getSubscriptionRemarks(profile)

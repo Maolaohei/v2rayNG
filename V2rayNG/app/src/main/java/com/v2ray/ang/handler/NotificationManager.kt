@@ -24,6 +24,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.min
 
 object NotificationManager {
@@ -38,6 +39,19 @@ object NotificationManager {
     private var mBuilder: NotificationCompat.Builder? = null
     private var speedNotificationJob: Job? = null
     private var mNotificationManager: NotificationManager? = null
+    private val speedUpdateListeners = CopyOnWriteArrayList<(Long, Long) -> Unit>()
+
+    fun addSpeedUpdateListener(listener: (Long, Long) -> Unit) {
+        speedUpdateListeners.addIfAbsent(listener)
+    }
+
+    fun removeSpeedUpdateListener(listener: (Long, Long) -> Unit) {
+        speedUpdateListeners.remove(listener)
+    }
+
+    private fun notifySpeedListeners(upBytesPerSec: Long, downBytesPerSec: Long) {
+        speedUpdateListeners.forEach { it(upBytesPerSec, downBytesPerSec) }
+    }
 
     /**
      * Starts the speed notification.
@@ -252,6 +266,10 @@ object NotificationManager {
         val proxyTotal = proxyUplink + proxyDownlink
         val directTotal = directUplink + directDownlink
         val zeroSpeed = proxyTotal + directTotal == 0L
+        notifySpeedListeners(
+            (proxyUplink / sinceLastQueryInSeconds).toLong(),
+            (proxyDownlink / sinceLastQueryInSeconds).toLong()
+        )
         if (!zeroSpeed || !lastZeroSpeed) {
             val text = StringBuilder()
             appendSpeedString(

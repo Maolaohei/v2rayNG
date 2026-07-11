@@ -9,4 +9,8 @@
     <dimen name="view_height_dp64">64dp</dimen>
     <dimen name="view_height_dp120">120dp</dimen>
     <dimen name="view_height_dp160">160dp</dimen>
+    <dimen name="home_status_power_size">52dp</dimen>
+    <dimen name="home_card_radius">16dp</dimen>
+    <dimen name="home_node_margin">6dp</dimen>
 </resources>
+

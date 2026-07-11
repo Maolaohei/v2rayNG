@@ -5,10 +5,12 @@ import android.content.res.ColorStateList
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -29,8 +31,10 @@ import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
+import com.v2ray.ang.extension.toSpeedString
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
@@ -38,7 +42,9 @@ import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -50,10 +56,20 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
     val mainViewModel: MainViewModel by viewModels()
     private lateinit var groupPagerAdapter: GroupPagerAdapter
     private var tabMediator: TabLayoutMediator? = null
+    private var speedJob: Job? = null
+    private var isServiceRunning: Boolean = false
+    private val speedListener: (Long, Long) -> Unit = { up, down ->
+        runOnUiThread {
+            binding.tvSpeedUpload.text = up.toSpeedString()
+            binding.tvSpeedDownload.text = down.toSpeedString()
+        }
+    }
 
     private val requestVpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == RESULT_OK) {
             startV2Ray()
+        } else {
+            applyRunningState(isLoading = false, isRunning = mainViewModel.isRunning.value == true)
         }
     }
     private val requestActivityLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -78,11 +94,16 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
 
         // setup navigation drawer
         setupNavigationDrawer()
+        setupBottomNav()
 
         binding.fab.setOnClickListener { handleFabAction() }
         binding.layoutTest.setOnClickListener { handleLayoutTestClick() }
+        binding.layoutMode.setOnClickListener { toggleProxyMode() }
+        binding.btnTestAll.setOnClickListener { testAllConfigs() }
 
         setupGroupTab()
+        refreshModeLabel()
+        refreshSelectedServerMeta()
         setupViewModel()
         lifecycleScope.launch(Dispatchers.IO) {
             SubscriptionUpdater.sync()
@@ -90,6 +111,29 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
         mainViewModel.reloadServerList()
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {
+        }
+    }
+
+
+    private fun setupBottomNav() {
+        binding.bottomNav.selectedItemId = R.id.nav_home
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_home -> true
+                R.id.nav_subscription -> {
+                    requestActivityLauncher.launch(Intent(this, SubSettingActivity::class.java))
+                    false
+                }
+                R.id.nav_routing -> {
+                    requestActivityLauncher.launch(Intent(this, RoutingSettingActivity::class.java))
+                    false
+                }
+                R.id.nav_settings -> {
+                    requestActivityLauncher.launch(Intent(this, SettingsActivity::class.java))
+                    false
+                }
+                else -> false
+            }
         }
     }
 
@@ -121,7 +165,14 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
     private fun setupViewModel() {
         mainViewModel.updateTestResultAction.observe(this) { setTestState(it) }
         mainViewModel.isRunning.observe(this) { isRunning ->
-            applyRunningState(false, isRunning)
+            applyRunningState(false, isRunning == true)
+        }
+        mainViewModel.selectionChangedAction.observe(this) {
+            refreshSelectedServerMeta()
+        }
+        mainViewModel.updateListAction.observe(this) {
+            refreshNodesCount()
+            refreshSelectedServerMeta()
         }
         mainViewModel.startListenBroadcast()
         mainViewModel.initAssets(assets)
@@ -142,8 +193,9 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
         val targetIndex = groups.indexOfFirst { it.id == mainViewModel.subscriptionId }.takeIf { it >= 0 } ?: (groups.size - 1)
         binding.viewPager.setCurrentItem(targetIndex, false)
 
-        binding.tabGroup.isVisible = groups.size > 1
+        binding.tabGroup.isVisible = groups.isNotEmpty()
         refreshGroupTabTitles(true)
+        refreshNodesCount()
     }
 
     fun refreshGroupTabTitles(refreshAll: Boolean = false) {
@@ -187,13 +239,106 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
             setTestState(getString(R.string.connection_test_testing))
             mainViewModel.testCurrentServerRealPing()
         } else {
-            // service not running: keep existing no-op (could show a message if desired)
+            setTestState(getString(R.string.home_start_first))
         }
+    }
+
+    private fun testAllConfigs() {
+        if (mainViewModel.serversCache.isEmpty()) {
+            toast(R.string.toast_none_data)
+            return
+        }
+        toast(getString(R.string.connection_test_testing_count, mainViewModel.serversCache.count()))
+        mainViewModel.testAllRealPing()
+    }
+
+    private fun toggleProxyMode() {
+        val current = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN)
+        val next = if (current == AppConfig.VPN) "Proxy only" else AppConfig.VPN
+        MmkvManager.encodeSettings(AppConfig.PREF_MODE, next)
+        refreshModeLabel()
+        if (mainViewModel.isRunning.value == true) {
+            SettingsChangeManager.makeRestartService()
+            restartV2Ray()
+        }
+    }
+
+    private fun refreshModeLabel() {
+        val mode = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN
+        binding.tvModeValue.text = if (mode == AppConfig.VPN) {
+            AppConfig.VPN
+        } else {
+            getString(R.string.proxy_only)
+        }
+    }
+
+    private fun refreshNodesCount() {
+        binding.tvNodesCount.text = getString(R.string.home_nodes_count, mainViewModel.serversCache.size)
+    }
+
+    private fun refreshSelectedServerMeta() {
+        val guid = MmkvManager.getSelectServer()
+        val profile = guid?.let { MmkvManager.decodeServerConfig(it) }
+        val mode = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN
+        val modeLabel = if (mode == AppConfig.VPN) AppConfig.VPN else getString(R.string.proxy_only)
+        if (profile == null) {
+            binding.tvStatusMeta.text = getString(R.string.home_select_node_hint) + " · " + modeLabel
+        } else if (isServiceRunning) {
+            binding.tvStatusMeta.text = profile.remarks + " · " + modeLabel
+        } else {
+            binding.tvStatusMeta.text = getString(R.string.home_select_node_hint) + " · " + profile.remarks + " · " + modeLabel
+        }
+    }
+
+    private fun startSpeedUpdates() {
+        stopSpeedUpdates()
+        binding.tvSpeedUpload.text = "0 B/s"
+        binding.tvSpeedDownload.text = "0 B/s"
+        // When notification speed is enabled, reuse its stats to avoid double-reset.
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) == true) {
+            NotificationManager.addSpeedUpdateListener(speedListener)
+            return
+        }
+        speedJob = lifecycleScope.launch(Dispatchers.IO) {
+            var lastQueryTime = System.currentTimeMillis()
+            while (isActive) {
+                delay(3000L)
+                if (!CoreServiceManager.isRunning()) continue
+                val now = System.currentTimeMillis()
+                val elapsed = ((now - lastQueryTime).coerceAtLeast(1L)) / 1000.0
+                var up = 0L
+                var down = 0L
+                CoreServiceManager.queryAllOutboundTrafficStats().forEach { stat ->
+                    if (stat.tag.startsWith(AppConfig.TAG_PROXY)) {
+                        when (stat.direction) {
+                            AppConfig.UPLINK -> up += stat.value
+                            AppConfig.DOWNLINK -> down += stat.value
+                        }
+                    }
+                }
+                lastQueryTime = now
+                val upText = (up / elapsed).toLong().toSpeedString()
+                val downText = (down / elapsed).toLong().toSpeedString()
+                withContext(Dispatchers.Main) {
+                    binding.tvSpeedUpload.text = upText
+                    binding.tvSpeedDownload.text = downText
+                }
+            }
+        }
+    }
+
+    private fun stopSpeedUpdates() {
+        NotificationManager.removeSpeedUpdateListener(speedListener)
+        speedJob?.cancel()
+        speedJob = null
+        binding.tvSpeedUpload.text = "0 B/s"
+        binding.tvSpeedDownload.text = "0 B/s"
     }
 
     private fun startV2Ray() {
         if (MmkvManager.getSelectServer().isNullOrEmpty()) {
             toast(R.string.title_file_chooser)
+            applyRunningState(isLoading = false, isRunning = false)
             return
         }
 
@@ -215,35 +360,68 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
     }
 
     private fun setTestState(content: String?) {
-        binding.tvTestState.text = content
+        binding.tvTestState.text = content ?: getString(R.string.home_tap_to_test)
     }
 
     private fun applyRunningState(isLoading: Boolean, isRunning: Boolean) {
         if (isLoading) {
+            binding.tvStatusState.text = getString(R.string.home_status_connecting)
             binding.fab.setImageResource(R.drawable.ic_fab_check)
+            binding.fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.color_fab_active))
             return
         }
 
+        isServiceRunning = isRunning
         if (isRunning) {
             binding.fab.setImageResource(R.drawable.ic_stop_24dp)
             binding.fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.color_fab_active))
             binding.fab.contentDescription = getString(R.string.action_stop_service)
+            binding.tvStatusState.text = getString(R.string.home_status_running)
+            binding.layoutStatus.setBackgroundResource(R.drawable.bg_home_status_card_running)
+            setStatusDot(true)
             setTestState(getString(R.string.connection_connected))
             binding.layoutTest.isFocusable = true
+            startSpeedUpdates()
         } else {
-            binding.fab.setImageResource(R.drawable.ic_play_24dp)
+            binding.fab.setImageResource(R.drawable.ic_power_24dp)
             binding.fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.color_fab_inactive))
             binding.fab.contentDescription = getString(R.string.tasker_start_service)
-            setTestState(getString(R.string.connection_not_connected))
+            binding.tvStatusState.text = getString(R.string.home_status_stopped)
+            binding.layoutStatus.setBackgroundResource(R.drawable.bg_home_status_card)
+            setStatusDot(false)
+            setTestState(getString(R.string.home_tap_to_test))
             binding.layoutTest.isFocusable = false
+            stopSpeedUpdates()
+        }
+        refreshSelectedServerMeta()
+    }
+
+    private fun setStatusDot(running: Boolean) {
+        val color = ContextCompat.getColor(
+            this,
+            if (running) R.color.colorPing else R.color.color_fab_inactive
+        )
+        val bg = binding.viewStatusDot.background
+        if (bg is GradientDrawable) {
+            bg.setColor(color)
+        } else {
+            binding.viewStatusDot.backgroundTintList = ColorStateList.valueOf(color)
         }
     }
 
     override fun onResume() {
         super.onResume()
+        binding.bottomNav.selectedItemId = R.id.nav_home
+        refreshModeLabel()
+        refreshSelectedServerMeta()
+        refreshNodesCount()
+        if (isServiceRunning) {
+            startSpeedUpdates()
+        }
     }
 
     override fun onPause() {
+        stopSpeedUpdates()
         super.onPause()
     }
 
@@ -691,6 +869,7 @@ class MainActivity : HelperBaseActivity(), NavigationView.OnNavigationItemSelect
     }
 
     override fun onDestroy() {
+        stopSpeedUpdates()
         tabMediator?.detach()
         super.onDestroy()
     }

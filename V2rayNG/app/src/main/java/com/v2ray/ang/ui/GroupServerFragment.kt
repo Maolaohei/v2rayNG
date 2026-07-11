@@ -72,7 +72,7 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
         } else {
             binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 1)
         }
-        addCustomDividerToRecyclerView(binding.recyclerView, R.drawable.custom_divider)
+        // Card spacing is handled by item layout margins.
         binding.recyclerView.adapter = adapter
 
         itemTouchHelper = ItemTouchHelper(SimpleItemTouchHelperCallback(adapter, allowSwipe = false))

@@ -54,4 +54,7 @@
     <color name="md_theme_shadow">#000000</color>
     <color name="md_theme_surfaceTint">#000000</color>
     <color name="md_theme_scrim">#000000</color>
+    <color name="color_home_node_selected_bg">#1Af97910</color>
+    <color name="color_home_status_running">#1A009966</color>
 </resources>
+
