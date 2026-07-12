@@ -36,6 +36,8 @@ import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
@@ -50,6 +52,9 @@ object CoreServiceManager {
     private var currentConfig: ProfileItem? = null
     private var processFinder: XrayProcessFinder? = null
     private var browserDialer: IDialerService? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var intentionalStop = false
 
     var serviceControl: SoftReference<ServiceControl>? = null
         set(value) {
@@ -301,14 +306,19 @@ object CoreServiceManager {
     fun stopCoreLoop(): Boolean {
         val service = getService() ?: return false
 
+        intentionalStop = true
         if (coreController.isRunning) {
-            CoroutineScope(Dispatchers.IO).launch {
+            serviceScope.launch {
                 try {
                     coreController.stopLoop()
                 } catch (e: Exception) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to stop V2Ray loop", e)
+                } finally {
+                    intentionalStop = false
                 }
             }
+        } else {
+            intentionalStop = false
         }
 
         // Close existing browser dialer
@@ -371,7 +381,7 @@ object CoreServiceManager {
             return
         }
 
-        CoroutineScope(Dispatchers.IO).launch {
+        serviceScope.launch {
             val service = getService() ?: return@launch
             var time = -1L
             var errorStr = ""
@@ -430,17 +440,32 @@ object CoreServiceManager {
 
         /**
          * Called when V2Ray core shuts down.
-         * @return 0 for success, any other value for failure.
+         * Instead of stopping the service, attempt to restart the core so the
+         * foreground service stays alive and the user's proxy stays available.
+         * Skips restart when the stop was triggered intentionally (user-initiated).
          */
         override fun shutdown(): Long {
-            val serviceControl = serviceControl?.get() ?: return -1
-            return try {
-                serviceControl.stopService()
-                0
-            } catch (e: Exception) {
-                LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to stop service", e)
-                -1
+            if (intentionalStop) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core shutdown (intentional), not restarting")
+                return 0
             }
+            LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core shutdown callback fired (unexpected), attempting restart")
+            val svc = getService() ?: return -1
+            serviceScope.launch {
+                try {
+                    kotlinx.coroutines.delay(1000L)
+                    if (!intentionalStop && !coreController.isRunning) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-Manager: Restarting core after unexpected shutdown")
+                        startCoreLoop(null)
+                    }
+                } catch (e: Exception) {
+                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to restart core after shutdown, stopping service", e)
+                    MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+                    TrafficStatsManager.stopServiceTracking()
+                    NotificationManager.cancelNotification()
+                }
+            }
+            return 0
         }
 
         /**
