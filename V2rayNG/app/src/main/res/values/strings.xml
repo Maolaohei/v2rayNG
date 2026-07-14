@@ -379,6 +379,13 @@
     <string name="home_select_node_hint">Select a config, then start</string>
     <string name="home_speed_upload">Upload</string>
     <string name="home_speed_download">Download</string>
+    <string name="home_metric_region">Region</string>
+    <string name="home_metric_latency">Latency</string>
+    <string name="home_metric_placeholder">—</string>
+    <string name="home_metric_latency_unknown">—</string>
+    <string name="home_metric_region_unknown">—</string>
+    <string name="home_metric_latency_ms">%d ms</string>
+    <string name="home_metric_latency_fail">Failed</string>
     <string name="home_mode_label">Mode</string>
     <string name="home_mode_vpn">VPN</string>
     <string name="home_connection_status">Connection</string>

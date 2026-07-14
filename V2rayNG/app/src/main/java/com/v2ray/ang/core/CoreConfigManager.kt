@@ -626,13 +626,11 @@ object CoreConfigManager {
     }
 
     /**
-     * Remove speed-test runtime sections when the feature is disabled.
+     * Keep outbound stats enabled for home traffic metrics and optional notification speed.
+     * [AppConfig.PREF_SPEED_ENABLED] only controls notification UI, not core counters.
      */
     private fun applySpeedDisabled(v2rayConfig: V2rayConfig) {
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) != true) {
-            v2rayConfig.stats = null
-            v2rayConfig.policy = null
-        }
+        // no-op: stripping stats made home speeds / 24h traffic always 0 when pref off
     }
 
     /**

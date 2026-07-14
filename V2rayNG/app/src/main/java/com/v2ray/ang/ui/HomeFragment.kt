@@ -12,7 +12,6 @@ import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.databinding.FragmentHomeBinding
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.extension.toast
-import com.v2ray.ang.extension.toSpeedString
 import com.v2ray.ang.extension.toTrafficString
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
@@ -25,7 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Slim home: system switch, connectivity test, live speeds, 24h proxy traffic,
+ * Slim home: system switch, connectivity test, region/latency/24h traffic,
  * mode (VPN / Proxy only), current node summary.
  */
 class HomeFragment : BaseFragment<FragmentHomeBinding>() {
@@ -40,18 +39,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var broadcastStarted: Boolean = false
     private var modeToggleReady: Boolean = false
     private var switchReady: Boolean = false
-    private var trafficListening: Boolean = false
 
-    private val speedListener: (TrafficStatsManager.SpeedSample) -> Unit = { sample ->
-        if (isAdded) {
-            view?.post {
-                if (isAdded && view != null) {
-                    binding.tvSpeedUpload.text = sample.upBytesPerSec.toSpeedString()
-                    binding.tvSpeedDownload.text = sample.downBytesPerSec.toSpeedString()
-                }
-            }
-        }
-    }
+    private var lastRegion: String? = null
+    private var lastLatencyMs: Long? = null
 
     private val dayListener: (Long) -> Unit = { total ->
         if (isAdded) {
@@ -73,6 +63,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         setupModeToggle()
         refreshModeToggle()
         refreshSelectedServerMeta()
+        refreshMetricsFromCache()
         binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         setupViewModel()
 
@@ -84,15 +75,23 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     private fun setupViewModel() {
-        mainViewModel.updateTestResultAction.observe(viewLifecycleOwner) { setTestState(it) }
+        mainViewModel.updateTestResultAction.observe(viewLifecycleOwner) { content ->
+            setTestState(content)
+            applyTestResultMetrics(content)
+        }
         mainViewModel.isRunning.observe(viewLifecycleOwner) { isRunning ->
             applyRunningState(false, isRunning == true)
         }
         mainViewModel.selectionChangedAction.observe(viewLifecycleOwner) {
+            // Node changed: region from previous exit IP is stale.
+            lastRegion = null
+            lastLatencyMs = null
             refreshSelectedServerMeta()
+            refreshMetricsFromCache()
         }
         mainViewModel.updateListAction.observe(viewLifecycleOwner) {
             refreshSelectedServerMeta()
+            refreshMetricsFromCache()
         }
         if (!broadcastStarted) {
             mainViewModel.startListenBroadcast()
@@ -146,6 +145,74 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         binding.tvCurrentNode.text = profile?.remarks ?: getString(R.string.home_select_node_hint)
     }
 
+    private fun refreshMetricsFromCache() {
+        if (!isAdded || view == null) return
+
+        val regionText = lastRegion?.takeIf { it.isNotBlank() }
+            ?: getString(R.string.home_metric_region_unknown)
+        binding.tvMetricRegion.text = regionText
+
+        val latencyFromTest = lastLatencyMs
+        val latencyFromAff = MmkvManager.getSelectServer()
+            ?.let { MmkvManager.decodeServerAffiliationInfo(it)?.testDelayMillis }
+            ?.takeIf { it != 0L }
+
+        when {
+            latencyFromTest != null && latencyFromTest >= 0L -> {
+                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_ms, latencyFromTest.toInt())
+            }
+            latencyFromTest != null && latencyFromTest < 0L -> {
+                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_fail)
+            }
+            latencyFromAff != null && latencyFromAff > 0L -> {
+                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_ms, latencyFromAff.toInt())
+            }
+            latencyFromAff != null && latencyFromAff < 0L -> {
+                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_fail)
+            }
+            else -> {
+                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_unknown)
+            }
+        }
+    }
+
+    /**
+     * Connectivity test payload examples:
+     * - "Success: Connection took 123ms"
+     * - "连接成功：延时 123 毫秒"
+     * - optional second line: "(US) 1.2.3.4"
+     */
+    private fun applyTestResultMetrics(content: String?) {
+        if (content.isNullOrBlank()) return
+
+        val latencyMatch = Regex("""(?i)(?:took|延时)\s*(\d+)\s*(?:ms|毫秒)?|(\d+)\s*ms\b""")
+            .find(content)
+        val latency = latencyMatch?.groupValues
+            ?.drop(1)
+            ?.firstOrNull { it.isNotBlank() }
+            ?.toLongOrNull()
+        if (latency != null) {
+            lastLatencyMs = latency
+        } else if (
+            content.contains("Fail", ignoreCase = true) ||
+            content.contains("失败") ||
+            content.contains("error", ignoreCase = true)
+        ) {
+            lastLatencyMs = -1L
+        }
+
+        // Prefer IP-API country from trailing "(CC) x.x.x.x"
+        val regionMatch = Regex("""\(([A-Za-z]{2}|[^)\n]{1,24})\)\s*\S+""")
+            .findAll(content)
+            .lastOrNull()
+        val region = regionMatch?.groupValues?.getOrNull(1)?.trim()
+        if (!region.isNullOrBlank() && !region.equals("unknown", ignoreCase = true)) {
+            lastRegion = region.uppercase()
+        }
+
+        refreshMetricsFromCache()
+    }
+
     fun onVpnPermissionResult(granted: Boolean) {
         if (granted) {
             startV2Ray()
@@ -182,28 +249,14 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     private fun startTrafficUpdates() {
-        // Day total always while Home is visible; speed only when connected.
         TrafficStatsManager.addDayTrafficListener(dayListener)
-        if (isServiceRunning) {
-            TrafficStatsManager.addSpeedListener(speedListener)
-            trafficListening = true
-        } else {
-            TrafficStatsManager.removeSpeedListener(speedListener)
-            trafficListening = false
-            if (view != null) {
-                binding.tvSpeedUpload.text = "0 B/s"
-                binding.tvSpeedDownload.text = "0 B/s"
-            }
-        }
     }
 
     private fun stopTrafficUpdates() {
-        TrafficStatsManager.removeSpeedListener(speedListener)
         TrafficStatsManager.removeDayTrafficListener(dayListener)
-        trafficListening = false
         if (view != null) {
-            binding.tvSpeedUpload.text = "0 B/s"
-            binding.tvSpeedDownload.text = "0 B/s"
+            // keep last 24h value visible; only refresh from cache
+            binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         }
     }
 
@@ -262,10 +315,13 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             binding.tvSwitchCaption.text = getString(R.string.home_status_stopped)
             binding.switchConnection.contentDescription = getString(R.string.tasker_start_service)
             setTestState(getString(R.string.home_tap_to_test))
+            // Exit IP no longer valid when disconnected.
+            lastRegion = null
             stopTrafficUpdates()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         }
         refreshSelectedServerMeta()
+        refreshMetricsFromCache()
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
@@ -274,6 +330,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             refreshModeToggle()
             refreshSelectedServerMeta()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
+            refreshMetricsFromCache()
             startTrafficUpdates()
         } else {
             stopTrafficUpdates()
@@ -285,6 +342,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         refreshModeToggle()
         refreshSelectedServerMeta()
         binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
+        refreshMetricsFromCache()
         startTrafficUpdates()
     }
 

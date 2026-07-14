@@ -105,21 +105,20 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/home_speed_upload"
+                        android:text="@string/home_metric_region"
                         android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
-                        android:id="@+id/tv_speed_upload"
+                        android:id="@+id/tv_metric_region"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/padding_spacing_dp4"
                         android:ellipsize="end"
                         android:maxLines="1"
-                        android:text="0 B/s"
+                        android:text="@string/home_metric_placeholder"
                         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textStyle="bold"
-                        tools:ignore="HardcodedText" />
+                        android:textStyle="bold" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -134,21 +133,20 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/home_speed_download"
+                        android:text="@string/home_metric_latency"
                         android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
-                        android:id="@+id/tv_speed_download"
+                        android:id="@+id/tv_metric_latency"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/padding_spacing_dp4"
                         android:ellipsize="end"
                         android:maxLines="1"
-                        android:text="0 B/s"
+                        android:text="@string/home_metric_placeholder"
                         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textStyle="bold"
-                        tools:ignore="HardcodedText" />
+                        android:textStyle="bold" />
                 </LinearLayout>
 
                 <LinearLayout
