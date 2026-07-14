@@ -55,6 +55,14 @@ object CoreServiceManager {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile
     private var intentionalStop = false
+    /** True while we intentionally stop the core only to restart it in-place. */
+    @Volatile
+    private var softRestarting = false
+    /** Last VPN tun PFD while the Android service is alive (needed for core soft-restart). */
+    @Volatile
+    private var activeVpnInterface: ParcelFileDescriptor? = null
+    @Volatile
+    private var receiverRegistered = false
 
     var serviceControl: SoftReference<ServiceControl>? = null
         set(value) {
@@ -230,16 +238,62 @@ object CoreServiceManager {
         }
 
         try {
-            doStartCoreLoop(service, vpnInterface)
+            val iface = vpnInterface ?: activeVpnInterface
+            doStartCoreLoop(service, iface)
             return true
         } catch (e: Exception) {
             val message = e.message?.takeUnless { it.isBlank() } ?: e.javaClass.simpleName
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: $message", e)
-            MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, message)
-            TrafficStatsManager.stopServiceTracking()
-            NotificationManager.cancelNotification()
+            if (!softRestarting) {
+                MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, message)
+                TrafficStatsManager.stopServiceTracking()
+                NotificationManager.cancelNotification()
+            }
             return false
         }
+    }
+
+    /**
+     * Soft-restart the Xray core without tearing down the Android foreground service.
+     * Used by ConnectionWatchdog, network recovery, and unexpected core shutdown recovery.
+     * Does not emit STOP_SUCCESS (avoids UI flipping to stopped while still connected).
+     * Work runs on IO; safe to call from main / binder threads.
+     */
+    fun restartCoreLoop(): Boolean {
+        if (getService() == null) {
+            LogUtil.e(AppConfig.TAG, "StartCore-Manager: restartCoreLoop service is null")
+            return false
+        }
+        if (softRestarting) {
+            LogUtil.w(AppConfig.TAG, "StartCore-Manager: restart already in progress")
+            return false
+        }
+
+        softRestarting = true
+        LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core")
+        serviceScope.launch {
+            try {
+                stopCoreLoop(
+                    notifyUi = false,
+                    cancelNotification = false,
+                    stopWatchdog = true,
+                    clearVpnInterface = false,
+                )
+                kotlinx.coroutines.delay(300L)
+                val ok = startCoreLoop(activeVpnInterface)
+                if (!ok) {
+                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed to start core")
+                } else {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restart completed")
+                }
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed", e)
+            } finally {
+                softRestarting = false
+                intentionalStop = false
+            }
+        }
+        return true
     }
 
     @Throws(Exception::class)
@@ -258,10 +312,16 @@ object CoreServiceManager {
         mFilter.addAction(Intent.ACTION_SCREEN_ON)
         mFilter.addAction(Intent.ACTION_SCREEN_OFF)
         mFilter.addAction(Intent.ACTION_USER_PRESENT)
-        ContextCompat.registerReceiver(service, mMsgReceive, mFilter, Utils.receiverFlags())
+        if (!receiverRegistered) {
+            ContextCompat.registerReceiver(service, mMsgReceive, mFilter, Utils.receiverFlags())
+            receiverRegistered = true
+        }
 
         currentConfig = config
-        var tunFd = vpnInterface?.fd ?: 0
+        if (vpnInterface != null) {
+            activeVpnInterface = vpnInterface
+        }
+        var tunFd = activeVpnInterface?.fd ?: 0
         val dialerAddr = if (currentConfig?.browserDialerMode.isNullOrEmpty()) {
             ""
         } else {
@@ -304,21 +364,42 @@ object CoreServiceManager {
      * @return True if the core was stopped successfully, false otherwise.
      */
     fun stopCoreLoop(): Boolean {
+        return stopCoreLoop(
+            notifyUi = true,
+            cancelNotification = true,
+            stopWatchdog = true,
+            clearVpnInterface = true,
+        )
+    }
+
+    /**
+     * @param notifyUi emit MSG_STATE_STOP_SUCCESS (full user stop only)
+     * @param cancelNotification clear foreground notification (full stop only)
+     * @param stopWatchdog stop connection watchdog
+     * @param clearVpnInterface drop cached TUN (full stop / service teardown only)
+     */
+    fun stopCoreLoop(
+        notifyUi: Boolean,
+        cancelNotification: Boolean,
+        stopWatchdog: Boolean,
+        clearVpnInterface: Boolean,
+    ): Boolean {
         val service = getService() ?: return false
 
         intentionalStop = true
         if (coreController.isRunning) {
-            serviceScope.launch {
-                try {
-                    coreController.stopLoop()
-                } catch (e: Exception) {
-                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to stop V2Ray loop", e)
-                } finally {
-                    intentionalStop = false
-                }
+            try {
+                coreController.stopLoop()
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to stop V2Ray loop", e)
             }
-        } else {
-            intentionalStop = false
+        }
+        // Keep intentionalStop true briefly so native shutdown callback does not race into unexpected-restart.
+        serviceScope.launch {
+            kotlinx.coroutines.delay(1500L)
+            if (!softRestarting) {
+                intentionalStop = false
+            }
         }
 
         // Close existing browser dialer
@@ -328,15 +409,28 @@ object CoreServiceManager {
             browserDialer = null
         }
 
-        MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+        if (notifyUi) {
+            MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+        }
         TrafficStatsManager.stopServiceTracking()
-        NotificationManager.cancelNotification()
-        ConnectionWatchdog.stop()
+        if (cancelNotification) {
+            NotificationManager.cancelNotification()
+        }
+        if (stopWatchdog) {
+            ConnectionWatchdog.stop()
+        }
+        if (clearVpnInterface) {
+            activeVpnInterface = null
+        }
 
-        try {
-            service.unregisterReceiver(mMsgReceive)
-        } catch (e: Exception) {
-            LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to unregister receiver", e)
+        if (receiverRegistered && !softRestarting) {
+            try {
+                service.unregisterReceiver(mMsgReceive)
+                receiverRegistered = false
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to unregister receiver", e)
+                receiverRegistered = false
+            }
         }
 
         return true
@@ -445,21 +539,27 @@ object CoreServiceManager {
          * Skips restart when the stop was triggered intentionally (user-initiated).
          */
         override fun shutdown(): Long {
-            if (intentionalStop) {
-                LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core shutdown (intentional), not restarting")
+            if (intentionalStop || softRestarting) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core shutdown (intentional/soft-restart), not treating as crash")
                 return 0
             }
-            LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core shutdown callback fired (unexpected), attempting restart")
+            LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core shutdown callback fired (unexpected), attempting soft-restart")
             val svc = getService() ?: return -1
             serviceScope.launch {
                 try {
-                    kotlinx.coroutines.delay(1000L)
-                    if (!intentionalStop && !coreController.isRunning) {
-                        LogUtil.i(AppConfig.TAG, "StartCore-Manager: Restarting core after unexpected shutdown")
-                        startCoreLoop(null)
+                    kotlinx.coroutines.delay(800L)
+                    if (!intentionalStop && !softRestarting && !coreController.isRunning) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core after unexpected shutdown")
+                        val ok = restartCoreLoop()
+                        if (!ok) {
+                            LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart after shutdown failed")
+                            MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+                            TrafficStatsManager.stopServiceTracking()
+                            NotificationManager.cancelNotification()
+                        }
                     }
                 } catch (e: Exception) {
-                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to restart core after shutdown, stopping service", e)
+                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to restart core after shutdown", e)
                     MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_STOP_SUCCESS, "")
                     TrafficStatsManager.stopServiceTracking()
                     NotificationManager.cancelNotification()

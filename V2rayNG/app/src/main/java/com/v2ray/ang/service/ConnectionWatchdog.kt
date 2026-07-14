@@ -86,16 +86,10 @@ object ConnectionWatchdog {
     }
 
     private fun restartCore() {
-        LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: Restarting core due to connection failure")
+        LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: Soft-restarting core due to connection failure")
         try {
-            CoreServiceManager.serviceControl?.get()?.getService()?.let { service ->
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    CoreServiceManager.stopCoreLoop()
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        CoreServiceManager.startCoreLoop(null)
-                    }, 500L)
-                }, 100L)
-            }
+            // Soft-restart: keep Android service + notification; do not emit STOP_SUCCESS.
+            CoreServiceManager.restartCoreLoop()
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "ConnectionWatchdog: Failed to restart core", e)
         }

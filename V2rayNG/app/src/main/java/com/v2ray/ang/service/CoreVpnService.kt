@@ -65,16 +65,10 @@ class CoreVpnService : VpnService(), ServiceControl {
                 if (pendingRestart) {
                     pendingRestart = false
                     LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, restarting core")
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        if (isRunning) {
-                            CoreServiceManager.stopCoreLoop()
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                if (isRunning) {
-                                    CoreServiceManager.startCoreLoop(mInterface)
-                                }
-                            }, 300L)
-                        }
-                    }, 200L)
+                    if (isRunning) {
+                        // Soft-restart: keep VPN service + TUN; avoid STOP_SUCCESS UI flicker.
+                        CoreServiceManager.restartCoreLoop()
+                    }
                 }
             }
 
