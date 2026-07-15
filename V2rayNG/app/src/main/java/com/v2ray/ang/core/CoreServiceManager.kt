@@ -156,12 +156,15 @@ object CoreServiceManager {
     /** Map technical start failures to short user-facing text (tile/widget/home). */
     private fun friendlyStartError(context: Context, e: Exception): String {
         val raw = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+        RootProxyManager.userMessageOrNull(context, raw)?.let { return it }
         return when {
             SettingsManager.isRootMode() && (
                 raw.contains("root", ignoreCase = true) ||
                     raw.contains("su", ignoreCase = true) ||
                     raw.contains("ioctl", ignoreCase = true) ||
                     raw.contains("routing", ignoreCase = true) ||
+                    raw.contains("hev", ignoreCase = true) ||
+                    raw.contains("tun", ignoreCase = true) ||
                     raw.contains(context.getString(R.string.toast_root_mode_unavailable), ignoreCase = true) ||
                     raw.contains(context.getString(R.string.toast_root_required), ignoreCase = true)
                 ) -> context.getString(R.string.toast_root_start_failed)
@@ -198,11 +201,17 @@ object CoreServiceManager {
         val service = getService() ?: return
         try {
             if (SettingsManager.isRootMode()) {
-                LogUtil.i(AppConfig.TAG, "StartCore-Manager: rebinding root routing after soft-restart")
-                if (!RootProxyManager.start(service)) {
-                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing rebind failed after soft-restart")
-                    // Dynamic socks port may already have changed; fail closed instead of blackholing.
-                    MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, "Root routing rebind failed")
+                // SOCKS port is stable in ROOT. Only rebuild rules if hev/tun is dead or
+                // first soft-restart after cold start still needs ensure.
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: ensuring root routing after soft-restart")
+                val err = RootProxyManager.ensureRunning(service)
+                if (err != null) {
+                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing ensure failed: $err")
+                    MessageUtil.sendMsg2UI(
+                        service,
+                        AppConfig.MSG_STATE_START_FAILURE,
+                        RootProxyManager.userMessage(service, err)
+                    )
                     TrafficStatsManager.stopServiceTracking()
                     NotificationManager.cancelNotification()
                     try { serviceControl?.stopService() } catch (_: Exception) { }
@@ -222,7 +231,11 @@ object CoreServiceManager {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: rebind root routing failed", e)
             if (SettingsManager.isRootMode()) {
                 try {
-                    MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, e.message ?: "Root routing rebind failed")
+                    MessageUtil.sendMsg2UI(
+                        service,
+                        AppConfig.MSG_STATE_START_FAILURE,
+                        e.message ?: service.getString(R.string.toast_root_rules_failed)
+                    )
                 } catch (_: Exception) { }
                 TrafficStatsManager.stopServiceTracking()
                 NotificationManager.cancelNotification()
@@ -569,9 +582,9 @@ object CoreServiceManager {
         val config = MmkvManager.decodeServerConfig(guid) ?: error("Failed to decode server config")
 
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting core loop for ${config.remarks}")
-        // Soft-restart needs a fresh dynamic socks port so root/VPN helpers stay in sync.
-        // Cold start already refreshed in startContextService; avoid double-randomize.
-        if (softRestarting.get()) {
+        // Soft-restart may refresh dynamic SOCKS for VPN/Proxy helpers.
+        // ROOT freezes SOCKS port so hev/iptables need not rebind on every node switch.
+        if (softRestarting.get() && SettingsManager.usesDynamicSocksPort()) {
             SettingsManager.refreshRuntimeSocksPort()
         }
         val result = CoreConfigManager.getV2rayConfig(service, guid)

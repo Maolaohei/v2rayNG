@@ -7,16 +7,22 @@ import android.os.IBinder
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.contracts.ServiceControl
 import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.MyContextWrapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.net.InetSocketAddress
+import java.net.Socket
 
 /**
  * Foreground service for the root (system-wide) run modes. Unlike [CoreVpnService] it
@@ -25,7 +31,7 @@ import kotlinx.coroutines.runBlocking
  *
  * The in-process core is started first (so its listener is up and the foreground
  * notification is posted promptly), then the root routing rules are installed off the
- * main thread. On teardown the rules are removed before the core stops.
+ * main thread only after local SOCKS is accepting connections.
  */
 class CoreRootService : Service(), ServiceControl {
 
@@ -40,8 +46,6 @@ class CoreRootService : Service(), ServiceControl {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogUtil.i(AppConfig.TAG, "StartCore-Root: command received")
 
-        // Start the in-process core first (this also posts the foreground notification),
-        // then install the root routing off the main thread.
         // Never reuse a previous VPN TUN PFD in root mode.
         CoreServiceManager.bindVpnInterface(null)
         if (!CoreServiceManager.startCoreLoop(null)) {
@@ -51,22 +55,57 @@ class CoreRootService : Service(), ServiceControl {
         }
 
         setupJob = CoroutineScope(Dispatchers.IO).launch {
-            if (!RootProxyManager.start(this@CoreRootService)) {
-                LogUtil.e(AppConfig.TAG, "StartCore-Root: failed to start root mode, stopping")
-                stopService()
+            // Wait until local SOCKS is ready before installing hev/iptables.
+            if (!waitLocalSocksReady()) {
+                LogUtil.e(AppConfig.TAG, "StartCore-Root: local SOCKS not ready")
+                failAndStop(RootProxyManager.RootError.SOCKS_NOT_READY)
+                return@launch
+            }
+            val err = RootProxyManager.startDetailed(this@CoreRootService)
+            if (err != null) {
+                LogUtil.e(AppConfig.TAG, "StartCore-Root: failed to start root mode: $err")
+                failAndStop(err)
             }
         }
 
         return START_STICKY
     }
 
+    private suspend fun waitLocalSocksReady(timeoutMs: Long = 4000L): Boolean {
+        val port = SettingsManager.getSocksPort()
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (!CoreServiceManager.isRunning()) return false
+            try {
+                Socket().use { s ->
+                    s.connect(InetSocketAddress(AppConfig.LOOPBACK, port), 200)
+                    return true
+                }
+            } catch (_: Exception) {
+                // retry
+            }
+            delay(100L)
+        }
+        return false
+    }
+
+    private fun failAndStop(error: RootProxyManager.RootError) {
+        try {
+            MessageUtil.sendMsg2UI(
+                this,
+                AppConfig.MSG_STATE_START_FAILURE,
+                RootProxyManager.userMessage(this, error)
+            )
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "StartCore-Root: failed to notify UI", e)
+        }
+        TrafficStatsManager.stopServiceTracking()
+        NotificationManager.cancelNotification()
+        stopService()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        // Wait for any in-flight async setup to finish before tearing down. The rules are
-        // installed off the main thread and can take seconds (the setup script waits for the
-        // tun to appear); if a stop arrives during that window, teardown would run first and
-        // the setup would then re-install the rules + tun pointing at a now-dead core,
-        // blackholing all traffic until the next start/stop cycle clears it.
         runBlocking { setupJob?.cancelAndJoin() }
         // Remove routing rules BEFORE stopping the core so traffic is never redirected
         // to a dead listener. Synchronous on purpose — leaving rules behind breaks the net.

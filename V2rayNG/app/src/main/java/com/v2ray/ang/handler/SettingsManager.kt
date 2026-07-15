@@ -291,7 +291,7 @@ object SettingsManager {
      */
     fun getSocksPort(): Int {
         val port =
-            if (IsDynamicSocksPort()) {
+            if (usesDynamicSocksPort()) {
                 runtimeSocksPort ?: refreshRuntimeSocksPort()
             } else {
                 Utils.parseInt(MmkvManager.decodeSettingsString(AppConfig.PREF_SOCKS_PORT), AppConfig.PORT_SOCKS.toInt())
@@ -299,11 +299,23 @@ object SettingsManager {
         return port ?: AppConfig.PORT_SOCKS.toInt()
     }
 
+    /**
+     * ROOT depends on hev/iptables binding a stable local SOCKS port.
+     * Dynamic SOCKS is therefore disabled while ROOT mode is active.
+     */
+    fun usesDynamicSocksPort(): Boolean {
+        return IsDynamicSocksPort() && !isRootMode()
+    }
+
     @Synchronized
     fun refreshRuntimeSocksPort(): Int? {
-        if (IsDynamicSocksPort()) {
+        if (usesDynamicSocksPort()) {
             runtimeSocksPort = generateRandomSocksPort()
             return runtimeSocksPort
+        }
+        // Keep any previous runtime port out of the way when dynamic socks is frozen.
+        if (isRootMode()) {
+            runtimeSocksPort = null
         }
         return null
     }
@@ -521,6 +533,8 @@ object SettingsManager {
                 if ((MmkvManager.decodeSettingsString(AppConfig.PREF_MODE) ?: AppConfig.VPN) == AppConfig.VPN) {
                     MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.MODE_PROXY_ONLY)
                 }
+                // ROOT freezes SOCKS: drop any previous dynamic runtime port.
+                runtimeSocksPort = null
             }
             AppConfig.VPN -> {
                 MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)

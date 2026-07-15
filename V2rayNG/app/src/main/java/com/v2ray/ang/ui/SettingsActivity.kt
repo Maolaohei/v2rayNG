@@ -257,6 +257,11 @@ class SettingsActivity : BaseActivity() {
             vpnInterfaceAddress?.isEnabled = vpn
             vpnMtu?.isEnabled = vpn
             useHevTun?.isEnabled = vpn
+            // ROOT freezes dynamic SOCKS so hev/iptables keep a stable local port.
+            dynamicSocksPort?.isEnabled = !root && (enableLocalProxy?.isChecked != false)
+            if (root) {
+                dynamicSocksPort?.summary = getString(R.string.summary_root_dynamic_socks_disabled)
+            }
             updateHevTunSettings(false)
             if (vpn) {
                 updateLocalDns(
@@ -271,6 +276,10 @@ class SettingsActivity : BaseActivity() {
                         false
                     )
                 )
+            }
+            // Restore dynamic-socks summary when leaving ROOT.
+            if (!root) {
+                updateDynamicSocksPort(MmkvManager.decodeSettingsBool(AppConfig.PREF_DYNAMIC_SOCKS_PORT, false))
             }
         }
 

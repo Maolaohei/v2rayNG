@@ -297,6 +297,14 @@
     <string name="toast_root_required">Root access is required for this feature</string>
     <string name="toast_root_mode_unavailable">ROOT mode needs device root permission. Switch to VPN or Proxy only if root is unavailable.</string>
     <string name="toast_root_start_failed">Failed to start ROOT mode (root permission or routing setup failed)</string>
+    <string name="toast_root_su_denied">ROOT mode failed: su/root permission denied</string>
+    <string name="toast_root_hev_missing">ROOT mode failed: hev-socks5-tunnel binary missing</string>
+    <string name="toast_root_tun_failed">ROOT mode failed: tunnel device did not come up</string>
+    <string name="toast_root_rules_failed">ROOT mode failed: iptables/routing setup failed</string>
+    <string name="toast_root_socks_not_ready">ROOT mode failed: local SOCKS is not ready</string>
+    <string name="toast_root_hev_dead">ROOT mode failed: tunnel helper process is not running</string>
+    <string name="summary_root_dynamic_socks_disabled">Disabled in ROOT mode (stable local SOCKS port required)</string>
+    <string name="summary_root_vpn_only_setting">VPN-only setting; not used while ROOT mode is active</string>
     <string name="home_mode_root_settings_summary">Managed on Home · ROOT</string>
     <string name="title_root_lan_sharing">LAN / tethering sharing (Root Users)</string>
     <string name="summary_root_lan_sharing">Route Wi-Fi hotspot and USB-tethered devices through the VPN</string>

@@ -47,16 +47,128 @@ object RootProxyManager {
         "::1/128", "fe80::/10", "fc00::/7", "ff00::/8"
     )
 
-    fun start(context: Context): Boolean {
+
+    enum class RootError {
+        SU_DENIED,
+        HEV_MISSING,
+        TUN_FAILED,
+        RULES_FAILED,
+        SOCKS_NOT_READY,
+        HEV_DEAD,
+        UNKNOWN,
+    }
+
+    /** Last setup error for UI mapping. */
+    @Volatile
+    var lastError: RootError? = null
+        private set
+
+    fun userMessage(context: Context, error: RootError = lastError ?: RootError.UNKNOWN): String {
+        val res = when (error) {
+            RootError.SU_DENIED -> com.v2ray.ang.R.string.toast_root_su_denied
+            RootError.HEV_MISSING -> com.v2ray.ang.R.string.toast_root_hev_missing
+            RootError.TUN_FAILED -> com.v2ray.ang.R.string.toast_root_tun_failed
+            RootError.RULES_FAILED -> com.v2ray.ang.R.string.toast_root_rules_failed
+            RootError.SOCKS_NOT_READY -> com.v2ray.ang.R.string.toast_root_socks_not_ready
+            RootError.HEV_DEAD -> com.v2ray.ang.R.string.toast_root_hev_dead
+            RootError.UNKNOWN -> com.v2ray.ang.R.string.toast_root_start_failed
+        }
+        return context.getString(res)
+    }
+
+    fun userMessageOrNull(context: Context, raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val mapped = when {
+            raw.contains("SU_DENIED", true) || (raw.contains("permission denied", true) && raw.contains("su", true)) -> RootError.SU_DENIED
+            raw.contains("HEV_MISSING", true) || raw.contains("hev-socks5-tunnel binary missing", true) -> RootError.HEV_MISSING
+            raw.contains("TUN_FAILED", true) || raw.contains("tun device did not come up", true) -> RootError.TUN_FAILED
+            raw.contains("SOCKS_NOT_READY", true) -> RootError.SOCKS_NOT_READY
+            raw.contains("HEV_DEAD", true) -> RootError.HEV_DEAD
+            raw.contains("RULES_FAILED", true) || raw.contains("Root routing", true) -> RootError.RULES_FAILED
+            else -> null
+        }
+        return mapped?.let { userMessage(context, it) }
+    }
+
+    private fun runDir(context: Context): File =
+        File(context.filesDir, AppConfig.ROOT_RUNTIME_DIR).apply { mkdirs() }
+
+    private fun pidFile(context: Context): File = File(runDir(context), "tun2socks.pid")
+
+    /** True when hev helper process is alive (pid file + /proc). */
+    fun isHevAlive(context: Context): Boolean {
+        return try {
+            val pf = pidFile(context)
+            if (!pf.exists()) return false
+            val pid = pf.readText().trim().toIntOrNull() ?: return false
+            if (pid <= 1) return false
+            File("/proc/$pid").exists()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** True when root tun interface is present. */
+    fun isTunUp(): Boolean {
+        val r = RootShell.exec("ip link show $TUN >/dev/null 2>&1")
+        return r.success
+    }
+
+    /**
+     * Soft-restart helper: if hev+tun already healthy, skip full reinstall.
+     * Otherwise rebuild rules (teardown+setup). Returns null on success, error otherwise.
+     */
+    fun ensureRunning(context: Context): RootError? {
+        lastError = null
+        if (isHevAlive(context) && isTunUp()) {
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: hev/tun healthy, skip rebind")
+            return null
+        }
+        LogUtil.w(AppConfig.TAG, "RootProxyManager: hev/tun not healthy, rebuilding")
+        return startDetailed(context)
+    }
+
+    fun startDetailed(context: Context): RootError? {
+        lastError = null
         teardown(context)
-        val script = buildTun2socksSetup(context) ?: return false
+        val script = buildTun2socksSetup(context)
+        if (script == null) {
+            lastError = RootError.HEV_MISSING
+            return lastError
+        }
         val result = RootShell.runScript(context, "setup_rules.sh", script)
         if (!result.success) {
-            LogUtil.e(AppConfig.TAG, "RootProxyManager: setup failed, rolling back:\n${result.output}")
+            lastError = classifySetupFailure(result.output)
+            LogUtil.e(AppConfig.TAG, "RootProxyManager: setup failed ($lastError):\n${result.output}")
             teardown(context)
-            return false
+            return lastError
         }
-        return true
+        if (!isHevAlive(context)) {
+            lastError = RootError.HEV_DEAD
+            teardown(context)
+            return lastError
+        }
+        if (!isTunUp()) {
+            lastError = RootError.TUN_FAILED
+            teardown(context)
+            return lastError
+        }
+        return null
+    }
+
+    private fun classifySetupFailure(output: String): RootError {
+        val o = output.lowercase()
+        return when {
+            "binary missing" in o || "hev-socks5" in o && "no such file" in o -> RootError.HEV_MISSING
+            "tun device did not come up" in o || "cannot find device" in o -> RootError.TUN_FAILED
+            "permission denied" in o || "not allowed to" in o || "su:" in o -> RootError.SU_DENIED
+            "not found" in o && "su" in o -> RootError.SU_DENIED
+            else -> RootError.RULES_FAILED
+        }
+    }
+
+    fun start(context: Context): Boolean {
+        return startDetailed(context) == null
     }
 
     /**

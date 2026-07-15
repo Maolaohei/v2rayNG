@@ -290,6 +290,14 @@
     <string name="toast_root_required">此功能需要 Root 权限</string>
     <string name="toast_root_mode_unavailable">ROOT 模式需要设备 Root 权限。若无 Root，请改用 VPN 或仅代理。</string>
     <string name="toast_root_start_failed">ROOT 模式启动失败（Root 权限或路由安装失败）</string>
+    <string name="toast_root_su_denied">ROOT 模式失败：su/Root 权限被拒绝</string>
+    <string name="toast_root_hev_missing">ROOT 模式失败：缺少 hev-socks5-tunnel 二进制</string>
+    <string name="toast_root_tun_failed">ROOT 模式失败：隧道设备未能启动</string>
+    <string name="toast_root_rules_failed">ROOT 模式失败：iptables/路由规则安装失败</string>
+    <string name="toast_root_socks_not_ready">ROOT 模式失败：本地 SOCKS 未就绪</string>
+    <string name="toast_root_hev_dead">ROOT 模式失败：隧道辅助进程未运行</string>
+    <string name="summary_root_dynamic_socks_disabled">ROOT 模式下已禁用（需要稳定的本地 SOCKS 端口）</string>
+    <string name="summary_root_vpn_only_setting">仅 VPN 模式有效；当前为 ROOT 模式</string>
     <string name="home_mode_root_settings_summary">由首页控制 · ROOT</string>
     <string name="title_root_lan_sharing">局域网 / 热点网络共享 (仅限 Root 用户)</string>
     <string name="summary_root_lan_sharing">允许通过 Wi-Fi 热点和 USB 共享网络连接的设备走 VPN 代理流量</string>
