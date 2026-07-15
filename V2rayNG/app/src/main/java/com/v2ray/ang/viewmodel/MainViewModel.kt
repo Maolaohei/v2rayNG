@@ -442,7 +442,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_STATE_START_SUCCESS -> {
-                    getApplication<AngApplication>().toastSuccess(R.string.toast_services_success)
+                    // Soft node-switch restarts should not spam "service started" toasts.
+                    val content = intent.getStringExtra("content")
+                    if (content != AppConfig.MSG_CONTENT_SOFT_START) {
+                        getApplication<AngApplication>().toastSuccess(R.string.toast_services_success)
+                    }
                     isRunning.value = true
                 }
 

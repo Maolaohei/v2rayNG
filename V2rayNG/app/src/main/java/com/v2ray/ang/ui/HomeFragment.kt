@@ -287,7 +287,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         applyRunningState(isLoading = true, isRunning = false)
         CoreServiceManager.applySelectedServer(requireContext())
         // Soft-restart does not emit STOP; keep connectivity label out of Testing...
-        setTestState(getString(R.string.connection_connected))
+        setTestState(getString(R.string.home_status_connecting))
         armConnectingTimeout()
     }
 
@@ -322,6 +322,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             binding.tvSwitchCaption.text = getString(R.string.home_status_connecting)
             switchReady = false
             binding.switchConnection.isEnabled = false
+            setTestState(getString(R.string.home_status_connecting))
             return
         }
 

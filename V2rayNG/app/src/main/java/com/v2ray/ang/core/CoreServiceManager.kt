@@ -24,6 +24,7 @@ import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.root.RootManager
+import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.service.ConnectionWatchdog
 import com.v2ray.ang.service.CoreProxyOnlyService
 import com.v2ray.ang.service.CoreRootService
@@ -42,10 +43,10 @@ import kotlinx.coroutines.launch
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.ProcessFinder
-import java.lang.ref.SoftReference
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 object CoreServiceManager {
 
@@ -55,8 +56,10 @@ object CoreServiceManager {
     private var processFinder: XrayProcessFinder? = null
     private var browserDialer: IDialerService? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    @Volatile
-    private var intentionalStop = false
+    /** True while we intentionally stop the core (user stop or soft-restart). */
+    private val intentionalStop = AtomicBoolean(false)
+    /** Bumped on every intentional stop; used to retire delayed clear of intentionalStop. */
+    private val intentionalStopEpoch = AtomicLong(0)
     /** True while we intentionally stop the core only to restart it in-place. */
     private val softRestarting = AtomicBoolean(false)
     /** Bumped on user/full stop so in-flight soft-restarts cannot revive the session. */
@@ -72,10 +75,11 @@ object CoreServiceManager {
     @Volatile
     private var pendingSelectedApply = false
 
-    var serviceControl: SoftReference<ServiceControl>? = null
+    /** Strong ref while the core service is alive; cleared on full stop/destroy. */
+    var serviceControl: ServiceControl? = null
         set(value) {
             field = value
-            val service = value?.get()?.getService()
+            val service = value?.getService()
             CoreNativeManager.initCoreEnv(service)
             if (service != null && processFinder == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 processFinder = XrayProcessFinder(service)
@@ -148,6 +152,52 @@ object CoreServiceManager {
         userStopRequested.set(false)
     }
 
+
+    /** Mark intentional core stop; delayed clear is retired by epoch so races cannot flip the flag early. */
+    private fun markIntentionalStop() {
+        val epoch = intentionalStopEpoch.incrementAndGet()
+        intentionalStop.set(true)
+        serviceScope.launch {
+            kotlinx.coroutines.delay(2000L)
+            if (epoch == intentionalStopEpoch.get() && !softRestarting.get()) {
+                intentionalStop.set(false)
+            }
+        }
+    }
+
+    private fun clearIntentionalStop() {
+        intentionalStopEpoch.incrementAndGet()
+        intentionalStop.set(false)
+    }
+
+    /**
+     * Soft-restart only reloads the in-process core. Root mode still needs iptables/tun2socks
+     * rebound to the new SOCKS port/listener; VPN-mode LAN sharing uses the same helper path.
+     */
+    private fun rebindRootRoutingAfterSoftRestart() {
+        val service = getService() ?: return
+        try {
+            if (SettingsManager.isRootMode()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: rebinding root routing after soft-restart")
+                if (!RootProxyManager.start(service)) {
+                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing rebind failed after soft-restart")
+                }
+                return
+            }
+            // VPN-mode optional LAN sharing: rebuild only if preference is still on.
+            if (
+                service is CoreVpnService &&
+                MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_LAN_SHARING) == true
+            ) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: rebinding LAN sharing after soft-restart")
+                com.v2ray.ang.root.RootLanSharing.stopClientSharing(service)
+                com.v2ray.ang.root.RootLanSharing.startClientSharing(service)
+            }
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "StartCore-Manager: rebind root routing failed", e)
+        }
+    }
+
     /**
      * Apply the currently selected profile to a live session.
      *
@@ -163,12 +213,21 @@ object CoreServiceManager {
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: applySelectedServer")
         // Drop any in-flight latency test; home UI is managed by caller.
         cancelMeasureDelay("node switched", notifyUi = false)
-        val serviceAlive = getService() != null
-        val liveSession = serviceAlive && (coreController.isRunning || softRestarting.get() || activeVpnInterface != null)
-        if (liveSession) {
-            if (!restartCoreLoop()) {
-                // Another soft-restart is in flight; re-apply when it finishes.
-                pendingSelectedApply = true
+        cancelBatchRealPing()
+        val control = serviceControl
+        if (control != null) {
+            val liveCore = coreController.isRunning || softRestarting.get() || activeVpnInterface != null
+            if (liveCore) {
+                if (!restartCoreLoop()) {
+                    // Another soft-restart is in flight; re-apply when it finishes.
+                    pendingSelectedApply = true
+                }
+            } else {
+                // Service process still up but core is down: revive without new FGS start race.
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: revive core on existing service")
+                if (!startCoreLoop(activeVpnInterface)) {
+                    startVService(context)
+                }
             }
             return
         }
@@ -199,11 +258,27 @@ object CoreServiceManager {
         }
     }
 
+    /** Cancel background real-ping batch so it cannot fight soft-restart for ports/CPU. */
+    private fun cancelBatchRealPing() {
+        val service = getService() ?: return
+        try {
+            MessageUtil.sendMsg2TestService(
+                service,
+                com.v2ray.ang.dto.TestServiceMessage(key = AppConfig.MSG_MEASURE_CONFIG_CANCEL)
+            )
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "StartCore-Manager: cancel batch real-ping failed", e)
+        }
+    }
+
     /**
      * Checks if the V2Ray service is running.
      * @return True if the service is running, false otherwise.
      */
     fun isRunning() = coreController.isRunning
+
+    /** True while a soft-restart is applying a new core session in-place. */
+    fun isSoftRestarting(): Boolean = softRestarting.get()
 
     /**
      * Gets the name of the currently running server.
@@ -300,6 +375,13 @@ object CoreServiceManager {
      * `registerReceiver(Context, BroadcastReceiver, IntentFilter, int)`.
      * Starts the V2Ray core service.
      */
+    /** Keep cached TUN in sync when VPN re-establishes the interface. */
+    fun bindVpnInterface(vpnInterface: ParcelFileDescriptor?) {
+        if (vpnInterface != null) {
+            activeVpnInterface = vpnInterface
+        }
+    }
+
     fun startCoreLoop(vpnInterface: ParcelFileDescriptor?): Boolean {
         if (coreController.isRunning) {
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core already running")
@@ -350,6 +432,7 @@ object CoreServiceManager {
 
         val generation = sessionGeneration.get()
         cancelMeasureDelay("soft-restart", notifyUi = false)
+        cancelBatchRealPing()
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core gen=$generation")
         serviceScope.launch {
             var startedOk = false
@@ -391,7 +474,7 @@ object CoreServiceManager {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed to start core")
                     // Full converge: tear down service so UI/notification cannot desync.
                     if (!userStopRequested.get()) {
-                        val svcControl = serviceControl?.get()
+                        val svcControl = serviceControl
                         val svc = svcControl?.getService()
                         if (svc != null) {
                             MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, "Soft-restart failed")
@@ -408,7 +491,7 @@ object CoreServiceManager {
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed", e)
                 if (!userStopRequested.get() && generation == sessionGeneration.get()) {
-                    val svcControl = serviceControl?.get()
+                    val svcControl = serviceControl
                     val svc = svcControl?.getService()
                     if (svc != null) {
                         MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, e.message ?: "Soft-restart failed")
@@ -418,19 +501,31 @@ object CoreServiceManager {
                     try { svcControl?.stopService() } catch (_: Exception) { }
                 }
             } finally {
-                softRestarting.set(false)
-                intentionalStop = false
                 val canReapply = pendingSelectedApply &&
                     !userStopRequested.get() &&
                     generation == sessionGeneration.get() &&
                     getService() != null
                 if (canReapply) {
                     pendingSelectedApply = false
+                    softRestarting.set(false)
+                    clearIntentionalStop()
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: applying pending selected server after soft-restart")
                     restartCoreLoop()
-                } else if (pendingSelectedApply && (userStopRequested.get() || generation != sessionGeneration.get())) {
-                    pendingSelectedApply = false
-                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: drop pending selected apply after user stop")
+                } else {
+                    if (pendingSelectedApply && (userStopRequested.get() || generation != sessionGeneration.get())) {
+                        pendingSelectedApply = false
+                        LogUtil.i(AppConfig.TAG, "StartCore-Manager: drop pending selected apply after user stop")
+                    } else if (
+                        startedOk &&
+                        !userStopRequested.get() &&
+                        generation == sessionGeneration.get()
+                    ) {
+                        // Keep softRestarting true while rebinding root rules so watchdog/network
+                        // recovery cannot start another soft-restart mid-rebind.
+                        rebindRootRoutingAfterSoftRestart()
+                    }
+                    softRestarting.set(false)
+                    clearIntentionalStop()
                 }
             }
         }
@@ -443,6 +538,11 @@ object CoreServiceManager {
         val config = MmkvManager.decodeServerConfig(guid) ?: error("Failed to decode server config")
 
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting core loop for ${config.remarks}")
+        // Soft-restart needs a fresh dynamic socks port so root/VPN helpers stay in sync.
+        // Cold start already refreshed in startContextService; avoid double-randomize.
+        if (softRestarting.get()) {
+            SettingsManager.refreshRuntimeSocksPort()
+        }
         val result = CoreConfigManager.getV2rayConfig(service, guid)
         LogUtil.d(AppConfig.TAG, result.content)
         if (!result.status) {
@@ -492,7 +592,8 @@ object CoreServiceManager {
             browserDialer!!.start(service, dialerAddr)
         }
 
-        MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, "")
+        val startContent = if (softRestarting.get()) AppConfig.MSG_CONTENT_SOFT_START else ""
+        MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, startContent)
         TrafficStatsManager.startServiceTracking()
         NotificationManager.startSpeedNotification()
         ConnectionWatchdog.start()
@@ -531,19 +632,12 @@ object CoreServiceManager {
             beginUserStop()
         }
 
-        intentionalStop = true
+        markIntentionalStop()
         if (coreController.isRunning) {
             try {
                 coreController.stopLoop()
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to stop V2Ray loop", e)
-            }
-        }
-        // Keep intentionalStop true briefly so native shutdown callback does not race into unexpected-restart.
-        serviceScope.launch {
-            kotlinx.coroutines.delay(1500L)
-            if (!softRestarting.get()) {
-                intentionalStop = false
             }
         }
 
@@ -566,6 +660,7 @@ object CoreServiceManager {
         }
         if (clearVpnInterface) {
             activeVpnInterface = null
+            serviceControl = null
         }
 
         if (receiverRegistered && (clearVpnInterface || !softRestarting.get())) {
@@ -695,7 +790,7 @@ object CoreServiceManager {
      * @return The current service instance, or null if not available.
      */
     private fun getService(): Service? {
-        return serviceControl?.get()?.getService()
+        return serviceControl?.getService()
     }
 
     /**
@@ -718,24 +813,32 @@ object CoreServiceManager {
          * Skips restart when the stop was triggered intentionally (user-initiated).
          */
         override fun shutdown(): Long {
-            if (intentionalStop || softRestarting.get()) {
+            if (intentionalStop.get() || softRestarting.get() || userStopRequested.get()) {
                 LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core shutdown (intentional/soft-restart), not treating as crash")
                 return 0
             }
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core shutdown callback fired (unexpected), attempting soft-restart")
             val svc = getService() ?: return -1
+            val generation = sessionGeneration.get()
             serviceScope.launch {
                 try {
                     kotlinx.coroutines.delay(800L)
-                    if (!intentionalStop && !softRestarting.get() && !coreController.isRunning) {
-                        LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core after unexpected shutdown")
-                        val ok = restartCoreLoop()
-                        if (!ok) {
-                            LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart after shutdown failed")
-                            MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_STOP_SUCCESS, "")
-                            TrafficStatsManager.stopServiceTracking()
-                            NotificationManager.cancelNotification()
-                        }
+                    if (
+                        intentionalStop.get() ||
+                        softRestarting.get() ||
+                        userStopRequested.get() ||
+                        generation != sessionGeneration.get() ||
+                        coreController.isRunning
+                    ) {
+                        return@launch
+                    }
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core after unexpected shutdown")
+                    val ok = restartCoreLoop()
+                    if (!ok) {
+                        LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart after shutdown failed")
+                        MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+                        TrafficStatsManager.stopServiceTracking()
+                        NotificationManager.cancelNotification()
                     }
                 } catch (e: Exception) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to restart core after shutdown", e)
@@ -807,7 +910,7 @@ object CoreServiceManager {
          * @param intent The intent being received.
          */
         override fun onReceive(ctx: Context?, intent: Intent?) {
-            val serviceControl = serviceControl?.get() ?: return
+            val serviceControl = serviceControl ?: return
             when (intent?.getIntExtra("key", 0)) {
                 AppConfig.MSG_REGISTER_CLIENT -> {
                     if (coreController.isRunning) {
@@ -833,13 +936,16 @@ object CoreServiceManager {
 
                 AppConfig.MSG_STATE_RESTART -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Restart service (soft)")
-                    // Prefer soft-restart: keep FGS/TUN, reload selected config.
-                    // Hard stop+start races with async teardown and can leave core stuck.
+                    // Prefer soft-restart. If one is already running, queue re-apply.
                     if (!restartCoreLoop()) {
-                        serviceControl.stopService()
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            startVService(serviceControl.getService())
-                        }, 500L)
+                        if (softRestarting.get()) {
+                            pendingSelectedApply = true
+                        } else {
+                            val svc = serviceControl?.getService()
+                            if (svc != null) {
+                                applySelectedServer(svc)
+                            }
+                        }
                     }
                 }
 

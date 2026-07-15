@@ -14,9 +14,13 @@ import kotlinx.coroutines.launch
 object ConnectionWatchdog {
     private const val CHECK_INTERVAL_MS = 5 * 60 * 1000L
     private const val MAX_CONSECUTIVE_FAILURES = 2
+    /** After a soft-restart, ignore failures briefly so bad networks do not thrash restart loops. */
+    private const val RESTART_COOLDOWN_MS = 10 * 60 * 1000L
 
     private var watchdogJob: Job? = null
     private var consecutiveFailures = 0
+    @Volatile
+    private var lastRestartAtMs = 0L
 
     fun start() {
         if (watchdogJob != null) return
@@ -45,9 +49,18 @@ object ConnectionWatchdog {
             stop()
             return
         }
+        if (CoreServiceManager.isSoftRestarting()) {
+            LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: skip check during soft-restart")
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (lastRestartAtMs > 0L && now - lastRestartAtMs < RESTART_COOLDOWN_MS) {
+            LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: skip check during restart cooldown")
+            return
+        }
 
         try {
-            val service = CoreServiceManager.serviceControl?.get()?.getService() ?: return
+            val service = CoreServiceManager.serviceControl?.getService() ?: return
             val testUrl = SettingsManager.getDelayTestUrl()
             val controller = CoreServiceManager.coreController
 
@@ -88,6 +101,7 @@ object ConnectionWatchdog {
     private fun restartCore() {
         LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: Soft-restarting core due to connection failure")
         try {
+            lastRestartAtMs = System.currentTimeMillis()
             // Soft-restart: keep Android service + notification; do not emit STOP_SUCCESS.
             CoreServiceManager.restartCoreLoop()
         } catch (e: Exception) {

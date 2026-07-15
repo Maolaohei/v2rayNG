@@ -249,6 +249,6 @@ object NotificationManager {
         lastQueryTime = System.currentTimeMillis()
     }
     private fun getService(): Service? {
-        return CoreServiceManager.serviceControl?.get()?.getService()
+        return CoreServiceManager.serviceControl?.getService()
     }
 }

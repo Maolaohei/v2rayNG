@@ -27,7 +27,6 @@ import com.v2ray.ang.root.RootLanSharing
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MyContextWrapper
 import com.v2ray.ang.util.Utils
-import java.lang.ref.SoftReference
 
 @SuppressLint("VpnServicePolicy")
 class CoreVpnService : VpnService(), ServiceControl {
@@ -65,8 +64,9 @@ class CoreVpnService : VpnService(), ServiceControl {
                 if (pendingRestart) {
                     pendingRestart = false
                     LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, restarting core")
-                    if (isRunning) {
+                    if (isRunning && !CoreServiceManager.isSoftRestarting()) {
                         // Soft-restart: keep VPN service + TUN; avoid STOP_SUCCESS UI flicker.
+                        CoreServiceManager.bindVpnInterface(mInterface)
                         CoreServiceManager.restartCoreLoop()
                     }
                 }
@@ -87,7 +87,7 @@ class CoreVpnService : VpnService(), ServiceControl {
     override fun onCreate() {
         super.onCreate()
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service created")
-        CoreServiceManager.serviceControl = SoftReference(this)
+        CoreServiceManager.serviceControl = this
     }
 
     override fun onRevoke() {
@@ -104,9 +104,21 @@ class CoreVpnService : VpnService(), ServiceControl {
         super.onDestroy()
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service destroyed")
 
-        // Ensure VPN interface is properly closed when the service is destroyed without
-        // going through stopAllService() (e.g. when killed unexpectedly). isRunning is
-        // set to false at the start of stopAllService(), so this guard prevents a double-close.
+        // Unexpected destroy path: stop core first, then close TUN. stopAllService already
+        // ran this sequence and set isRunning=false; second stopCoreLoop is a no-op once
+        // serviceControl is cleared.
+        try {
+            if (isRunning) {
+                RootLanSharing.stopClientSharing(this)
+            }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: Failed to stop LAN sharing in onDestroy", e)
+        }
+        try {
+            CoreServiceManager.stopCoreLoop()
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: stopCoreLoop in onDestroy failed", e)
+        }
         if (isRunning) {
             try {
                 if (::mInterface.isInitialized) {
@@ -116,8 +128,8 @@ class CoreVpnService : VpnService(), ServiceControl {
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to close interface in onDestroy", e)
             }
+            isRunning = false
         }
-
         NotificationManager.cancelNotification()
     }
 
@@ -213,6 +225,7 @@ class CoreVpnService : VpnService(), ServiceControl {
         // Create a new interface using the builder and save the parameters
         try {
             mInterface = builder.establish()!!
+            CoreServiceManager.bindVpnInterface(mInterface)
             isRunning = true
             return true
         } catch (e: Exception) {

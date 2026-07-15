@@ -17,7 +17,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.lang.ref.SoftReference
 
 /**
  * Foreground service for the root (system-wide) run modes. Unlike [CoreVpnService] it
@@ -35,7 +34,7 @@ class CoreRootService : Service(), ServiceControl {
     override fun onCreate() {
         super.onCreate()
         LogUtil.i(AppConfig.TAG, "StartCore-Root: Service created")
-        CoreServiceManager.serviceControl = SoftReference(this)
+        CoreServiceManager.serviceControl = this
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

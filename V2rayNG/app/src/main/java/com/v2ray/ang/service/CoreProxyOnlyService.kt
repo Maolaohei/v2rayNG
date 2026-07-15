@@ -10,7 +10,6 @@ import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MyContextWrapper
-import java.lang.ref.SoftReference
 
 class CoreProxyOnlyService : Service(), ServiceControl {
     /**
@@ -19,7 +18,7 @@ class CoreProxyOnlyService : Service(), ServiceControl {
     override fun onCreate() {
         super.onCreate()
         LogUtil.i(AppConfig.TAG, "StartCore-Proxy: Service created")
-        CoreServiceManager.serviceControl = SoftReference(this)
+        CoreServiceManager.serviceControl = this
     }
 
     /**
