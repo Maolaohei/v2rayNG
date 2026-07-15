@@ -78,6 +78,8 @@ class MainActivity : HelperBaseActivity() {
         return supportFragmentManager.findFragmentByTag(tabTag(R.id.nav_home)) as? HomeFragment
     }
 
+    fun homeFragmentForModeRestart(): HomeFragment? = homeFragment()
+
     private fun subscriptionFragment(): SubSettingFragment? {
         return supportFragmentManager.findFragmentByTag(tabTag(R.id.nav_subscription)) as? SubSettingFragment
     }
@@ -108,15 +110,26 @@ class MainActivity : HelperBaseActivity() {
     override fun onResume() {
         super.onResume()
         processPendingSettingsChanges()
-        // Settings may change mode; refresh home toggle when returning.
-        homeFragment()?.let {
-            // refresh via resume of fragment already; still process flags.
-        }
     }
 
     private fun processPendingSettingsChanges() {
-        if (SettingsChangeManager.consumeRestartService() && mainViewModel.isRunning.value == true) {
-            homeFragment()?.restartV2Ray()
+        if (SettingsChangeManager.consumeRestartService()) {
+            // Prefer home hard-mode path when available; soft-restart alone cannot switch
+            // service class after Proxy/VPN/ROOT changes from Settings.
+            val home = homeFragment()
+            val live =
+                mainViewModel.isRunning.value == true ||
+                    com.v2ray.ang.core.CoreServiceManager.serviceControl != null ||
+                    com.v2ray.ang.core.CoreServiceManager.isRunning()
+            if (live) {
+                if (home != null && home.isAdded) {
+                    // Re-apply current run mode through home hard-restart helper.
+                    home.hardRestartForCurrentMode()
+                } else {
+                    // Home not ready: soft-apply is still better than doing nothing for same-class changes.
+                    com.v2ray.ang.core.CoreServiceManager.applySelectedServer(this)
+                }
+            }
         }
         if (SettingsChangeManager.consumeSetupGroupTab()) {
             subscriptionFragment()?.setupGroupTab()

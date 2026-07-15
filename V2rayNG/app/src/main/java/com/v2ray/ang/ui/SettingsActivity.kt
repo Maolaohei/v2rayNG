@@ -10,13 +10,17 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import com.v2ray.ang.AppConfig
+import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.SettingsChangeManager
+import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.helper.MmkvPreferenceDataStore
 import com.v2ray.ang.root.RootManager
 import com.v2ray.ang.util.Utils
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class SettingsActivity : BaseActivity() {
@@ -49,7 +53,6 @@ class SettingsActivity : BaseActivity() {
         private val fragmentMaxSplit by lazy { findPreference<EditTextPreference>(AppConfig.PREF_FRAGMENT_MAXSPLIT) }
 
         private val mode by lazy { findPreference<ListPreference>(AppConfig.PREF_MODE) }
-        private val enableRootMode by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_ROOT_MODE_ENABLE) }
         private val lanSharing by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_ROOT_LAN_SHARING) }
 
         private val hevTunLogLevel by lazy { findPreference<ListPreference>(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL) }
@@ -102,7 +105,28 @@ class SettingsActivity : BaseActivity() {
                     val idx = lp.findIndexOfValue(valueStr)
                     lp.summary = if (idx >= 0) lp.entries[idx] else valueStr
                 }
+                // Settings only switches Proxy/VPN; ROOT is chosen on the home screen.
+                // Always clear root flag so settings cannot leave the app stuck in ROOT.
+                val next = if (valueStr == VPN) AppConfig.VPN else AppConfig.MODE_PROXY_ONLY
+                val changed = SettingsManager.setRunMode(next)
                 updateMode(valueStr)
+                if (changed) {
+                    // Service class may change (especially leaving ROOT). Soft-restart is not enough.
+                    val live =
+                        CoreServiceManager.serviceControl != null ||
+                            CoreServiceManager.isRunning()
+                    if (live) {
+                        // Prefer immediate hard-restart: Settings is often embedded in MainActivity
+                        // (More tab), so waiting for onResume would leave the proxy stopped.
+                        val home = (activity as? MainActivity)?.homeFragmentForModeRestart()
+                        if (home != null && home.isAdded) {
+                            home.hardRestartForCurrentMode()
+                        } else {
+                            SettingsChangeManager.makeRestartService()
+                            CoreServiceManager.stopVService(requireContext())
+                        }
+                    }
+                }
                 true
             }
 
@@ -121,19 +145,6 @@ class SettingsActivity : BaseActivity() {
             dynamicSocksPort?.setOnPreferenceChangeListener { _, newValue ->
                 updateDynamicSocksPort(newValue as Boolean)
                 true
-            }
-
-            enableRootMode?.setOnPreferenceChangeListener { _, newValue ->
-                if (newValue == true && !RootManager.cachedRoot()) {
-                    lifecycleScope.launch {
-                        if (checkAndRequestRoot()) {
-                            enableRootMode?.isChecked = true
-                        }
-                    }
-                    false
-                } else {
-                    true
-                }
             }
 
             lanSharing?.setOnPreferenceChangeListener { _, newValue ->
@@ -211,7 +222,7 @@ class SettingsActivity : BaseActivity() {
             super.onStart()
             updateHevTunSettings(MmkvManager.decodeSettingsBool(AppConfig.PREF_USE_HEV_TUNNEL, true))
 
-            // Initialize mode-dependent UI states
+            // Initialize mode-dependent UI states (ROOT is owned by home toggle).
             updateMode(MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, VPN))
 
             // Initialize local proxy state
@@ -227,7 +238,16 @@ class SettingsActivity : BaseActivity() {
         }
 
         private fun updateMode(value: String?) {
-            val vpn = value == VPN
+            // Root is selected on the home screen; if active, VPN-only prefs stay disabled.
+            val root = SettingsManager.isRootMode()
+            val vpn = value == VPN && !root
+            // Hide conflicting dual-source: settings mode is Proxy/VPN only while ROOT is home-owned.
+            mode?.isEnabled = !root
+            mode?.summary = if (root) {
+                getString(R.string.home_mode_root_settings_summary)
+            } else {
+                mode?.entry ?: value
+            }
             localDns?.isEnabled = vpn
             fakeDns?.isEnabled = vpn
             appendHttpProxy?.isEnabled = vpn

@@ -12,8 +12,10 @@ import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.databinding.FragmentHomeBinding
 import com.v2ray.ang.enums.PermissionType
 import com.v2ray.ang.extension.toast
+import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toTrafficString
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.root.RootManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
@@ -22,11 +24,12 @@ import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 
 /**
  * Slim home: system switch, connectivity test, region/latency/24h traffic,
- * mode (VPN / Proxy only), current node summary.
+ * mode (Proxy only / VPN / ROOT), current node summary.
  */
 class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     override fun inflateBinding(inflater: android.view.LayoutInflater, container: android.view.ViewGroup?) =
@@ -44,7 +47,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var lastRegion: String? = null
     private var lastLatencyMs: Long? = null
     private val CONNECTING_TIMEOUT_MS = 10_000L
+    private val AUTO_PING_DELAY_MS = 700L
     private var connectingTimeoutJob: Job? = null
+    private var autoPingJob: Job? = null
+    private var lastAutoPingAtMs: Long = 0L
+    private var modeSwitchJob: Job? = null
 
     private val dayListener: (Long) -> Unit = { total ->
         if (isAdded) {
@@ -65,6 +72,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         setupConnectionSwitch()
         setupModeToggle()
         refreshModeToggle()
+        // Probe root off-main so ROOT button affordance can update without blocking first paint.
+        viewLifecycleOwner.lifecycleScope.launch {
+            withContext(Dispatchers.IO) { RootManager.refresh() }
+            if (isAdded && view != null) refreshModeToggle()
+        }
         refreshSelectedServerMeta()
         refreshMetricsFromCache()
         binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
@@ -84,6 +96,20 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
         mainViewModel.isRunning.observe(viewLifecycleOwner) { isRunning ->
             applyRunningState(false, isRunning == true)
+            if (isRunning != true) {
+                // Session-ready owns auto region/latency tests to avoid double fire with START_SUCCESS.
+                cancelAutoConnectivityTest()
+            }
+        }
+        // Soft node-switch keeps isRunning=true, so this explicit ready signal is required
+        // to leave Connecting and re-enable the switch without a manual toggle.
+        mainViewModel.sessionReadyAction.observe(viewLifecycleOwner) {
+            if (!isAdded || view == null) return@observe
+            // Guard against START_SUCCESS racing a user stop / mode hard-restart.
+            val live = mainViewModel.isRunning.value == true || CoreServiceManager.isRunning()
+            if (!live) return@observe
+            applyRunningState(false, true)
+            scheduleAutoConnectivityTest(reason = "session-ready")
         }
         mainViewModel.selectionChangedAction.observe(viewLifecycleOwner) {
             // Node changed: region from previous exit IP is stale.
@@ -117,27 +143,94 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         modeToggleReady = false
         binding.modeToggle.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked || !modeToggleReady) return@addOnButtonCheckedListener
-            val next = if (checkedId == R.id.btn_mode_vpn) AppConfig.VPN else "Proxy only"
-            val current = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN
-            if (current == next) return@addOnButtonCheckedListener
-            MmkvManager.encodeSettings(AppConfig.PREF_MODE, next)
-            if (mainViewModel.isRunning.value == true) {
-                SettingsChangeManager.makeRestartService()
-                restartV2Ray()
+            val next = when (checkedId) {
+                R.id.btn_mode_root -> AppConfig.MODE_ROOT
+                R.id.btn_mode_vpn -> AppConfig.VPN
+                else -> AppConfig.MODE_PROXY_ONLY
             }
+            val current = SettingsManager.getRunMode()
+            if (current == next) return@addOnButtonCheckedListener
+            if (next == AppConfig.MODE_ROOT) {
+                // Request root first; only then commit mode.
+                modeToggleReady = false
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val ok = withContext(Dispatchers.IO) { RootManager.refresh() }
+                    if (!isAdded || view == null) return@launch
+                    if (!ok) {
+                        requireContext().toastError(R.string.toast_root_mode_unavailable)
+                        refreshModeToggle()
+                        return@launch
+                    }
+                    applyRunMode(next)
+                }
+                return@addOnButtonCheckedListener
+            }
+            applyRunMode(next)
         }
         modeToggleReady = true
     }
 
+    private fun applyRunMode(next: String) {
+        val changed = SettingsManager.setRunMode(next)
+        refreshModeToggle()
+        if (!changed) return
+        // Switching between Proxy / VPN / ROOT changes service class; soft-restart is not enough.
+        val needHardRestart =
+            mainViewModel.isRunning.value == true ||
+                CoreServiceManager.serviceControl != null ||
+                CoreServiceManager.isRunning()
+        if (needHardRestart) {
+            hardRestartForCurrentMode()
+        }
+    }
+
+    /**
+     * Hard-restart current mode after settings/service-class changes.
+     * Soft-restart is not enough when switching Proxy / VPN / ROOT service implementations.
+     */
+    fun hardRestartForCurrentMode() {
+        if (!isAdded) return
+        SettingsChangeManager.consumeRestartService()
+        modeSwitchJob?.cancel()
+        modeToggleReady = false
+        binding.modeToggle.isEnabled = false
+        applyRunningState(isLoading = true, isRunning = false)
+        CoreServiceManager.stopVService(requireContext())
+        modeSwitchJob = viewLifecycleOwner.lifecycleScope.launch {
+            var waited = 0
+            while (
+                waited < 30 &&
+                (
+                    CoreServiceManager.serviceControl != null ||
+                        CoreServiceManager.isRunning() ||
+                        CoreServiceManager.isSoftRestarting()
+                )
+            ) {
+                delay(100L)
+                waited++
+            }
+            if (!isAdded) return@launch
+            SettingsChangeManager.consumeRestartService()
+            binding.modeToggle.isEnabled = true
+            modeToggleReady = true
+            refreshModeToggle()
+            handleConnectionToggle(wantStart = true)
+        }
+    }
+
     private fun refreshModeToggle() {
         if (!isAdded || view == null) return
-        val mode = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN
+        val mode = SettingsManager.getRunMode()
         modeToggleReady = false
-        if (mode == AppConfig.VPN) {
-            binding.modeToggle.check(R.id.btn_mode_vpn)
-        } else {
-            binding.modeToggle.check(R.id.btn_mode_proxy)
+        when (mode) {
+            AppConfig.MODE_ROOT -> binding.modeToggle.check(R.id.btn_mode_root)
+            AppConfig.VPN -> binding.modeToggle.check(R.id.btn_mode_vpn)
+            else -> binding.modeToggle.check(R.id.btn_mode_proxy)
         }
+        // Keep ROOT visible for root users; dim when we already know root is unavailable.
+        // Still clickable so users can re-request su after granting superuser.
+        val rootKnownUnavailable = !RootManager.cachedRoot() && mode != AppConfig.MODE_ROOT
+        binding.btnModeRoot.alpha = if (rootKnownUnavailable) 0.55f else 1.0f
         modeToggleReady = true
     }
 
@@ -230,15 +323,16 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             CoreServiceManager.stopVService(requireContext())
             return
         }
-        if (SettingsManager.isVpnMode()) {
-            val intent = VpnService.prepare(requireContext())
-            if (intent == null) {
-                startV2Ray()
-            } else {
-                host.requestVpnPermission.launch(intent)
+        when (SettingsManager.getRunMode()) {
+            AppConfig.VPN -> {
+                val intent = VpnService.prepare(requireContext())
+                if (intent == null) {
+                    startV2Ray()
+                } else {
+                    host.requestVpnPermission.launch(intent)
+                }
             }
-        } else {
-            startV2Ray()
+            else -> startV2Ray() // Proxy only / ROOT
         }
     }
 
@@ -291,6 +385,43 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         armConnectingTimeout()
     }
 
+    private fun scheduleAutoConnectivityTest(reason: String) {
+        if (!isAdded || view == null) return
+        if (mainViewModel.isRunning.value != true && !CoreServiceManager.isRunning()) return
+        // Debounce rapid soft-restarts / double ready signals.
+        val now = System.currentTimeMillis()
+        if (now - lastAutoPingAtMs < 2500L) {
+            return
+        }
+        if (autoPingJob != null) {
+            return
+        }
+        setTestState(getString(R.string.connection_test_testing))
+        autoPingJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                delay(AUTO_PING_DELAY_MS)
+                if (!isAdded || view == null) return@launch
+                if (mainViewModel.isRunning.value != true && !CoreServiceManager.isRunning()) return@launch
+                if (CoreServiceManager.isSoftRestarting()) {
+                    // Core still applying; try once more shortly.
+                    delay(500L)
+                    if (!isAdded || view == null) return@launch
+                    if (mainViewModel.isRunning.value != true && !CoreServiceManager.isRunning()) return@launch
+                    if (CoreServiceManager.isSoftRestarting()) return@launch
+                }
+                lastAutoPingAtMs = System.currentTimeMillis()
+                mainViewModel.testCurrentServerRealPing()
+            } finally {
+                autoPingJob = null
+            }
+        }
+    }
+
+    private fun cancelAutoConnectivityTest() {
+        autoPingJob?.cancel()
+        autoPingJob = null
+    }
+
     private fun armConnectingTimeout() {
         clearConnectingTimeout()
         connectingTimeoutJob = viewLifecycleOwner.lifecycleScope.launch {
@@ -318,6 +449,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         if (!isAdded || view == null) return
 
         if (isLoading) {
+            cancelAutoConnectivityTest()
             binding.tvStatusState.text = getString(R.string.home_status_connecting)
             binding.tvSwitchCaption.text = getString(R.string.home_status_connecting)
             switchReady = false
@@ -384,6 +516,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     override fun onDestroyView() {
         stopTrafficUpdates()
         clearConnectingTimeout()
+        cancelAutoConnectivityTest()
         super.onDestroyView()
     }
 }

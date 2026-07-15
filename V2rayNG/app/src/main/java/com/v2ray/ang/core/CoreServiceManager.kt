@@ -102,7 +102,7 @@ object CoreServiceManager {
             startContextService(context)
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: ${e.message}", e)
-            context.toast(e.message ?: e.javaClass.simpleName)
+            context.toast(friendlyStartError(context, e))
             return false
         }
         return true
@@ -125,7 +125,7 @@ object CoreServiceManager {
             startContextService(context)
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: ${e.message}", e)
-            context.toast(e.message ?: e.javaClass.simpleName)
+            context.toast(friendlyStartError(context, e))
         }
     }
 
@@ -151,6 +151,26 @@ object CoreServiceManager {
     private fun clearUserStopGate() {
         userStopRequested.set(false)
     }
+
+
+    /** Map technical start failures to short user-facing text (tile/widget/home). */
+    private fun friendlyStartError(context: Context, e: Exception): String {
+        val raw = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+        return when {
+            SettingsManager.isRootMode() && (
+                raw.contains("root", ignoreCase = true) ||
+                    raw.contains("su", ignoreCase = true) ||
+                    raw.contains("ioctl", ignoreCase = true) ||
+                    raw.contains("routing", ignoreCase = true) ||
+                    raw.contains(context.getString(R.string.toast_root_mode_unavailable), ignoreCase = true) ||
+                    raw.contains(context.getString(R.string.toast_root_required), ignoreCase = true)
+                ) -> context.getString(R.string.toast_root_start_failed)
+            raw.contains("No server selected", ignoreCase = true) ->
+                context.getString(R.string.app_tile_first_use)
+            else -> raw
+        }
+    }
+
 
 
     /** Mark intentional core stop; delayed clear is retired by epoch so races cannot flip the flag early. */
@@ -181,6 +201,11 @@ object CoreServiceManager {
                 LogUtil.i(AppConfig.TAG, "StartCore-Manager: rebinding root routing after soft-restart")
                 if (!RootProxyManager.start(service)) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing rebind failed after soft-restart")
+                    // Dynamic socks port may already have changed; fail closed instead of blackholing.
+                    MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, "Root routing rebind failed")
+                    TrafficStatsManager.stopServiceTracking()
+                    NotificationManager.cancelNotification()
+                    try { serviceControl?.stopService() } catch (_: Exception) { }
                 }
                 return
             }
@@ -195,6 +220,14 @@ object CoreServiceManager {
             }
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: rebind root routing failed", e)
+            if (SettingsManager.isRootMode()) {
+                try {
+                    MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, e.message ?: "Root routing rebind failed")
+                } catch (_: Exception) { }
+                TrafficStatsManager.stopServiceTracking()
+                NotificationManager.cancelNotification()
+                try { serviceControl?.stopService() } catch (_: Exception) { }
+            }
         }
     }
 
@@ -340,7 +373,7 @@ object CoreServiceManager {
         val isRootMode = SettingsManager.isRootMode()
         if (isRootMode && !RootManager.isRootAvailable()) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: root mode requires root but none available")
-            error(context.getString(R.string.toast_root_required))
+            error(context.getString(R.string.toast_root_mode_unavailable))
         }
 
         val intent = if (isRootMode) {
@@ -377,9 +410,7 @@ object CoreServiceManager {
      */
     /** Keep cached TUN in sync when VPN re-establishes the interface. */
     fun bindVpnInterface(vpnInterface: ParcelFileDescriptor?) {
-        if (vpnInterface != null) {
-            activeVpnInterface = vpnInterface
-        }
+        activeVpnInterface = vpnInterface
     }
 
     fun startCoreLoop(vpnInterface: ParcelFileDescriptor?): Boolean {
@@ -559,17 +590,26 @@ object CoreServiceManager {
         }
 
         currentConfig = config
-        if (vpnInterface != null) {
-            activeVpnInterface = vpnInterface
+        // Only Android VPN mode may feed a TUN fd into core. Root/Proxy must never pass a
+        // stale VpnService PFD — that triggers "inappropriate ioctl for device" on start.
+        if (SettingsManager.isVpnMode()) {
+            if (vpnInterface != null) {
+                activeVpnInterface = vpnInterface
+            }
+        } else {
+            activeVpnInterface = null
         }
-        var tunFd = activeVpnInterface?.fd ?: 0
+        var tunFd = 0
+        if (SettingsManager.isVpnMode() && !SettingsManager.isUsingHevTun()) {
+            tunFd = activeVpnInterface?.fd ?: 0
+            if (tunFd <= 0) {
+                error("VPN mode requires a valid TUN interface")
+            }
+        }
         val dialerAddr = if (currentConfig?.browserDialerMode.isNullOrEmpty()) {
             ""
         } else {
             "127.0.0.1:${Utils.findRandomFreePort()}"
-        }
-        if (SettingsManager.isUsingHevTun()) {
-            tunFd = 0
         }
 
         NotificationManager.showNotification(currentConfig)

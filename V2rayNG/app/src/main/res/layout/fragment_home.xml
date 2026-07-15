@@ -210,7 +210,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/proxy_only" />
+                    android:text="@string/home_mode_proxy" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_mode_vpn"
@@ -219,6 +219,14 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/home_mode_vpn" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_mode_root"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/home_mode_root" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
         </LinearLayout>
 

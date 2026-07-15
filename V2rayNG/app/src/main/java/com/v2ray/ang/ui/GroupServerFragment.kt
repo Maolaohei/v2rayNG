@@ -244,7 +244,12 @@ class GroupServerFragment : BaseFragment<FragmentGroupServerBinding>(),
             val toPosition = mainViewModel.getPosition(guid)
             adapter.setSelectServer(fromPosition, toPosition)
 
-            if (mainViewModel.isRunning.value == true) {
+            // Prefer live service/core state over ViewModel cache so node switch still
+            // soft-applies when UI isRunning is briefly stale after a previous transition.
+            val serviceAlive = com.v2ray.ang.core.CoreServiceManager.serviceControl != null ||
+                com.v2ray.ang.core.CoreServiceManager.isRunning() ||
+                mainViewModel.isRunning.value == true
+            if (serviceAlive) {
                 ownerActivity.restartV2Ray()
             }
         }

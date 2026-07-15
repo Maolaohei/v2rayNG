@@ -295,6 +295,9 @@
     <string name="title_root_mode_enabled">Root mode enabled (Root Users)</string>
     <string name="summary_root_mode_enabled">Enable low-level transparent proxying via root privileges. This mode bypasses the standard Android system VPN to directly take over all underlying network traffic. Once enabled, the original regular mode, per-app routing, and related VPN settings will become completely invalid.</string>
     <string name="toast_root_required">Root access is required for this feature</string>
+    <string name="toast_root_mode_unavailable">ROOT mode needs device root permission. Switch to VPN or Proxy only if root is unavailable.</string>
+    <string name="toast_root_start_failed">Failed to start ROOT mode (root permission or routing setup failed)</string>
+    <string name="home_mode_root_settings_summary">Managed on Home · ROOT</string>
     <string name="title_root_lan_sharing">LAN / tethering sharing (Root Users)</string>
     <string name="summary_root_lan_sharing">Route Wi-Fi hotspot and USB-tethered devices through the VPN</string>
 
@@ -388,6 +391,8 @@
     <string name="home_metric_latency_fail">Failed</string>
     <string name="home_mode_label">Mode</string>
     <string name="home_mode_vpn">VPN</string>
+    <string name="home_mode_root">ROOT</string>
+    <string name="home_mode_proxy">Proxy only</string>
     <string name="home_connection_status">Connection</string>
     <string name="home_traffic_24h">Last 24h</string>
     <string name="title_pref_per_app_proxy_entry">Per-app proxy</string>

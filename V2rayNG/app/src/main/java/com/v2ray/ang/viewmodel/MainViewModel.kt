@@ -41,6 +41,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var keywordFilter = ""
     val serversCache = mutableListOf<ServersCache>()
     val isRunning by lazy { MutableLiveData<Boolean>() }
+    /** Bumped whenever core session is ready (start/soft-restart/already-running). */
+    val sessionReadyAction by lazy { MutableLiveData<Long>() }
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
     val selectionChangedAction by lazy { MutableLiveData<String?>() }
@@ -218,6 +220,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun testCurrentServerRealPing() {
         MessageUtil.sendMsg2Service(getApplication(), AppConfig.MSG_MEASURE_DELAY, "")
+    }
+
+    /** Force UI to leave connecting state even when isRunning was already true (soft switch). */
+    private fun notifySessionReady() {
+        sessionReadyAction.value = System.currentTimeMillis()
     }
 
     /**
@@ -435,6 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (intent?.getIntExtra("key", 0)) {
                 AppConfig.MSG_STATE_RUNNING -> {
                     isRunning.value = true
+                    notifySessionReady()
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
@@ -448,6 +456,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         getApplication<AngApplication>().toastSuccess(R.string.toast_services_success)
                     }
                     isRunning.value = true
+                    // Always notify: soft-restart keeps isRunning=true so LiveData alone won't refresh UI.
+                    notifySessionReady()
                 }
 
                 AppConfig.MSG_STATE_START_FAILURE -> {

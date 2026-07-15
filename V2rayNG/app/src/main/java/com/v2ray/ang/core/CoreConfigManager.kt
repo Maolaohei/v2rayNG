@@ -85,7 +85,33 @@ object CoreConfigManager {
             ?: return ConfigResult(status = false, guid = configContext.guid, errorMessage = "Custom config is empty")
         val result = ConfigResult(true, configContext.guid, raw)
         if (!needTun()) {
-            return result
+            // Custom profiles may still embed a core TUN inbound (VPN-era export).
+            // Root/Proxy must strip it; otherwise startLoop hits ioctl on a non-VPN fd.
+            val json = JsonUtil.parseString(raw)?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: return result
+            val inboundsJson = json.get("inbounds")?.takeIf { it.isJsonArray }?.asJsonArray
+                ?: JsonArray().also { json.add("inbounds", it) }
+            val filtered = JsonArray()
+            var removedTun = false
+            for (elem in inboundsJson) {
+                val protocol = elem.takeIf { it.isJsonObject }?.asJsonObject
+                    ?.get("protocol")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                    ?.asString
+                if (protocol == "tun") {
+                    removedTun = true
+                    continue
+                }
+                filtered.add(elem)
+            }
+            if (removedTun) {
+                json.add("inbounds", filtered)
+            }
+            // Root/Proxy rely on local SOCKS for hev-socks5-tunnel / local apps.
+            ensureSocksInboundInJson(json)
+            return JsonUtil.toJsonPretty(json)?.let {
+                ConfigResult(true, configContext.guid, it)
+            } ?: result
         }
 
         val json = JsonUtil.parseString(raw)?.takeIf { it.isJsonObject }?.asJsonObject ?: return result
@@ -144,6 +170,9 @@ object CoreConfigManager {
         v2rayConfig.remarks = primaryResolvedOutbound.profile.remarks
 
         configureInbounds(v2rayConfig)
+        if (!needTun()) {
+            v2rayConfig.inbounds.removeIf { it.protocol == "tun" || it.tag == "tun" }
+        }
 
         if (v2rayConfig.outbounds.isNotEmpty()) {
             v2rayConfig.outbounds.removeAt(0)
@@ -444,7 +473,47 @@ object CoreConfigManager {
 
     //region some sub function
 
+
+    /** Ensure custom JSON has a SOCKS inbound when core TUN is not used. */
+    private fun ensureSocksInboundInJson(json: com.google.gson.JsonObject) {
+        val inboundsJson = json.get("inbounds")?.takeIf { it.isJsonArray }?.asJsonArray
+            ?: JsonArray().also { json.add("inbounds", it) }
+        val hasSocks = inboundsJson.any { elem ->
+            elem.isJsonObject && elem.asJsonObject.get("protocol")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                ?.asString == "socks"
+        }
+        if (hasSocks) {
+            // Still refresh port for root hev-tun2socks binding.
+            for (elem in inboundsJson) {
+                val obj = elem.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+                val protocol = obj.get("protocol")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                    ?.asString
+                if (protocol == "socks") {
+                    obj.addProperty("port", SettingsManager.getSocksPort())
+                    if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING) != true) {
+                        obj.addProperty("listen", AppConfig.LOOPBACK)
+                    }
+                }
+            }
+            return
+        }
+        val socks = com.google.gson.JsonObject()
+        socks.addProperty("tag", "socks")
+        socks.addProperty("port", SettingsManager.getSocksPort())
+        socks.addProperty("listen", AppConfig.LOOPBACK)
+        socks.addProperty("protocol", "socks")
+        val settings = com.google.gson.JsonObject()
+        settings.addProperty("auth", "noauth")
+        settings.addProperty("udp", true)
+        socks.add("settings", settings)
+        inboundsJson.add(socks)
+    }
+
     private fun needTun(): Boolean {
+        // Root uses hev-socks5-tunnel + SOCKS, never core TUN inbound (ioctl would fail without VpnService).
+        if (SettingsManager.isRootMode()) return false
         return SettingsManager.isVpnMode() && !SettingsManager.isUsingHevTun()
     }
 

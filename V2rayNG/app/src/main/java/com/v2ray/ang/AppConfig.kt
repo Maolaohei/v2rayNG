@@ -197,6 +197,8 @@ object AppConfig {
 
     /** Give a good name to this, IDK*/
     const val VPN = "VPN"
+    const val MODE_PROXY_ONLY = "Proxy only"
+    const val MODE_ROOT = "ROOT"
     const val VPN_MTU = 1500
 
     /** Root (system-wide) mode runtime constants. */

@@ -42,6 +42,8 @@ class CoreRootService : Service(), ServiceControl {
 
         // Start the in-process core first (this also posts the foreground notification),
         // then install the root routing off the main thread.
+        // Never reuse a previous VPN TUN PFD in root mode.
+        CoreServiceManager.bindVpnInterface(null)
         if (!CoreServiceManager.startCoreLoop(null)) {
             LogUtil.e(AppConfig.TAG, "StartCore-Root: core failed to start")
             stopService()

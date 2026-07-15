@@ -486,6 +486,8 @@ object SettingsManager {
      * @return True if VPN mode is enabled, false otherwise.
      */
     fun isVpnMode(): Boolean {
+        // Root mode owns its own service/routing path; never treat it as Android VPN mode.
+        if (isRootMode()) return false
         val mode = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE)
         return mode == null || mode == VPN
     }
@@ -495,6 +497,41 @@ object SettingsManager {
      */
     fun isRootMode(): Boolean {
         return MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+    }
+
+    /** Home/settings three-way run mode: Proxy only / VPN / ROOT. */
+    fun getRunMode(): String {
+        return when {
+            isRootMode() -> AppConfig.MODE_ROOT
+            isVpnMode() -> AppConfig.VPN
+            else -> AppConfig.MODE_PROXY_ONLY
+        }
+    }
+
+    /**
+     * Persist three-way mode. Root is stored as PREF_ROOT_MODE_ENABLE and does not use VpnService.
+     * @return true if the Android service class needs a hard restart (mode family changed).
+     */
+    fun setRunMode(mode: String): Boolean {
+        val prev = getRunMode()
+        when (mode) {
+            AppConfig.MODE_ROOT -> {
+                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, true)
+                // Keep PREF_MODE non-VPN so any leftover VPN-only knobs stay off while rooted.
+                if ((MmkvManager.decodeSettingsString(AppConfig.PREF_MODE) ?: AppConfig.VPN) == AppConfig.VPN) {
+                    MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.MODE_PROXY_ONLY)
+                }
+            }
+            AppConfig.VPN -> {
+                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+                MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.VPN)
+            }
+            else -> {
+                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+                MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.MODE_PROXY_ONLY)
+            }
+        }
+        return prev != getRunMode()
     }
 
     /**
