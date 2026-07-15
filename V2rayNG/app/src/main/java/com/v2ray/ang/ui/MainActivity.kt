@@ -91,7 +91,14 @@ class MainActivity : HelperBaseActivity() {
     }
 
     fun restartV2Ray() {
-        homeFragment()?.restartV2Ray()
+        // Home may be hidden (user is on Subscription tab). Always soft-apply selection
+        // through CoreServiceManager; update Home UI when the fragment exists.
+        val home = homeFragment()
+        if (home != null && home.isAdded) {
+            home.restartV2Ray()
+        } else {
+            com.v2ray.ang.core.CoreServiceManager.applySelectedServer(this)
+        }
     }
 
     fun importConfigViaSub(): Boolean {

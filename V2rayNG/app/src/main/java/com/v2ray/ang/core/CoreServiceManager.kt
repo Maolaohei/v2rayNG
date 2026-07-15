@@ -44,6 +44,8 @@ import libv2ray.CoreController
 import libv2ray.ProcessFinder
 import java.lang.ref.SoftReference
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 object CoreServiceManager {
 
@@ -56,13 +58,19 @@ object CoreServiceManager {
     @Volatile
     private var intentionalStop = false
     /** True while we intentionally stop the core only to restart it in-place. */
-    @Volatile
-    private var softRestarting = false
+    private val softRestarting = AtomicBoolean(false)
+    /** Bumped on user/full stop so in-flight soft-restarts cannot revive the session. */
+    private val sessionGeneration = AtomicInteger(0)
+    /** Set when user/system requests a full stop; blocks soft-restart completion. */
+    private val userStopRequested = AtomicBoolean(false)
     /** Last VPN tun PFD while the Android service is alive (needed for core soft-restart). */
     @Volatile
     private var activeVpnInterface: ParcelFileDescriptor? = null
     @Volatile
     private var receiverRegistered = false
+    private var measureJob: Job? = null
+    @Volatile
+    private var pendingSelectedApply = false
 
     var serviceControl: SoftReference<ServiceControl>? = null
         set(value) {
@@ -81,6 +89,7 @@ object CoreServiceManager {
      * @return True if the service was started successfully, false otherwise.
      */
     fun startVServiceFromToggle(context: Context): Boolean {
+        clearUserStopGate()
         if (MmkvManager.getSelectServer().isNullOrEmpty()) {
             context.toast(R.string.app_tile_first_use)
             return false
@@ -101,6 +110,7 @@ object CoreServiceManager {
      * @param guid The GUID of the server configuration to use (optional).
      */
     fun startVService(context: Context, guid: String? = null) {
+        clearUserStopGate()
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: startVService from ${context::class.java.simpleName}")
 
         if (guid != null) {
@@ -121,7 +131,72 @@ object CoreServiceManager {
      */
     fun stopVService(context: Context) {
         //context.toast(R.string.toast_services_stop)
+        beginUserStop()
         MessageUtil.sendMsg2Service(context, AppConfig.MSG_STATE_STOP, "")
+    }
+
+    /** Mark a full user/system stop so any in-flight soft-restart cannot revive the session. */
+    private fun beginUserStop() {
+        userStopRequested.set(true)
+        pendingSelectedApply = false
+        sessionGeneration.incrementAndGet()
+        cancelMeasureDelay("user stop", notifyUi = false)
+    }
+
+    /** Clear stop gate when intentionally starting/applying a session. */
+    private fun clearUserStopGate() {
+        userStopRequested.set(false)
+    }
+
+    /**
+     * Apply the currently selected profile to a live session.
+     *
+     * Root cause of "switch node while connected sticks on Testing...":
+     * UI used hard stop + fixed-delay start. stopLoop/service teardown is async,
+     * so start often hit "core already running" and became a no-op, while an
+     * in-flight measureDelay was cancelled without clearing home test UI.
+     *
+     * Soft-restart reloads config on the existing foreground service + TUN.
+     */
+    fun applySelectedServer(context: Context) {
+        clearUserStopGate()
+        LogUtil.i(AppConfig.TAG, "StartCore-Manager: applySelectedServer")
+        // Drop any in-flight latency test; home UI is managed by caller.
+        cancelMeasureDelay("node switched", notifyUi = false)
+        val serviceAlive = getService() != null
+        val liveSession = serviceAlive && (coreController.isRunning || softRestarting.get() || activeVpnInterface != null)
+        if (liveSession) {
+            if (!restartCoreLoop()) {
+                // Another soft-restart is in flight; re-apply when it finishes.
+                pendingSelectedApply = true
+            }
+            return
+        }
+        // Service not alive: cold start with the new selection.
+        startVService(context)
+    }
+
+    /** Cancel in-flight measureDelay; optionally reset home test label. */
+    fun cancelMeasureDelay(reason: String = "cancelled", notifyUi: Boolean = true) {
+        val job = measureJob
+        measureJob = null
+        if (job != null) {
+            job.cancel()
+            LogUtil.i(AppConfig.TAG, "StartCore-Manager: measureDelay cancelled ($reason)")
+        }
+        if (!notifyUi) return
+        // Only clear UI when a test was actually running; avoid clobbering "Connected".
+        if (job == null) return
+        val service = getService() ?: return
+        try {
+            MessageUtil.sendMsg2UI(
+                service,
+                AppConfig.MSG_MEASURE_DELAY_SUCCESS,
+                service.getString(R.string.connection_connected)
+            )
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "StartCore-Manager: failed to clear measure UI", e)
+        }
     }
 
     /**
@@ -244,7 +319,7 @@ object CoreServiceManager {
         } catch (e: Exception) {
             val message = e.message?.takeUnless { it.isBlank() } ?: e.javaClass.simpleName
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: $message", e)
-            if (!softRestarting) {
+            if (!softRestarting.get()) {
                 MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, message)
                 TrafficStatsManager.stopServiceTracking()
                 NotificationManager.cancelNotification()
@@ -255,7 +330,7 @@ object CoreServiceManager {
 
     /**
      * Soft-restart the Xray core without tearing down the Android foreground service.
-     * Used by ConnectionWatchdog, network recovery, and unexpected core shutdown recovery.
+     * Used by node switch, ConnectionWatchdog, network recovery, and unexpected shutdown recovery.
      * Does not emit STOP_SUCCESS (avoids UI flipping to stopped while still connected).
      * Work runs on IO; safe to call from main / binder threads.
      */
@@ -264,33 +339,99 @@ object CoreServiceManager {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: restartCoreLoop service is null")
             return false
         }
-        if (softRestarting) {
+        if (userStopRequested.get()) {
+            LogUtil.i(AppConfig.TAG, "StartCore-Manager: skip soft-restart, user stop requested")
+            return false
+        }
+        if (!softRestarting.compareAndSet(false, true)) {
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: restart already in progress")
             return false
         }
 
-        softRestarting = true
-        LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core")
+        val generation = sessionGeneration.get()
+        cancelMeasureDelay("soft-restart", notifyUi = false)
+        LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core gen=$generation")
         serviceScope.launch {
+            var startedOk = false
             try {
+                if (userStopRequested.get() || generation != sessionGeneration.get()) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: soft-restart aborted before stop (user stop/gen)")
+                    return@launch
+                }
                 stopCoreLoop(
                     notifyUi = false,
                     cancelNotification = false,
                     stopWatchdog = true,
                     clearVpnInterface = false,
                 )
-                kotlinx.coroutines.delay(300L)
+                // Wait until native core actually stops (async stopLoop race is the root bug).
+                var waited = 0
+                while (coreController.isRunning && waited < 50) {
+                    if (userStopRequested.get() || generation != sessionGeneration.get()) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-Manager: soft-restart aborted while waiting stop")
+                        return@launch
+                    }
+                    kotlinx.coroutines.delay(100L)
+                    waited++
+                }
+                if (coreController.isRunning) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-Manager: core still running after stop wait, forcing stopLoop")
+                    try { coreController.stopLoop() } catch (e: Exception) {
+                        LogUtil.e(AppConfig.TAG, "StartCore-Manager: force stopLoop failed", e)
+                    }
+                    kotlinx.coroutines.delay(200L)
+                }
+                if (userStopRequested.get() || generation != sessionGeneration.get()) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: soft-restart aborted before start (user stop/gen)")
+                    return@launch
+                }
                 val ok = startCoreLoop(activeVpnInterface)
+                startedOk = ok
                 if (!ok) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed to start core")
+                    // Full converge: tear down service so UI/notification cannot desync.
+                    if (!userStopRequested.get()) {
+                        val svcControl = serviceControl?.get()
+                        val svc = svcControl?.getService()
+                        if (svc != null) {
+                            MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, "Soft-restart failed")
+                        }
+                        TrafficStatsManager.stopServiceTracking()
+                        NotificationManager.cancelNotification()
+                        try { svcControl?.stopService() } catch (e: Exception) {
+                            LogUtil.e(AppConfig.TAG, "StartCore-Manager: stopService after soft-restart failure", e)
+                        }
+                    }
                 } else {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restart completed")
                 }
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed", e)
+                if (!userStopRequested.get() && generation == sessionGeneration.get()) {
+                    val svcControl = serviceControl?.get()
+                    val svc = svcControl?.getService()
+                    if (svc != null) {
+                        MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, e.message ?: "Soft-restart failed")
+                    }
+                    TrafficStatsManager.stopServiceTracking()
+                    NotificationManager.cancelNotification()
+                    try { svcControl?.stopService() } catch (_: Exception) { }
+                }
             } finally {
-                softRestarting = false
+                softRestarting.set(false)
                 intentionalStop = false
+                val canReapply = pendingSelectedApply &&
+                    !userStopRequested.get() &&
+                    generation == sessionGeneration.get() &&
+                    getService() != null
+                if (canReapply) {
+                    pendingSelectedApply = false
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: applying pending selected server after soft-restart")
+                    restartCoreLoop()
+                } else if (pendingSelectedApply && (userStopRequested.get() || generation != sessionGeneration.get())) {
+                    pendingSelectedApply = false
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: drop pending selected apply after user stop")
+                }
             }
         }
         return true
@@ -385,6 +526,10 @@ object CoreServiceManager {
         clearVpnInterface: Boolean,
     ): Boolean {
         val service = getService() ?: return false
+        if (clearVpnInterface) {
+            // Full teardown (user stop / service destroy): invalidate soft-restarts.
+            beginUserStop()
+        }
 
         intentionalStop = true
         if (coreController.isRunning) {
@@ -397,7 +542,7 @@ object CoreServiceManager {
         // Keep intentionalStop true briefly so native shutdown callback does not race into unexpected-restart.
         serviceScope.launch {
             kotlinx.coroutines.delay(1500L)
-            if (!softRestarting) {
+            if (!softRestarting.get()) {
                 intentionalStop = false
             }
         }
@@ -423,7 +568,7 @@ object CoreServiceManager {
             activeVpnInterface = null
         }
 
-        if (receiverRegistered && !softRestarting) {
+        if (receiverRegistered && (clearVpnInterface || !softRestarting.get())) {
             try {
                 service.unregisterReceiver(mMsgReceive)
                 receiverRegistered = false
@@ -467,46 +612,80 @@ object CoreServiceManager {
 
     /**
      * Measures the connection delay for the current V2Ray configuration.
-     * Tests with primary URL first, then falls back to alternative URL if needed.
-     * Also fetches remote IP information if the delay test was successful.
+     * Always posts a result to UI so the home "Testing..." state cannot stick forever.
+     * Cancels any in-flight measurement (e.g. when switching nodes / soft-restarting).
      */
     private fun measureV2rayDelay() {
-        if (coreController.isRunning == false) {
-            return
-        }
-
-        serviceScope.launch {
-            val service = getService() ?: return@launch
-            var time = -1L
-            var errorStr = ""
-
-            try {
-                time = coreController.measureDelay(SettingsManager.getDelayTestUrl())
-            } catch (e: Exception) {
-                LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to measure delay", e)
-                errorStr = e.message?.substringAfter("\":") ?: "empty message"
+        // Cancel previous job WITHOUT the cancelMeasureDelay UI path first; we replace it.
+        measureJob?.cancel()
+        measureJob = serviceScope.launch {
+            val service = getService()
+            if (service == null) {
+                LogUtil.w(AppConfig.TAG, "StartCore-Manager: measureDelay aborted, service is null")
+                return@launch
             }
-            if (time == -1L) {
+            try {
+                // Wait briefly if a soft-restart is applying a newly selected node.
+                var wait = 0
+                while ((softRestarting.get() || !coreController.isRunning) && wait < 20) {
+                    kotlinx.coroutines.delay(100L)
+                    wait++
+                }
+                if (!coreController.isRunning || softRestarting.get()) {
+                    MessageUtil.sendMsg2UI(
+                        service,
+                        AppConfig.MSG_MEASURE_DELAY_SUCCESS,
+                        service.getString(R.string.connection_test_error, "core not ready")
+                    )
+                    return@launch
+                }
+
+                var time = -1L
+                var errorStr = ""
                 try {
-                    time = coreController.measureDelay(SettingsManager.getDelayTestUrl(true))
+                    time = coreController.measureDelay(SettingsManager.getDelayTestUrl())
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to measure delay", e)
                     errorStr = e.message?.substringAfter("\":") ?: "empty message"
                 }
-            }
-
-            val result = if (time >= 0) {
-                service.getString(R.string.connection_test_available, time)
-            } else {
-                service.getString(R.string.connection_test_error, errorStr)
-            }
-            MessageUtil.sendMsg2UI(service, AppConfig.MSG_MEASURE_DELAY_SUCCESS, result)
-
-            // Only fetch IP info if the delay test was successful
-            if (time >= 0) {
-                SpeedtestManager.getRemoteIPInfo()?.let { ip ->
-                    MessageUtil.sendMsg2UI(service, AppConfig.MSG_MEASURE_DELAY_SUCCESS, "$result\n$ip")
+                if (time == -1L) {
+                    try {
+                        time = coreController.measureDelay(SettingsManager.getDelayTestUrl(true))
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to measure delay", e)
+                        errorStr = e.message?.substringAfter("\":") ?: "empty message"
+                    }
                 }
+
+                if (!coreController.isRunning || softRestarting.get()) {
+                    MessageUtil.sendMsg2UI(
+                        service,
+                        AppConfig.MSG_MEASURE_DELAY_SUCCESS,
+                        service.getString(R.string.connection_test_error, "interrupted")
+                    )
+                    return@launch
+                }
+
+                val result = if (time >= 0) {
+                    service.getString(R.string.connection_test_available, time)
+                } else {
+                    service.getString(R.string.connection_test_error, errorStr)
+                }
+                MessageUtil.sendMsg2UI(service, AppConfig.MSG_MEASURE_DELAY_SUCCESS, result)
+
+                if (time >= 0) {
+                    SpeedtestManager.getRemoteIPInfo()?.let { ip ->
+                        if (coreController.isRunning && !softRestarting.get()) {
+                            MessageUtil.sendMsg2UI(service, AppConfig.MSG_MEASURE_DELAY_SUCCESS, "$result\n$ip")
+                        }
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Silent: cancelMeasureDelay() decides whether to clear UI.
+                // Replacing measureJob for a new test must not flash "cancelled".
+                throw e
             }
         }
     }
@@ -539,7 +718,7 @@ object CoreServiceManager {
          * Skips restart when the stop was triggered intentionally (user-initiated).
          */
         override fun shutdown(): Long {
-            if (intentionalStop || softRestarting) {
+            if (intentionalStop || softRestarting.get()) {
                 LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core shutdown (intentional/soft-restart), not treating as crash")
                 return 0
             }
@@ -548,7 +727,7 @@ object CoreServiceManager {
             serviceScope.launch {
                 try {
                     kotlinx.coroutines.delay(800L)
-                    if (!intentionalStop && !softRestarting && !coreController.isRunning) {
+                    if (!intentionalStop && !softRestarting.get() && !coreController.isRunning) {
                         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restarting core after unexpected shutdown")
                         val ok = restartCoreLoop()
                         if (!ok) {
@@ -648,13 +827,20 @@ object CoreServiceManager {
 
                 AppConfig.MSG_STATE_STOP -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Stop service")
+                    beginUserStop()
                     serviceControl.stopService()
                 }
 
                 AppConfig.MSG_STATE_RESTART -> {
-                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: Restart service")
-                    serviceControl.stopService()
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ startVService(serviceControl.getService()) }, 500L)
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: Restart service (soft)")
+                    // Prefer soft-restart: keep FGS/TUN, reload selected config.
+                    // Hard stop+start races with async teardown and can leave core stuck.
+                    if (!restartCoreLoop()) {
+                        serviceControl.stopService()
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            startVService(serviceControl.getService())
+                        }, 500L)
+                    }
                 }
 
                 AppConfig.MSG_MEASURE_DELAY -> {

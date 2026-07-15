@@ -20,8 +20,9 @@ import com.v2ray.ang.handler.SubscriptionUpdater
 import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 /**
  * Slim home: system switch, connectivity test, region/latency/24h traffic,
@@ -42,6 +43,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private var lastRegion: String? = null
     private var lastLatencyMs: Long? = null
+    private val CONNECTING_TIMEOUT_MS = 10_000L
+    private var connectingTimeoutJob: Job? = null
 
     private val dayListener: (Long) -> Unit = { total ->
         if (isAdded) {
@@ -273,13 +276,37 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     fun restartV2Ray() {
-        if (mainViewModel.isRunning.value == true) {
-            CoreServiceManager.stopVService(requireContext())
+        // Soft-apply selected profile while connected.
+        // Hard stop + fixed delay start races with async stopLoop and can leave the
+        // core on the old config (or half-stopped) while home stays on "Testing...".
+        if (!isAdded) return
+        lastRegion = null
+        lastLatencyMs = null
+        refreshSelectedServerMeta()
+        refreshMetricsFromCache()
+        applyRunningState(isLoading = true, isRunning = false)
+        CoreServiceManager.applySelectedServer(requireContext())
+        // Soft-restart does not emit STOP; keep connectivity label out of Testing...
+        setTestState(getString(R.string.connection_connected))
+        armConnectingTimeout()
+    }
+
+    private fun armConnectingTimeout() {
+        clearConnectingTimeout()
+        connectingTimeoutJob = viewLifecycleOwner.lifecycleScope.launch {
+            delay(CONNECTING_TIMEOUT_MS)
+            if (!isAdded || view == null) return@launch
+            // No START_SUCCESS/FAILURE arrived; recover switch so UI cannot stick forever.
+            if (!binding.switchConnection.isEnabled) {
+                val running = mainViewModel.isRunning.value == true || CoreServiceManager.isRunning()
+                applyRunningState(isLoading = false, isRunning = running)
+            }
         }
-        viewLifecycleOwner.lifecycleScope.launch {
-            delay(500)
-            startV2Ray()
-        }
+    }
+
+    private fun clearConnectingTimeout() {
+        connectingTimeoutJob?.cancel()
+        connectingTimeoutJob = null
     }
 
     private fun setTestState(content: String?) {
@@ -297,6 +324,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             binding.switchConnection.isEnabled = false
             return
         }
+
+        clearConnectingTimeout()
 
         isServiceRunning = isRunning
         switchReady = false
@@ -353,6 +382,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     override fun onDestroyView() {
         stopTrafficUpdates()
+        clearConnectingTimeout()
         super.onDestroyView()
     }
 }
