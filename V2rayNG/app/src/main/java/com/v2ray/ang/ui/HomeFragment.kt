@@ -59,11 +59,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var lastAutoPingAtMs: Long = 0L
     private var modeSwitchJob: Job? = null
     private var resyncDebounceJob: Job? = null
-    /** Confirm-not-live job: never flip Running→Stopped on a single flaky probe. */
+    /** Confirm-not-live job: never flip Running鈫扴topped on a single flaky probe. */
     private var stopConfirmJob: Job? = null
     /**
      * Sticky UI truth across tab hide/show and process boundaries.
-     * Core runs in :RunSoLibV2RayDaemon — main-process CoreServiceManager.isRunning()
+     * Core runs in :RunSoLibV2RayDaemon 鈥?main-process CoreServiceManager.isRunning()
      * is often false even while the daemon is live. Prefer broadcast + sticky flag.
      */
     private var stickyRunning: Boolean = false
@@ -128,7 +128,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                 applyRunningState(false, true)
                 maybePromptBatteryExemption()
             } else {
-                // User stop leaves the switch intentionally unchecked — accept immediately.
+                // User stop leaves the switch intentionally unchecked 鈥?accept immediately.
                 // Otherwise multi-process false negatives only defer-clear sticky Running.
                 val userIntentStop = !binding.switchConnection.isChecked
                 requestStoppedState(source = "livedata", force = userIntentStop)
@@ -249,8 +249,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         applyRunningState(isLoading = true, isRunning = false)
         armConnectingTimeout(timeoutMs = 20_000L)
 
-        // Previous wait used main-process CoreServiceManager flags — always empty because
-        // the core runs in :RunSoLibV2RayDaemon. That made VPN→ROOT start immediately while
+        // Previous wait used main-process CoreServiceManager flags 鈥?always empty because
+        // the core runs in :RunSoLibV2RayDaemon. That made VPN鈫扲OOT start immediately while
         // VPN was still tearing down, so ROOT startCoreLoop failed and UI stayed Connecting.
         CoreServiceManager.stopAllModeServices(requireContext())
 
@@ -351,13 +351,13 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     /**
      * Connectivity test payload examples:
      * - "Success: Connection took 123ms"
-     * - "连接成功：延时 123 毫秒"
+     * - "杩炴帴鎴愬姛锛氬欢鏃?123 姣"
      * - optional second line: "(US) 1.2.3.4"
      */
     private fun applyTestResultMetrics(content: String?) {
         if (content.isNullOrBlank()) return
 
-        val latencyMatch = Regex("""(?i)(?:took|latency|delay|延时|延迟)\s*(\d+)\s*(?:ms|毫秒)?|(\d+)\s*ms\b""")
+        val latencyMatch = Regex("""(?i)(?:took|latency|delay|寤舵椂|寤惰繜)\s*(\d+)\s*(?:ms|姣)?|(\d+)\s*ms\b""")
             .find(content)
         val latency = latencyMatch?.groupValues
             ?.drop(1)
@@ -368,11 +368,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             internetReachable = latency >= 0L
         } else if (
             content.contains("Fail", ignoreCase = true) ||
-            content.contains("失败") ||
+            content.contains("澶辫触") ||
             content.contains("Unavailable", ignoreCase = true) ||
             content.contains("error", ignoreCase = true) ||
             content.contains("timeout", ignoreCase = true) ||
-            content.contains("超时")
+            content.contains("瓒呮椂")
         ) {
             lastLatencyMs = -1L
             internetReachable = false
@@ -557,7 +557,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         uiConnecting = false
         clearConnectingTimeout()
 
-        // No-op when UI already matches — prevents switch/caption flicker on tab resume.
+        // No-op when UI already matches 鈥?prevents switch/caption flicker on tab resume.
         if (isServiceRunning == isRunning &&
             binding.switchConnection.isEnabled &&
             binding.switchConnection.isChecked == isRunning
@@ -664,7 +664,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
     }
 
-    /** Flip to Stopped only after confirmation — never on a single false probe. */
+    /** Flip to Stopped only after confirmation 鈥?never on a single false probe. */
     private fun requestStoppedState(source: String, force: Boolean = false) {
         if (!isAdded || view == null) return
         if (uiConnecting) return
@@ -710,6 +710,13 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
     }
 
+
+    /** One-shot battery exemption prompt after a live session (ROOT especially). */
+    private fun maybePromptBatteryExemption() {
+        if (!isAdded || view == null) return
+        // Soft keep-alive; safe no-op when already exempt or already prompted.
+        BatteryHelper.maybeRequestIgnoreBatteryOptimizations(requireContext().applicationContext)
+    }
     private fun cancelStopConfirm() {
         stopConfirmJob?.cancel()
         stopConfirmJob = null
@@ -766,7 +773,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
         // Prefer sticky + ViewModel broadcast truth over main-process CoreServiceManager.
         // Core lives in :RunSoLibV2RayDaemon; main-process isRunning()/hasLiveSession() are
-        // often false even when the proxy is healthy — that caused Off→On→Off switch flicker.
+        // often false even when the proxy is healthy 鈥?that caused Off鈫扥n鈫扥ff switch flicker.
         val uiLive = stickyRunning || mainViewModel.isRunning.value == true || isServiceRunning
         if (uiLive) {
             cancelStopConfirm()

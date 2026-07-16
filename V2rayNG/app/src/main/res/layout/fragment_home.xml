@@ -67,7 +67,7 @@
                         android:id="@+id/tv_status_detail"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/padding_spacing_dp2"
+                        android:layout_marginTop="@dimen/padding_spacing_dp4"
                         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:visibility="gone"
