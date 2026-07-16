@@ -37,6 +37,16 @@ class CoreProxyOnlyService : Service(), ServiceControl {
     /**
      * Destroys the service.
      */
+    /**
+     * Swiping the app away must NOT stop the proxy. Foreground service + sticky restart
+     * keep the daemon alive; UI will re-REGISTER when MainActivity returns.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        LogUtil.i(AppConfig.TAG, "StartCore-Proxy: onTaskRemoved - keep service running")
+        // Do not call stopSelf / stopCoreLoop.
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         CoreServiceManager.stopCoreLoop()

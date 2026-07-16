@@ -21,6 +21,7 @@ import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
 import com.v2ray.ang.handler.TrafficStatsManager
+import com.v2ray.ang.util.BatteryHelper
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
@@ -57,6 +58,14 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var lastAutoPingAtMs: Long = 0L
     private var modeSwitchJob: Job? = null
     private var resyncDebounceJob: Job? = null
+    /** Confirm-not-live job: never flip Running→Stopped on a single flaky probe. */
+    private var stopConfirmJob: Job? = null
+    /**
+     * Sticky UI truth across tab hide/show and process boundaries.
+     * Core runs in :RunSoLibV2RayDaemon — main-process CoreServiceManager.isRunning()
+     * is often false even while the daemon is live. Prefer broadcast + sticky flag.
+     */
+    private var stickyRunning: Boolean = false
 
     private val dayListener: (Long) -> Unit = { total ->
         if (isAdded) {
@@ -110,10 +119,15 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                 }
                 return@observe
             }
-            applyRunningState(false, isRunning == true)
-            if (isRunning != true) {
-                // Session-ready owns auto region/latency tests to avoid double fire with START_SUCCESS.
-                cancelAutoConnectivityTest()
+            if (isRunning == true) {
+                cancelStopConfirm()
+                applyRunningState(false, true)
+                maybePromptBatteryExemption()
+            } else {
+                // User stop leaves the switch intentionally unchecked — accept immediately.
+                // Otherwise multi-process false negatives only defer-clear sticky Running.
+                val userIntentStop = !binding.switchConnection.isChecked
+                requestStoppedState(source = "livedata", force = userIntentStop)
             }
         }
         // Soft node-switch keeps isRunning=true, so this explicit ready signal is required
@@ -121,8 +135,12 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         mainViewModel.sessionReadyAction.observe(viewLifecycleOwner) {
             if (!isAdded || view == null) return@observe
             // Guard against START_SUCCESS racing a user stop / mode hard-restart.
-            val live = mainViewModel.isRunning.value == true || CoreServiceManager.isRunning()
-            if (!live) return@observe
+            val live = mainViewModel.isRunning.value == true ||
+                stickyRunning ||
+                CoreServiceManager.isRunning()
+            if (!live && mainViewModel.isRunning.value != true) return@observe
+            cancelStopConfirm()
+            stickyRunning = true
             applyRunningState(false, true)
             scheduleAutoConnectivityTest(reason = "session-ready")
         }
@@ -447,7 +465,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             if (!isAdded || view == null) return@launch
             // No START_SUCCESS/FAILURE arrived; recover switch so UI cannot stick forever.
             if (uiConnecting || !binding.switchConnection.isEnabled) {
-                val running = mainViewModel.isRunning.value == true ||
+                val running = stickyRunning ||
+                    mainViewModel.isRunning.value == true ||
                     CoreServiceManager.isRunning() ||
                     CoreServiceManager.hasLiveSession()
                 applyRunningState(isLoading = false, isRunning = running)
@@ -476,7 +495,6 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             switchReady = false
             binding.switchConnection.isEnabled = false
             // Keep the user's intended checked state while connecting (start=on / stop=off).
-            // Do not force unchecked here — that made the switch look "stopped mid-start".
             setTestState(getString(R.string.home_status_connecting))
             return
         }
@@ -484,10 +502,22 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         uiConnecting = false
         clearConnectingTimeout()
 
+        // No-op when UI already matches — prevents switch/caption flicker on tab resume.
+        if (isServiceRunning == isRunning &&
+            binding.switchConnection.isEnabled &&
+            binding.switchConnection.isChecked == isRunning
+        ) {
+            stickyRunning = isRunning
+            return
+        }
+
         isServiceRunning = isRunning
+        stickyRunning = isRunning
         switchReady = false
         binding.switchConnection.isEnabled = true
-        binding.switchConnection.isChecked = isRunning
+        if (binding.switchConnection.isChecked != isRunning) {
+            binding.switchConnection.isChecked = isRunning
+        }
         switchReady = true
 
         if (isRunning) {
@@ -501,13 +531,63 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             binding.tvSwitchCaption.text = getString(R.string.home_status_stopped)
             binding.switchConnection.contentDescription = getString(R.string.tasker_start_service)
             setTestState(getString(R.string.home_tap_to_test))
-            // Exit IP no longer valid when disconnected.
             lastRegion = null
             stopTrafficUpdates()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         }
         refreshSelectedServerMeta()
         refreshMetricsFromCache()
+    }
+
+    /** Flip to Stopped only after confirmation — never on a single false probe. */
+    private fun requestStoppedState(source: String, force: Boolean = false) {
+        if (!isAdded || view == null) return
+        if (uiConnecting) return
+        if (force) {
+            cancelStopConfirm()
+            stickyRunning = false
+            if (mainViewModel.isRunning.value == true) {
+                mainViewModel.isRunning.value = false
+            }
+            applyRunningState(isLoading = false, isRunning = false)
+            cancelAutoConnectivityTest()
+            return
+        }
+        if (!stickyRunning && isServiceRunning != true && mainViewModel.isRunning.value != true) {
+            applyRunningState(isLoading = false, isRunning = false)
+            cancelAutoConnectivityTest()
+            return
+        }
+        // Already Running in UI: keep it, confirm asynchronously.
+        if (stopConfirmJob?.isActive == true) return
+        LogUtil.i(AppConfig.TAG, "Home: defer Stopped from $source (stickyRunning=$stickyRunning)")
+        stopConfirmJob = viewLifecycleOwner.lifecycleScope.launch {
+            // Two-phase confirm so REGISTER races and multi-process false negatives settle.
+            delay(700L)
+            if (!isAdded || view == null || isHidden || uiConnecting) return@launch
+            if (mainViewModel.isRunning.value == true) {
+                cancelStopConfirm()
+                applyRunningState(isLoading = false, isRunning = true)
+                return@launch
+            }
+            // Ask daemon again; ignore main-process CoreServiceManager (wrong process).
+            mainViewModel.startListenBroadcast()
+            delay(900L)
+            if (!isAdded || view == null || isHidden || uiConnecting) return@launch
+            if (mainViewModel.isRunning.value == true) {
+                applyRunningState(isLoading = false, isRunning = true)
+                return@launch
+            }
+            // Still not running after ~1.6s + re-REGISTER: accept Stopped.
+            stickyRunning = false
+            applyRunningState(isLoading = false, isRunning = false)
+            cancelAutoConnectivityTest()
+        }
+    }
+
+    private fun cancelStopConfirm() {
+        stopConfirmJob?.cancel()
+        stopConfirmJob = null
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
@@ -558,48 +638,39 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private fun resyncConnectionState() {
         if (!isAdded || view == null) return
         if (uiConnecting) return
-        // Ask service to re-emit RUNNING / NOT_RUNNING (ViewModel guards stale NOT_RUNNING).
-        mainViewModel.startListenBroadcast()
 
-        val managerLive = CoreServiceManager.hasLiveSession() || CoreServiceManager.isRunning()
-        if (managerLive) {
+        // Prefer sticky + ViewModel broadcast truth over main-process CoreServiceManager.
+        // Core lives in :RunSoLibV2RayDaemon; main-process isRunning()/hasLiveSession() are
+        // often false even when the proxy is healthy — that caused Off→On→Off switch flicker.
+        val uiLive = stickyRunning || mainViewModel.isRunning.value == true || isServiceRunning
+        if (uiLive) {
+            cancelStopConfirm()
             if (mainViewModel.isRunning.value != true) {
+                // Keep ViewModel aligned with sticky until daemon re-confirms.
                 mainViewModel.isRunning.value = true
             }
             applyRunningState(isLoading = false, isRunning = true)
-            // ROOT: heal hev/rules if they died while app was in background.
-            if (SettingsManager.isRootMode() && !CoreServiceManager.isSoftRestarting()) {
+            // Quiet re-REGISTER: ViewModel ignores NOT_RUNNING while sticky Running.
+            mainViewModel.startListenBroadcast()
+            // ROOT heal is fire-and-forget; must never drive the switch to Stopped.
+            if (SettingsManager.isRootMode()) {
                 viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-                    val err = RootProxyManager.ensureRunning(requireContext().applicationContext)
-                    if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
-                        LogUtil.w(AppConfig.TAG, "Home: root ensure on resume failed: $err")
+                    try {
+                        val err = RootProxyManager.ensureRunning(requireContext().applicationContext)
+                        if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
+                            LogUtil.w(AppConfig.TAG, "Home: root ensure on resume failed: $err")
+                        }
+                    } catch (e: Exception) {
+                        LogUtil.w(AppConfig.TAG, "Home: root ensure on resume exception", e)
                     }
                 }
             }
             return
         }
 
-        // Manager says not live. If ViewModel still thinks running, keep UI briefly and
-        // re-check after a short delay to absorb REGISTER races without sticky false Running.
-        if (mainViewModel.isRunning.value == true) {
-            applyRunningState(isLoading = false, isRunning = true)
-            viewLifecycleOwner.lifecycleScope.launch {
-                delay(400L)
-                if (!isAdded || view == null || isHidden) return@launch
-                val stillLive = CoreServiceManager.hasLiveSession() || CoreServiceManager.isRunning()
-                if (!stillLive && mainViewModel.isRunning.value == true) {
-                    mainViewModel.isRunning.value = false
-                    applyRunningState(isLoading = false, isRunning = false)
-                } else if (stillLive) {
-                    if (mainViewModel.isRunning.value != true) {
-                        mainViewModel.isRunning.value = true
-                    }
-                    applyRunningState(isLoading = false, isRunning = true)
-                }
-            }
-            return
-        }
-        applyRunningState(isLoading = false, isRunning = false)
+        // UI thinks stopped: still REGISTER once to catch daemon-only sessions after process death.
+        mainViewModel.startListenBroadcast()
+        requestStoppedState(source = "resync")
     }
 
 
@@ -611,6 +682,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     override fun onDestroyView() {
         resyncDebounceJob?.cancel()
+        cancelStopConfirm()
         stopTrafficUpdates()
         clearConnectingTimeout()
         cancelAutoConnectivityTest()

@@ -451,8 +451,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
-                    // REGISTER / soft-start races often emit NOT_RUNNING briefly. Never clear
-                    // Running while the manager still owns a live session or soft-restart.
+                    // REGISTER races + multi-process: main-process CoreServiceManager often
+                    // cannot observe the :RunSoLibV2RayDaemon session. Never clear Running
+                    // unless we get an explicit STOP_SUCCESS / START_FAILURE.
                     if (
                         CoreServiceManager.hasLiveSession() ||
                         CoreServiceManager.isRunning() ||
@@ -460,10 +461,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ) {
                         isRunning.value = true
                     } else if (isRunning.value == true) {
-                        // Keep last known Running until STOP_SUCCESS / START_FAILURE.
-                        // Avoids home switch flipping off while ROOT hev is still coming up.
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore NOT_RUNNING while UI thinks running")
+                        // keep isRunning=true
                     } else {
+                        // Only set false when we were not already Running.
                         isRunning.value = false
                     }
                 }
