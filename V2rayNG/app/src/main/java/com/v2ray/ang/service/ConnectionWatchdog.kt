@@ -92,9 +92,14 @@ object ConnectionWatchdog {
                 if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
                     // ROOT: local pipeline may be the real failure; try ensure before soft-restart.
                     if (SettingsManager.isRootMode() && !RootProxyManager.isHealthy(service)) {
+                        val backoff = RootProxyManager.repairBackoffRemainingMs()
+                        if (backoff > 0L) {
+                            LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT repair backoff ${backoff}ms, skip soft-restart")
+                            return
+                        }
                         LogUtil.w(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline unhealthy, ensuring before soft-restart")
-                        val err = RootProxyManager.ensureRunning(service)
-                        if (err == null && RootProxyManager.isHealthy(service)) {
+                        RootProxyManager.ensureRunning(service)
+                        if (RootProxyManager.isHealthy(service)) {
                             LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline restored, skip soft-restart")
                             consecutiveFailures = 0
                             return

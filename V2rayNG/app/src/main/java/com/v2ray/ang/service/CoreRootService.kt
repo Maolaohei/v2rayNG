@@ -193,19 +193,28 @@ class CoreRootService : Service(), ServiceControl {
                     delay(2_000L)
                     continue
                 }
+                val backoff = RootProxyManager.repairBackoffRemainingMs()
+                if (backoff > 0L) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: repair backoff ${backoff}ms, watchdog waits")
+                    delay(backoff.coerceAtMost(20_000L))
+                    continue
+                }
                 if (!RootProxyManager.isHealthy(this@CoreRootService)) {
                     LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline unhealthy, repairing")
                     val err = RootProxyManager.ensureRunning(this@CoreRootService)
-                    if (err != null) {
+                    val healthy = RootProxyManager.isHealthy(this@CoreRootService)
+                    if (!healthy) {
                         consecutiveFailures++
                         LogUtil.e(
                             AppConfig.TAG,
-                            "StartCore-Root: watchdog repair failed ($consecutiveFailures/3): $err"
+                            "StartCore-Root: watchdog repair incomplete ($consecutiveFailures/3): $err"
                         )
                         if (consecutiveFailures >= 3) {
-                            failAndStop(err)
+                            failAndStop(err ?: RootProxyManager.lastError ?: RootProxyManager.RootError.UNKNOWN)
                             return@launch
                         }
+                        // Extra spacing after failure; ensureRunning may also apply its own backoff.
+                        delay(5_000L)
                     } else {
                         consecutiveFailures = 0
                     }
@@ -216,6 +225,8 @@ class CoreRootService : Service(), ServiceControl {
             }
         }
     }
+
+
 
     private suspend fun waitLocalSocksReady(timeoutMs: Long = 6000L): Boolean {
         val port = SettingsManager.getSocksPort()
