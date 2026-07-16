@@ -17,14 +17,17 @@ class SelectionLogicTest {
 
     /**
      * Pure-logic replica of MainRecyclerAdapter selection tracking.
-     * No Android/Gradle dependencies — can run with plain JDK + JUnit jar.
+     * No Android/Gradle dependencies - can run with plain JDK + JUnit jar.
      */
     private class SelectionTracker {
+        // Named differently from selectGuid() to avoid JVM signature clash with the
+        // synthetic property setter setSelectedGuid(String?).
         var selectedGuid: String? = null
         val notifiedPositions = mutableListOf<Int>()
         val guids = mutableListOf<String>()
 
-        fun setSelectedGuid(guid: String?) {
+        fun selectGuid(guid: String?) {
+            if (guid == selectedGuid) return
             val oldGuid = selectedGuid
             selectedGuid = guid
             if (oldGuid != null) {
@@ -57,7 +60,7 @@ class SelectionLogicTest {
         tracker.selectedGuid = "A"
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("B")
+        tracker.selectGuid("B")
 
         assertEquals(2, tracker.notifiedPositions.size)
         assertEquals(0, tracker.notifiedPositions[0])
@@ -71,7 +74,7 @@ class SelectionLogicTest {
         tracker.selectedGuid = "A"
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("A")
+        tracker.selectGuid("A")
 
         assertEquals(0, tracker.notifiedPositions.size)
         assertEquals("A", tracker.selectedGuid)
@@ -83,7 +86,7 @@ class SelectionLogicTest {
         tracker.selectedGuid = null
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("B")
+        tracker.selectGuid("B")
 
         assertEquals(1, tracker.notifiedPositions.size)
         assertEquals(1, tracker.notifiedPositions[0])
@@ -96,7 +99,7 @@ class SelectionLogicTest {
         tracker.selectedGuid = "A"
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid(null)
+        tracker.selectGuid(null)
 
         assertEquals(1, tracker.notifiedPositions.size)
         assertEquals(0, tracker.notifiedPositions[0])
@@ -109,7 +112,7 @@ class SelectionLogicTest {
         tracker.selectedGuid = "A"
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("Z")
+        tracker.selectGuid("Z")
 
         assertEquals(1, tracker.notifiedPositions.size)
         assertEquals(0, tracker.notifiedPositions[0])
@@ -120,23 +123,23 @@ class SelectionLogicTest {
     fun test_switchBetweenServers_multipleTimes() {
         tracker.guids.addAll(listOf("A", "B", "C"))
 
-        tracker.setSelectedGuid("A")
+        tracker.selectGuid("A")
         assertEquals("A", tracker.selectedGuid)
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("B")
+        tracker.selectGuid("B")
         assertEquals(2, tracker.notifiedPositions.size)
         assertEquals(0, tracker.notifiedPositions[0])
         assertEquals(1, tracker.notifiedPositions[1])
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("C")
+        tracker.selectGuid("C")
         assertEquals(2, tracker.notifiedPositions.size)
         assertEquals(1, tracker.notifiedPositions[0])
         assertEquals(2, tracker.notifiedPositions[1])
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("A")
+        tracker.selectGuid("A")
         assertEquals(2, tracker.notifiedPositions.size)
         assertEquals(2, tracker.notifiedPositions[0])
         assertEquals(0, tracker.notifiedPositions[1])
@@ -147,7 +150,7 @@ class SelectionLogicTest {
         tracker.selectedGuid = null
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("A")
+        tracker.selectGuid("A")
 
         assertEquals(0, tracker.notifiedPositions.size)
         assertEquals("A", tracker.selectedGuid)
@@ -184,10 +187,10 @@ class SelectionLogicTest {
         adapter1.guids.addAll(listOf("A", "B"))
         adapter2.guids.addAll(listOf("C", "D"))
 
-        adapter1.setSelectedGuid("B")
+        adapter1.selectGuid("B")
         assertEquals("B", adapter1.selectedGuid)
 
-        adapter2.setSelectedGuid(adapter1.selectedGuid)
+        adapter2.selectGuid(adapter1.selectedGuid)
         assertEquals("B", adapter2.selectedGuid)
         assertEquals(0, adapter2.notifiedPositions.size)
     }
@@ -200,11 +203,11 @@ class SelectionLogicTest {
         adapter1.guids.addAll(listOf("A", "B"))
         adapter2.guids.addAll(listOf("C", "D"))
 
-        adapter1.setSelectedGuid("B")
-        adapter2.setSelectedGuid(adapter1.selectedGuid)
+        adapter1.selectGuid("B")
+        adapter2.selectGuid(adapter1.selectedGuid)
 
-        adapter2.setSelectedGuid("D")
-        adapter1.setSelectedGuid(adapter2.selectedGuid)
+        adapter2.selectGuid("D")
+        adapter1.selectGuid(adapter2.selectedGuid)
 
         assertEquals("D", adapter1.selectedGuid)
         assertEquals(1, adapter1.notifiedPositions.size)
@@ -218,7 +221,7 @@ class SelectionLogicTest {
 
         tracker.guids.remove("A")
         tracker.clearNotifications()
-        tracker.setSelectedGuid("B")
+        tracker.selectGuid("B")
 
         assertEquals(0, tracker.notifiedPositions[0])
         assertEquals(1, tracker.notifiedPositions.size)
@@ -228,14 +231,14 @@ class SelectionLogicTest {
     fun test_rapidSelection_noDuplicateNotifications() {
         tracker.guids.addAll(listOf("A", "B", "C"))
 
-        tracker.setSelectedGuid("A")
-        tracker.setSelectedGuid("B")
-        tracker.setSelectedGuid("C")
+        tracker.selectGuid("A")
+        tracker.selectGuid("B")
+        tracker.selectGuid("C")
 
         assertEquals("C", tracker.selectedGuid)
 
         tracker.clearNotifications()
-        tracker.setSelectedGuid("A")
+        tracker.selectGuid("A")
 
         assertEquals(2, tracker.notifiedPositions.size)
         assertEquals(2, tracker.notifiedPositions[0])
