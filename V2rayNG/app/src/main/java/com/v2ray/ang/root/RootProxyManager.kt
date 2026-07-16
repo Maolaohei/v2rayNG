@@ -12,6 +12,9 @@ import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.PackageUidResolver
 import com.v2ray.ang.util.Utils
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Installs and removes the iptables / ip-rule routing that pushes system-wide traffic
@@ -62,6 +65,9 @@ object RootProxyManager {
     @Volatile
     var lastError: RootError? = null
         private set
+
+    /** Prevents concurrent teardown+setup from watchdog / home resume / soft-restart. */
+    private val repairing = AtomicBoolean(false)
 
     fun userMessage(context: Context, error: RootError = lastError ?: RootError.UNKNOWN): String {
         val res = when (error) {
@@ -119,21 +125,74 @@ object RootProxyManager {
         return r.success
     }
 
-    fun isHealthy(context: Context): Boolean = isHevAlive(context) && isTunUp()
+    /** True when policy routing + mangle chain from last setup still exist. */
+    fun isRulesInstalled(): Boolean {
+        val rule = RootShell.exec(
+            "ip rule show 2>/dev/null | grep -F 'lookup $TABLE' >/dev/null 2>&1"
+        )
+        if (!rule.success) return false
+        val chain = RootShell.exec("iptables -t mangle -nL $CHAIN >/dev/null 2>&1")
+        return chain.success
+    }
+
+    /** True when in-process core SOCKS accepts connections on the configured port. */
+    fun isLocalSocksReady(): Boolean {
+        val port = SettingsManager.getSocksPort()
+        if (port <= 0) return false
+        return try {
+            Socket().use { s ->
+                s.connect(InetSocketAddress(AppConfig.LOOPBACK, port), 250)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     /**
-     * Soft-restart / watchdog helper: if hev+tun already healthy, skip full reinstall.
-     * Otherwise rebuild rules (teardown+setup). Returns null on success, error otherwise.
+     * Full local pipeline health: hev + tun + iptables/ip-rule + local SOCKS.
+     * Shallower checks previously declared healthy while rules were gone or SOCKS was down.
+     */
+    fun isHealthy(context: Context): Boolean {
+        return isHevAlive(context) &&
+            isTunUp() &&
+            isRulesInstalled() &&
+            isLocalSocksReady()
+    }
+
+    /**
+     * Soft-restart / watchdog helper: if pipeline already healthy, skip full reinstall.
+     * Otherwise rebuild rules (teardown+setup). Concurrent callers wait for the in-flight
+     * repair instead of racing a second teardown.
+     * Returns null on success, error otherwise.
      */
     fun ensureRunning(context: Context): RootError? {
         lastError = null
         if (isHealthy(context)) {
-            LogUtil.i(AppConfig.TAG, "RootProxyManager: hev/tun healthy, skip rebind")
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: pipeline healthy, skip rebind")
             return null
         }
-        LogUtil.w(AppConfig.TAG, "RootProxyManager: hev/tun not healthy, rebuilding")
-        return startDetailed(context)
+        if (!repairing.compareAndSet(false, true)) {
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: repair already in progress, waiting")
+            val deadline = System.currentTimeMillis() + 8_000L
+            while (System.currentTimeMillis() < deadline) {
+                if (!repairing.get()) break
+                try {
+                    Thread.sleep(100L)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+            return if (isHealthy(context)) null else (lastError ?: RootError.UNKNOWN)
+        }
+        try {
+            LogUtil.w(AppConfig.TAG, "RootProxyManager: pipeline unhealthy, rebuilding")
+            return startDetailed(context)
+        } finally {
+            repairing.set(false)
+        }
     }
+
 
     fun startDetailed(context: Context): RootError? {
         lastError = null
@@ -151,10 +210,12 @@ object RootProxyManager {
             return lastError
         }
         // hev is started in background; give it a short window before declaring dead.
-        if (!waitUntilHealthy(context, timeoutMs = 3500L)) {
+        if (!waitUntilHealthy(context, timeoutMs = 4000L)) {
             lastError = when {
+                !isLocalSocksReady() -> RootError.SOCKS_NOT_READY
                 !isTunUp() && !isHevAlive(context) -> RootError.HEV_DEAD
                 !isTunUp() -> RootError.TUN_FAILED
+                !isRulesInstalled() -> RootError.RULES_FAILED
                 else -> RootError.HEV_DEAD
             }
             LogUtil.e(AppConfig.TAG, "RootProxyManager: post-setup health failed ($lastError)")
@@ -187,6 +248,7 @@ object RootProxyManager {
             else -> RootError.RULES_FAILED
         }
     }
+
 
     fun start(context: Context): Boolean {
         return startDetailed(context) == null
@@ -336,7 +398,7 @@ object RootProxyManager {
     private fun buildHevConfig(socksPort: Int, ipv6: Boolean): String {
         val v4 = AppConfig.ROOT_TUN_ADDR_V4.substringBefore("/")
         val v6 = AppConfig.ROOT_TUN_ADDR_V6.substringBefore("/")
-        // Align timeouts/log with VPN TProxyService for stability. Keep multi-queue off.
+        // Align timeouts/log/auth with VPN TProxyService for stability. Keep multi-queue off.
         // tcp-fastopen is disabled: mixed OEM kernels make it a net loss under ROOT.
         val timeoutSetting = MmkvManager.decodeSettingsString(AppConfig.PREF_HEV_TUNNEL_RW_TIMEOUT)
             ?: AppConfig.HEVTUN_RW_TIMEOUT
@@ -346,6 +408,10 @@ object RootProxyManager {
         val tcpTimeout = parts.getOrNull(0)?.toIntOrNull() ?: 300
         val udpTimeout = parts.getOrNull(1)?.toIntOrNull() ?: 60
         val logLevel = MmkvManager.decodeSettingsString(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL) ?: "warn"
+        val socksUsername = SettingsManager.getSocksUsername()
+        val socksPassword = SettingsManager.getSocksPassword()
+        val escapedSocksUsername = socksUsername?.replace("'", "''")
+        val escapedSocksPassword = socksPassword?.replace("'", "''")
         return buildString {
             appendLine("tunnel:")
             appendLine("  name: '$TUN'")
@@ -357,12 +423,17 @@ object RootProxyManager {
             appendLine("  port: $socksPort")
             appendLine("  address: '${AppConfig.LOOPBACK}'")
             appendLine("  udp: 'udp'")
+            if (escapedSocksUsername != null && escapedSocksPassword != null) {
+                appendLine("  username: '${escapedSocksUsername}'")
+                appendLine("  password: '${escapedSocksPassword}'")
+            }
             appendLine("misc:")
             appendLine("  tcp-read-write-timeout: ${tcpTimeout * 1000}")
             appendLine("  udp-read-write-timeout: ${udpTimeout * 1000}")
             appendLine("  log-level: $logLevel")
         }
     }
+
 
     /**
      * mangle OUTPUT marking chain (ipv4/ipv6). Mirrors VpnService's capture behavior:

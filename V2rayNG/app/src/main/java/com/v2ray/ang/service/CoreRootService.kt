@@ -3,6 +3,11 @@ package com.v2ray.ang.service
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.Build
 import android.os.IBinder
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.contracts.ServiceControl
@@ -25,14 +30,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Root-mode service: starts the Xray core with a local SOCKS inbound only (no VpnService
  * TUN fd). System-wide traffic is routed by iptables instead (see [RootProxyManager]).
  *
  * Core starts first, then root routing is installed only after local SOCKS accepts
- * connections. A lightweight watchdog keeps hev/tun alive while the service runs and
- * fail-closes after repeated repair failures.
+ * connections. A lightweight watchdog keeps hev/tun/rules/socks alive while the service
+ * runs and fail-closes after repeated repair failures. Network changes also trigger a
+ * lightweight pipeline ensure (VPN-equivalent recovery without VpnService).
  */
 class CoreRootService : Service(), ServiceControl {
 
@@ -40,11 +47,41 @@ class CoreRootService : Service(), ServiceControl {
     private val serviceScope = CoroutineScope(serviceJob + Dispatchers.IO)
     private var setupJob: Job? = null
     private var watchdogJob: Job? = null
+    private val networkCallbackRegistered = AtomicBoolean(false)
+    private val pendingNetworkRecover = AtomicBoolean(false)
+
+    private val connectivity by lazy { getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager }
+
+    private val defaultNetworkRequest by lazy {
+        NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+            .build()
+    }
+
+    private val defaultNetworkCallback by lazy {
+        object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (pendingNetworkRecover.compareAndSet(true, false) ||
+                    !RootProxyManager.isHealthy(this@CoreRootService)
+                ) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: network available, ensuring pipeline")
+                    schedulePipelineEnsure(reason = "network-available")
+                }
+            }
+
+            override fun onLost(network: Network) {
+                pendingNetworkRecover.set(true)
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: network lost, will ensure on next available")
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         LogUtil.i(AppConfig.TAG, "StartCore-Root: Service created")
         CoreServiceManager.serviceControl = this
+        registerNetworkCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -78,6 +115,53 @@ class CoreRootService : Service(), ServiceControl {
         return START_STICKY
     }
 
+    private fun registerNetworkCallback() {
+        if (!networkCallbackRegistered.compareAndSet(false, true)) return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                connectivity.registerDefaultNetworkCallback(defaultNetworkCallback)
+            } else {
+                @Suppress("DEPRECATION")
+                connectivity.requestNetwork(defaultNetworkRequest, defaultNetworkCallback)
+            }
+            LogUtil.i(AppConfig.TAG, "StartCore-Root: network callback registered")
+        } catch (e: Exception) {
+            networkCallbackRegistered.set(false)
+            LogUtil.w(AppConfig.TAG, "StartCore-Root: failed to register network callback", e)
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        if (!networkCallbackRegistered.compareAndSet(true, false)) return
+        try {
+            connectivity.unregisterNetworkCallback(defaultNetworkCallback)
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "StartCore-Root: failed to unregister network callback", e)
+        }
+    }
+
+    private fun schedulePipelineEnsure(reason: String) {
+        serviceScope.launch {
+            if (!CoreServiceManager.isRunning()) return@launch
+            if (CoreServiceManager.isSoftRestarting()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: skip ensure ($reason) during soft-restart")
+                return@launch
+            }
+            // Small debounce so rapid network flaps do not thrash full rebuilds.
+            delay(800L)
+            if (!CoreServiceManager.isRunning() || CoreServiceManager.isSoftRestarting()) return@launch
+            if (RootProxyManager.isHealthy(this@CoreRootService)) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: pipeline healthy after $reason")
+                return@launch
+            }
+            LogUtil.w(AppConfig.TAG, "StartCore-Root: ensuring pipeline after $reason")
+            val err = RootProxyManager.ensureRunning(this@CoreRootService)
+            if (err != null) {
+                LogUtil.e(AppConfig.TAG, "StartCore-Root: ensure after $reason failed: $err")
+            }
+        }
+    }
+
     private fun startWatchdog() {
         if (watchdogJob?.isActive == true) return
         watchdogJob = serviceScope.launch {
@@ -90,7 +174,7 @@ class CoreRootService : Service(), ServiceControl {
                     continue
                 }
                 if (!RootProxyManager.isHealthy(this@CoreRootService)) {
-                    LogUtil.w(AppConfig.TAG, "StartCore-Root: hev/tun unhealthy, repairing")
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline unhealthy, repairing")
                     val err = RootProxyManager.ensureRunning(this@CoreRootService)
                     if (err != null) {
                         consecutiveFailures++
@@ -149,6 +233,7 @@ class CoreRootService : Service(), ServiceControl {
     override fun onDestroy() {
         super.onDestroy()
         watchdogJob?.cancel()
+        unregisterNetworkCallback()
         runBlocking { setupJob?.cancelAndJoin() }
         serviceJob.cancel()
         // Remove routing rules BEFORE stopping the core so traffic is never redirected
