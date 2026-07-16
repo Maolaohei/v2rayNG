@@ -2,10 +2,12 @@ package com.v2ray.ang.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
+import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
