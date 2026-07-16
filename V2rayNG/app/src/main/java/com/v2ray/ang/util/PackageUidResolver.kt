@@ -1,14 +1,18 @@
 package com.v2ray.ang.util
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import com.v2ray.ang.AppConfig
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Resolves package names to kernel UIDs for ROOT iptables owner-match rules.
- * Expands related UIDs (same-uid packages / sharedUserId siblings) so multi-process
- * clients are less likely to leak past per-app capture.
+ * Expands related UIDs (same-uid packages / sharedUserId siblings when available)
+ * so multi-process clients are less likely to leak past per-app capture.
+ *
+ * Note: ApplicationInfo.sharedUserId is gone from public stubs on recent compileSdk,
+ * so sharedUserId is read reflectively when still present at runtime.
  */
 object PackageUidResolver {
 
@@ -58,19 +62,41 @@ object PackageUidResolver {
                 // older / restricted PackageManager
             }
 
-            // Packages sharing the same sharedUserId (if any) should share proxy policy.
-            val shared = appInfo.sharedUserId
+            // sharedUserId siblings (API field removed from public stubs; reflect when present).
+            val shared = readSharedUserId(appInfo)
             if (!shared.isNullOrBlank()) {
-                @Suppress("DEPRECATION")
-                pm.getInstalledApplications(0).forEach { info ->
-                    if (info.sharedUserId == shared) {
-                        uids.add(info.uid.toString())
+                try {
+                    @Suppress("DEPRECATION")
+                    pm.getInstalledApplications(0).forEach { info ->
+                        if (readSharedUserId(info) == shared) {
+                            uids.add(info.uid.toString())
+                        }
                     }
+                } catch (_: Exception) {
+                    // ignore enumeration failures
                 }
             }
             uids.toList()
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * ApplicationInfo.sharedUserId was removed from public SDK stubs used by recent
+     * compileSdk. Keep best-effort access for older/runtime fields without breaking compile.
+     */
+    private fun readSharedUserId(appInfo: ApplicationInfo): String? {
+        return try {
+            val field = ApplicationInfo::class.java.getField("sharedUserId")
+            field.get(appInfo) as? String
+        } catch (_: Exception) {
+            try {
+                val method = ApplicationInfo::class.java.getMethod("getSharedUserId")
+                method.invoke(appInfo) as? String
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 
