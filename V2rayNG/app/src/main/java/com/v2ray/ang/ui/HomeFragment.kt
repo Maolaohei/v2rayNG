@@ -1,6 +1,7 @@
 package com.v2ray.ang.ui
 
 import android.net.VpnService
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -66,6 +67,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
      * is often false even while the daemon is live. Prefer broadcast + sticky flag.
      */
     private var stickyRunning: Boolean = false
+    /** null = unknown/not tested, true = internet OK, false = connected but no internet. */
+    private var internetReachable: Boolean? = null
+    private var lastFailureMessage: String? = null
 
     private val dayListener: (Long) -> Unit = { total ->
         if (isAdded) {
@@ -132,6 +136,14 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
         // Soft node-switch keeps isRunning=true, so this explicit ready signal is required
         // to leave Connecting and re-enable the switch without a manual toggle.
+        mainViewModel.startFailureAction.observe(viewLifecycleOwner) { msg ->
+            if (!isAdded || view == null) return@observe
+            showStartFailure(msg)
+        }
+        mainViewModel.networkRecoveringAction.observe(viewLifecycleOwner) { recovering ->
+            if (!isAdded || view == null) return@observe
+            showNetworkRecovering(recovering == true)
+        }
         mainViewModel.sessionReadyAction.observe(viewLifecycleOwner) {
             if (!isAdded || view == null) return@observe
             // Guard against START_SUCCESS racing a user stop / mode hard-restart.
@@ -209,10 +221,12 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         if (!changed) return
         // Switching between Proxy / VPN / ROOT changes service class; soft-restart is not enough.
         val needHardRestart =
-            mainViewModel.isRunning.value == true ||
+            stickyRunning ||
+                mainViewModel.isRunning.value == true ||
                 CoreServiceManager.serviceControl != null ||
                 CoreServiceManager.isRunning()
         if (needHardRestart) {
+            requireContext().toast(R.string.home_mode_switch_restart)
             hardRestartForCurrentMode()
         }
     }
@@ -264,6 +278,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         // Still clickable so users can re-request su after granting superuser.
         val rootKnownUnavailable = !RootManager.cachedRoot() && mode != AppConfig.MODE_ROOT
         binding.btnModeRoot.alpha = if (rootKnownUnavailable) 0.55f else 1.0f
+        binding.tvModeHint.text = when (mode) {
+            AppConfig.MODE_ROOT -> getString(R.string.home_mode_hint_root)
+            AppConfig.VPN -> getString(R.string.home_mode_hint_vpn)
+            else -> getString(R.string.home_mode_hint_proxy)
+        }
         modeToggleReady = true
     }
 
@@ -314,7 +333,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private fun applyTestResultMetrics(content: String?) {
         if (content.isNullOrBlank()) return
 
-        val latencyMatch = Regex("""(?i)(?:took|延时)\s*(\d+)\s*(?:ms|毫秒)?|(\d+)\s*ms\b""")
+        val latencyMatch = Regex("""(?i)(?:took|latency|delay|延时|延迟)\s*(\d+)\s*(?:ms|毫秒)?|(\d+)\s*ms\b""")
             .find(content)
         val latency = latencyMatch?.groupValues
             ?.drop(1)
@@ -322,12 +341,17 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             ?.toLongOrNull()
         if (latency != null) {
             lastLatencyMs = latency
+            internetReachable = latency >= 0L
         } else if (
             content.contains("Fail", ignoreCase = true) ||
             content.contains("失败") ||
-            content.contains("error", ignoreCase = true)
+            content.contains("Unavailable", ignoreCase = true) ||
+            content.contains("error", ignoreCase = true) ||
+            content.contains("timeout", ignoreCase = true) ||
+            content.contains("超时")
         ) {
             lastLatencyMs = -1L
+            internetReachable = false
         }
 
         // Prefer IP-API country from trailing "(CC) x.x.x.x"
@@ -340,6 +364,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
 
         refreshMetricsFromCache()
+        if (isServiceRunning || stickyRunning) {
+            refreshConnectivityChrome()
+        }
     }
 
     fun onVpnPermissionResult(granted: Boolean) {
@@ -432,7 +459,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         if (autoPingJob != null) {
             return
         }
-        setTestState(getString(R.string.connection_test_testing))
+        internetReachable = null
+        setTestState(getString(R.string.home_status_checking))
+        refreshConnectivityChrome()
         autoPingJob = viewLifecycleOwner.lifecycleScope.launch {
             try {
                 delay(AUTO_PING_DELAY_MS)
@@ -521,22 +550,92 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         switchReady = true
 
         if (isRunning) {
-            binding.tvStatusState.text = getString(R.string.home_status_running)
-            binding.tvSwitchCaption.text = getString(R.string.home_status_running)
             binding.switchConnection.contentDescription = getString(R.string.action_stop_service)
-            setTestState(getString(R.string.connection_connected))
             startTrafficUpdates()
+            refreshConnectivityChrome()
         } else {
+            internetReachable = null
+            lastFailureMessage = null
             binding.tvStatusState.text = getString(R.string.home_status_stopped)
             binding.tvSwitchCaption.text = getString(R.string.home_status_stopped)
             binding.switchConnection.contentDescription = getString(R.string.tasker_start_service)
             setTestState(getString(R.string.home_tap_to_test))
+            binding.tvStatusDetail.visibility = android.view.View.GONE
             lastRegion = null
             stopTrafficUpdates()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         }
         refreshSelectedServerMeta()
         refreshMetricsFromCache()
+    }
+
+    /** Status title / caption / detail for Running / Unreachable / Checking. */
+    private fun refreshConnectivityChrome() {
+        if (!isAdded || view == null) return
+        if (!isServiceRunning && !stickyRunning) return
+        when (internetReachable) {
+            true -> {
+                binding.tvStatusState.text = getString(R.string.home_status_running)
+                binding.tvSwitchCaption.text = getString(R.string.home_status_running)
+                binding.tvStatusDetail.visibility = android.view.View.VISIBLE
+                binding.tvStatusDetail.text = getString(R.string.home_status_detail_ok)
+            }
+            false -> {
+                binding.tvStatusState.text = getString(R.string.home_status_unreachable)
+                binding.tvSwitchCaption.text = getString(R.string.home_status_unreachable)
+                binding.tvStatusDetail.visibility = android.view.View.VISIBLE
+                binding.tvStatusDetail.text = getString(R.string.home_status_detail_fail)
+            }
+            null -> {
+                if (uiConnecting) {
+                    binding.tvStatusState.text = getString(R.string.home_status_connecting)
+                    binding.tvSwitchCaption.text = getString(R.string.home_status_connecting)
+                } else {
+                    binding.tvStatusState.text = getString(R.string.home_status_running)
+                    binding.tvSwitchCaption.text = getString(R.string.home_status_running)
+                }
+                binding.tvStatusDetail.visibility = android.view.View.GONE
+            }
+        }
+    }
+
+    fun showStartFailure(message: String?) {
+        if (!isAdded || view == null) return
+        lastFailureMessage = message
+        stickyRunning = false
+        applyRunningState(isLoading = false, isRunning = false)
+        val msg = message?.takeIf { it.isNotBlank() } ?: getString(R.string.toast_services_failure)
+        val isRootish = SettingsManager.isRootMode() ||
+            msg.contains("ROOT", ignoreCase = true) ||
+            msg.contains("su", ignoreCase = true)
+        val builder = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.home_error_title)
+            .setMessage(msg)
+            .setPositiveButton(R.string.home_error_retry) { _, _ ->
+                handleConnectionToggle(wantStart = true)
+            }
+            .setNegativeButton(R.string.home_error_dismiss, null)
+        if (isRootish) {
+            builder.setNeutralButton(R.string.home_error_use_vpn) { _, _ ->
+                applyRunMode(AppConfig.VPN)
+            }
+        }
+        builder.show()
+    }
+
+    fun showNetworkRecovering(active: Boolean) {
+        if (!isAdded || view == null) return
+        if (!stickyRunning && mainViewModel.isRunning.value != true) return
+        if (active) {
+            binding.tvStatusState.text = getString(R.string.home_status_reconnecting)
+            binding.tvSwitchCaption.text = getString(R.string.home_status_reconnecting)
+            binding.tvStatusDetail.visibility = android.view.View.GONE
+        } else {
+            // Keep sticky running; auto retest.
+            stickyRunning = true
+            applyRunningState(isLoading = false, isRunning = true)
+            scheduleAutoConnectivityTest(reason = "network-recovered")
+        }
     }
 
     /** Flip to Stopped only after confirmation — never on a single false probe. */

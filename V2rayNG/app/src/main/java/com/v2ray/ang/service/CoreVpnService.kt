@@ -25,6 +25,7 @@ import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.root.RootLanSharing
 import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.MyContextWrapper
 import com.v2ray.ang.util.Utils
 
@@ -65,9 +66,17 @@ class CoreVpnService : VpnService(), ServiceControl {
                     pendingRestart = false
                     LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, restarting core")
                     if (isRunning && !CoreServiceManager.isSoftRestarting()) {
+                        try {
+                            MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERING, "")
+                        } catch (_: Exception) {
+                        }
                         // Soft-restart: keep VPN service + TUN; avoid STOP_SUCCESS UI flicker.
                         CoreServiceManager.bindVpnInterface(mInterface)
                         CoreServiceManager.restartCoreLoop()
+                        try {
+                            MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERED, "")
+                        } catch (_: Exception) {
+                        }
                     }
                 }
             }

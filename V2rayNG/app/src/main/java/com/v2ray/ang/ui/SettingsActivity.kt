@@ -2,12 +2,17 @@ package com.v2ray.ang.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
+import androidx.preference.PreferenceGroup
 import androidx.preference.PreferenceFragmentCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
@@ -75,6 +80,7 @@ class SettingsActivity : BaseActivity() {
             addPreferencesFromResource(R.xml.pref_settings)
 
             initPreferenceSummaries()
+            // Search box is attached in onViewCreated (list view ready).
 
             localDns?.setOnPreferenceChangeListener { _, any ->
                 updateLocalDns(any as Boolean)
@@ -162,7 +168,85 @@ class SettingsActivity : BaseActivity() {
 
         }
 
-        private fun initPreferenceSummaries() {
+    
+        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+            super.onViewCreated(view, savedInstanceState)
+            attachSettingsSearch(view)
+        }
+
+        private fun attachSettingsSearch(root: View) {
+            val listContainer = listView?.parent as? android.view.ViewGroup ?: return
+            // Avoid double-insert on rotation/recreation.
+            if (root.findViewWithTag<View>("settings_search_box") != null) return
+
+            val ctx = requireContext()
+            val pad = (12 * resources.displayMetrics.density).toInt()
+            val box = EditText(ctx).apply {
+                tag = "settings_search_box"
+                hint = getString(R.string.settings_search_hint)
+                setSingleLine()
+                setPadding(pad, pad, pad, pad)
+                // Match preference list width.
+                background = null
+            }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            // Prefer inserting above the preference list.
+            try {
+                val parent = listView.parent as android.view.ViewGroup
+                val idx = parent.indexOfChild(listView).coerceAtLeast(0)
+                parent.addView(box, idx, lp)
+            } catch (_: Exception) {
+                listContainer.addView(box, 0, lp)
+            }
+
+            box.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    filterPreferences(s?.toString().orEmpty())
+                }
+            })
+        }
+
+        private fun filterPreferences(query: String) {
+            val root = preferenceScreen ?: return
+            val q = query.trim().lowercase()
+            filterGroup(root, q)
+        }
+
+        /** @return true if this group or any child is visible. */
+        private fun filterGroup(group: PreferenceGroup, q: String): Boolean {
+            var any = false
+            for (i in 0 until group.preferenceCount) {
+                val pref = group.getPreference(i)
+                val visible = if (pref is PreferenceGroup) {
+                    val childVisible = filterGroup(pref, q)
+                    // Category stays visible if any child matches, or if category title matches.
+                    val selfMatch = q.isEmpty() || preferenceMatches(pref, q)
+                    val show = q.isEmpty() || selfMatch || childVisible
+                    pref.isVisible = show
+                    show
+                } else {
+                    val show = q.isEmpty() || preferenceMatches(pref, q)
+                    pref.isVisible = show
+                    show
+                }
+                any = any || visible
+            }
+            return any
+        }
+
+        private fun preferenceMatches(pref: Preference, q: String): Boolean {
+            val title = pref.title?.toString()?.lowercase().orEmpty()
+            val summary = pref.summary?.toString()?.lowercase().orEmpty()
+            val key = pref.key?.lowercase().orEmpty()
+            return title.contains(q) || summary.contains(q) || key.contains(q)
+        }
+
+    private fun initPreferenceSummaries() {
             fun updateSummary(pref: androidx.preference.Preference) {
                 when (pref) {
                     is EditTextPreference -> {

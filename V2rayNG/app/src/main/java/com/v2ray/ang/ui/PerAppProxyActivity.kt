@@ -50,17 +50,37 @@ class PerAppProxyActivity : BaseActivity() {
 
         binding.switchPerAppProxy.setOnCheckedChangeListener { _, isChecked ->
             MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, isChecked)
+            updatePerAppWarnings()
         }
         binding.switchPerAppProxy.isChecked = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY, false)
 
         binding.switchBypassApps.setOnCheckedChangeListener { _, isChecked ->
             MmkvManager.encodeSettings(AppConfig.PREF_BYPASS_APPS, isChecked)
+            updatePerAppWarnings()
         }
         binding.switchBypassApps.isChecked = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS, false)
 
         binding.layoutSwitchBypassAppsTips.setOnClickListener {
             Toasty.info(this, R.string.summary_pref_per_app_proxy, Toast.LENGTH_LONG, true).show()
         }
+        updatePerAppWarnings()
+    }
+
+    private fun updatePerAppWarnings() {
+        val perApp = binding.switchPerAppProxy.isChecked
+        val bypass = binding.switchBypassApps.isChecked
+        val selected = try {
+            viewModel.getAll().size
+        } catch (_: Exception) {
+            0
+        }
+        val emptyAllow = perApp && !bypass && selected == 0
+        binding.tvPerAppWarning.visibility = if (emptyAllow) android.view.View.VISIBLE else android.view.View.GONE
+        if (emptyAllow) {
+            binding.tvPerAppWarning.text = getString(R.string.per_app_empty_allowlist_warning)
+        }
+        binding.tvPerAppRootNote.visibility =
+            if (SettingsManager.isRootMode()) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun initList() {
@@ -98,6 +118,7 @@ class PerAppProxyActivity : BaseActivity() {
                 appsAll = apps
                 adapter = PerAppProxyAdapter(apps, viewModel)
                 binding.recyclerView.adapter = adapter
+                updatePerAppWarnings()
 
             } catch (e: Exception) {
                 LogUtil.e(ANG_PACKAGE, "Error loading apps", e)
@@ -318,5 +339,6 @@ class PerAppProxyActivity : BaseActivity() {
     @SuppressLint("NotifyDataSetChanged")
     fun refreshData() {
         adapter?.notifyDataSetChanged()
+        updatePerAppWarnings()
     }
 }

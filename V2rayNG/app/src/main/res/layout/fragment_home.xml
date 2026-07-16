@@ -62,6 +62,17 @@
                         android:text="@string/home_tap_to_test"
                         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                         android:textColor="@color/color_fab_active" />
+
+                    <TextView
+                        android:id="@+id/tv_status_detail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/padding_spacing_dp2"
+                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:visibility="gone"
+                        tools:text="Internet OK"
+                        tools:visibility="visible" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -228,6 +239,15 @@
                     android:layout_weight="1"
                     android:text="@string/home_mode_root" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <TextView
+                android:id="@+id/tv_mode_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/padding_spacing_dp8"
+                android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                tools:text="System-wide tunnel" />
         </LinearLayout>
 
         <LinearLayout

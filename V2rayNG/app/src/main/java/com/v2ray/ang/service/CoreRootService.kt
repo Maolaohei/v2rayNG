@@ -210,6 +210,11 @@ class CoreRootService : Service(), ServiceControl {
             delay(800L)
             if (CoreServiceManager.isSoftRestarting()) return@launch
 
+            try {
+                MessageUtil.sendMsg2UI(this@CoreRootService, AppConfig.MSG_STATE_NETWORK_RECOVERING, "")
+            } catch (_: Exception) {
+            }
+
             if (!CoreServiceManager.isRunning() && !CoreServiceManager.hasLiveSession()) return@launch
 
             // 1) Light: rebind dual-mark bypass to current default route (no teardown).
@@ -239,6 +244,10 @@ class CoreRootService : Service(), ServiceControl {
                 } catch (e: Exception) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Root: soft-restart after $reason failed", e)
                 }
+            }
+            try {
+                MessageUtil.sendMsg2UI(this@CoreRootService, AppConfig.MSG_STATE_NETWORK_RECOVERED, "")
+            } catch (_: Exception) {
             }
         }
     }

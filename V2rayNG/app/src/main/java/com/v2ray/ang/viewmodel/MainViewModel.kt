@@ -44,6 +44,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isRunning by lazy { MutableLiveData<Boolean>() }
     /** Bumped whenever core session is ready (start/soft-restart/already-running). */
     val sessionReadyAction by lazy { MutableLiveData<Long>() }
+    /** Human-readable start failure for actionable home dialog. */
+    val startFailureAction by lazy { MutableLiveData<String>() }
+    /** True while ROOT/VPN is rebinding after network change. */
+    val networkRecoveringAction by lazy { MutableLiveData<Boolean>() }
     val updateListAction by lazy { MutableLiveData<Int>() }
     val updateTestResultAction by lazy { MutableLiveData<String>() }
     val selectionChangedAction by lazy { MutableLiveData<String?>() }
@@ -482,12 +486,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 AppConfig.MSG_STATE_START_FAILURE -> {
                     val errorMessage = intent.getStringExtra("content")
-                    if (!errorMessage.isNullOrBlank()) {
-                        getApplication<AngApplication>().toastError(errorMessage)
-                    } else {
-                        getApplication<AngApplication>().toastError(R.string.toast_services_failure)
-                    }
+                    val msg = errorMessage?.takeIf { it.isNotBlank() }
+                        ?: getApplication<AngApplication>().getString(R.string.toast_services_failure)
+                    // Toast kept as light feedback; home shows actionable dialog when visible.
+                    getApplication<AngApplication>().toastError(msg)
                     isRunning.value = false
+                    startFailureAction.value = msg
+                }
+
+                AppConfig.MSG_STATE_NETWORK_RECOVERING -> {
+                    networkRecoveringAction.value = true
+                }
+
+                AppConfig.MSG_STATE_NETWORK_RECOVERED -> {
+                    networkRecoveringAction.value = false
                 }
 
                 AppConfig.MSG_STATE_STOP_SUCCESS -> {

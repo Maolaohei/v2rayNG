@@ -162,6 +162,9 @@ object AppConfig {
     const val MSG_STATE_START = 3
     const val MSG_STATE_START_SUCCESS = 31
     const val MSG_STATE_START_FAILURE = 32
+    /** Transient UI: network handoff / pipeline ensure in progress. */
+    const val MSG_STATE_NETWORK_RECOVERING = 33
+    const val MSG_STATE_NETWORK_RECOVERED = 34
     /** content of MSG_STATE_START_SUCCESS for soft-restart (suppress start toast). */
     const val MSG_CONTENT_SOFT_START = "soft"
     const val MSG_STATE_STOP = 4

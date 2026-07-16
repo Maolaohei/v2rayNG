@@ -1157,7 +1157,7 @@ object RootProxyManager {
             appendLine("ip6tables -t mangle -D PREROUTING -j ${AppConfig.ROOT_V6_PRE_CHAIN} 2>/dev/null || true")
             appendLine("ip6tables -t mangle -F ${AppConfig.ROOT_V6_PRE_CHAIN} 2>/dev/null || true")
             appendLine("ip6tables -t mangle -X ${AppConfig.ROOT_V6_PRE_CHAIN} 2>/dev/null || true")
-            for (pref in listOf(900, $BYPASS_PRIORITY, 5000, 5010, 5020, 5025, 5026, 5027, 5030, 5040, 5050, 6000)) {
+            for (pref in listOf(900, BYPASS_PRIORITY, 5000, 5010, 5020, 5025, 5026, 5027, 5030, 5040, 5050, 6000)) {
                 appendLine("ip rule del pref $pref 2>/dev/null || true")
             }
             appendLine("ip rule del fwmark $FWMARK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
