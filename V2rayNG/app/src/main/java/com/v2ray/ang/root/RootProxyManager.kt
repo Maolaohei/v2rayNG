@@ -151,6 +151,8 @@ object RootProxyManager {
         val hevAlive: Boolean,
         val tunUp: Boolean,
         val rulesOk: Boolean,
+        /** False when su/probe output is missing or unusable (do not treat as hard death). */
+        val reliable: Boolean = true,
     ) {
         val localUp: Boolean get() = hevAlive && tunUp && rulesOk
         val hevTunUp: Boolean get() = hevAlive && tunUp
@@ -159,41 +161,69 @@ object RootProxyManager {
     /**
      * One su round-trip for hev/tun/rules. Socks is checked in-process (no root needed).
      * Batching avoids 3-4 serial su invocations every watchdog tick.
+     *
+     * hev liveness uses pid + /proc/comm (not only kill -0) and falls back to "tun up with our
+     * address" when Magisk hides root /proc briefly. Unreliable su output is flagged so callers
+     * can soft-skip instead of full teardown storms.
      */
     private fun probePipeline(context: Context?): PipelineProbe {
-        val pidCheck = if (context != null) {
+        val pid = if (context != null) {
             try {
-                val pf = pidFile(context)
-                val pid = if (pf.exists()) pf.readText().trim().toIntOrNull() else null
-                if (pid != null && pid > 1) {
-                    "if kill -0 $pid >/dev/null 2>&1; then echo HEV_OK; else echo HEV_DEAD; fi; "
-                } else {
-                    "echo HEV_DEAD; "
-                }
+                pidFile(context).takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
             } catch (_: Exception) {
-                "echo HEV_DEAD; "
+                null
             }
         } else {
-            "echo HEV_SKIP; "
+            null
         }
+
+        val pidCheck = when {
+            context == null -> "echo HEV_SKIP; "
+            pid != null && pid > 1 -> {
+                "if [ -r /proc/$pid/comm ] && kill -0 $pid >/dev/null 2>&1; then " +
+                    "COMM=\$(tr -d '\\0' </proc/$pid/comm 2>/dev/null); " +
+                    "case \"\$COMM\" in *hev*|*sockstun*|*tun2socks*) echo HEV_OK;; *) echo HEV_DEAD;; esac; " +
+                    "else echo HEV_DEAD; fi; "
+            }
+            else -> "echo HEV_DEAD; "
+        }
+        val tunAddr = AppConfig.ROOT_TUN_ADDR_V4.substringBefore("/")
         val script = buildString {
+            append("echo PROBE_BEGIN; ")
             append(pidCheck)
             append("if ip link show $TUN >/dev/null 2>&1; then echo TUN_OK; else echo TUN_DEAD; fi; ")
+            append("if ip -o -4 addr show dev $TUN 2>/dev/null | grep -F '$tunAddr' >/dev/null 2>&1; then echo TUN_ADDR_OK; else echo TUN_ADDR_DEAD; fi; ")
             append("if ip rule show 2>/dev/null | grep -F 'lookup $TABLE' >/dev/null 2>&1; then echo RULE_OK; else echo RULE_DEAD; fi; ")
-            append("if iptables -t mangle -nL $CHAIN >/dev/null 2>&1; then echo CHAIN_OK; else echo CHAIN_DEAD; fi")
+            append("IPT=iptables; command -v iptables-legacy >/dev/null 2>&1 && IPT=iptables-legacy; ")
+            append("if \$IPT -t mangle -nL $CHAIN >/dev/null 2>&1; then echo CHAIN_OK; else echo CHAIN_DEAD; fi; ")
+            append("echo PROBE_END")
         }
-        val out = try {
-            RootShell.exec(script).output
+        val result = try {
+            RootShell.exec(script, timeoutSeconds = 8)
         } catch (_: Exception) {
-            ""
+            null
         }
-        val hevAlive = when {
+        val out = result?.output.orEmpty()
+        val reliable = result != null && out.contains("PROBE_BEGIN") && out.contains("PROBE_END")
+        if (!reliable) {
+            LogUtil.w(AppConfig.TAG, "RootProxyManager: probe unreliable (su/output incomplete)")
+            // Soft defaults: do not claim death when we simply could not observe.
+            return PipelineProbe(hevAlive = true, tunUp = true, rulesOk = true, reliable = false)
+        }
+
+        var hevAlive = when {
             context == null -> true
             else -> out.contains("HEV_OK")
         }
         val tunUp = out.contains("TUN_OK")
+        val tunAddrOk = out.contains("TUN_ADDR_OK")
+        // Fallback: pid opaque/stale but our tun is up with expected address -> prefer light repair.
+        if (context != null && !hevAlive && tunUp && tunAddrOk) {
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: hev pid opaque but tun+addr up; treat as alive")
+            hevAlive = true
+        }
         val rulesOk = out.contains("RULE_OK") && out.contains("CHAIN_OK")
-        return PipelineProbe(hevAlive = hevAlive, tunUp = tunUp, rulesOk = rulesOk)
+        return PipelineProbe(hevAlive = hevAlive, tunUp = tunUp, rulesOk = rulesOk, reliable = true)
     }
 
     /**
@@ -202,14 +232,24 @@ object RootProxyManager {
     fun isHealthy(context: Context): Boolean {
         val now = System.currentTimeMillis()
         val probeCached = probeCache
-        val probe = if (probeCached != null && now - probeCacheAtMs in 0 until HEALTH_CACHE_MS) {
+        val probe = if (probeCached != null && probeCached.reliable && now - probeCacheAtMs in 0 until HEALTH_CACHE_MS) {
             probeCached
         } else {
             probePipeline(context).also {
-                probeCache = it
-                probeCacheAtMs = now
+                // Never cache unreliable su probes as durable health.
+                if (it.reliable) {
+                    probeCache = it
+                    probeCacheAtMs = now
+                } else {
+                    probeCache = null
+                    probeCacheAtMs = 0L
+                }
             }
         }
+        // Unreliable su probe must never report healthy: that would let startDetailed
+        // succeed without rules and skip repairs. ensureRunning handles soft-skip separately.
+        if (!probe.reliable) return false
+
         val socksCached = socksCache
         val socks = if (socksCached != null && now - socksCacheAtMs in 0 until HEALTH_CACHE_MS) {
             socksCached
@@ -267,6 +307,14 @@ object RootProxyManager {
             return null
         }
 
+        // If su probe is flaky but local SOCKS is up, do not tear the datapath down.
+        val softProbe = probePipeline(context)
+        if (!softProbe.reliable && isLocalSocksReady()) {
+            LogUtil.w(AppConfig.TAG, "RootProxyManager: unreliable probe + SOCKS up, soft-skip repair")
+            lastError = RootError.REPAIR_BACKED_OFF
+            return RootError.REPAIR_BACKED_OFF
+        }
+
         val backoffLeft = repairBackoffRemainingMs()
         if (backoffLeft > 0L) {
             // Distinct from success (null). Soft-restart rebind treats this as soft-skip.
@@ -309,6 +357,11 @@ object RootProxyManager {
         try {
             invalidateHealthCache()
             probe = probePipeline(context)
+            if (!probe.reliable) {
+                LogUtil.w(AppConfig.TAG, "RootProxyManager: probe unreliable under repair lock, soft-skip")
+                lastError = RootError.REPAIR_BACKED_OFF
+                return RootError.REPAIR_BACKED_OFF
+            }
 
             // 3) rules-only when tunnel helper is still up.
             if (probe.hevTunUp && !probe.rulesOk) {
@@ -559,6 +612,7 @@ object RootProxyManager {
     /** Remove all rules and stop helper processes. Safe to call repeatedly. */
     fun stop(context: Context) {
         teardown(context)
+        RootShell.closeSession()
         LogUtil.i(AppConfig.TAG, "RootProxyManager: rules removed")
     }
 
@@ -595,6 +649,8 @@ object RootProxyManager {
         }
         return buildString {
             appendLine("set -e")
+            appendLine("IPT=iptables; command -v iptables-legacy >/dev/null 2>&1 && IPT=iptables-legacy")
+            appendLine("IP6T=ip6tables; command -v ip6tables-legacy >/dev/null 2>&1 && IP6T=ip6tables-legacy")
             // Keep hev; only rewrite route policy + mangle.
             appendLine("ip link show $TUN >/dev/null 2>&1 || { echo 'tun device did not come up'; exit 1; }")
             appendLine("echo 0 > /proc/sys/net/ipv4/conf/$TUN/rp_filter 2>/dev/null || true")
@@ -610,14 +666,14 @@ object RootProxyManager {
             // Anti-loop harden: core/app UID always prefers main table even if marked.
             appendLine("ip rule del pref $APP_UID_RULE_PREF 2>/dev/null || true")
             appendLine("ip rule add uidrange $appUid-$appUid lookup main priority $APP_UID_RULE_PREF 2>/dev/null || true")
-            append(buildMangleMarking("iptables", appUid, perAppEnabled, bypassApps, selectedUids))
+            append(buildMangleMarking("\$IPT", appUid, perAppEnabled, bypassApps, selectedUids))
             appendLine("set +e")
             if (ipv6) {
                 appendLine("ip -6 addr add ${AppConfig.ROOT_TUN_ADDR_V6} dev $TUN 2>/dev/null || true")
                 appendLine("ip -6 route replace default dev $TUN table $TABLE 2>/dev/null || true")
                 appendLine("ip -6 rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
                 appendLine("ip -6 rule add fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
-                append(buildMangleMarking("ip6tables", appUid, perAppEnabled, bypassApps, selectedUids))
+                append(buildMangleMarking("\$IP6T", appUid, perAppEnabled, bypassApps, selectedUids))
             } else {
                 append(buildV6Blackhole(appUid, perAppEnabled, bypassApps, selectedUids))
             }
@@ -686,6 +742,9 @@ object RootProxyManager {
         return buildString {
             appendLine("set -e")
             appendLine("BIN='${bin.absolutePath}'")
+            // Prefer iptables-legacy on mixed nft/legacy OEM stacks (Magisk/KernelSU).
+            appendLine("IPT=iptables; command -v iptables-legacy >/dev/null 2>&1 && IPT=iptables-legacy")
+            appendLine("IP6T=ip6tables; command -v ip6tables-legacy >/dev/null 2>&1 && IP6T=ip6tables-legacy")
             // Protect the core (this app process) from the Android low-memory killer.
             // system_server keeps recomputing oom_score_adj for app processes, so a single
             // write would be reverted 闁?re-pin it from a small root loop instead.
@@ -695,9 +754,8 @@ object RootProxyManager {
             appendLine("if [ ! -e /dev/net/tun ]; then mkdir -p /dev/net; mknod /dev/net/tun c 10 200; chmod 666 /dev/net/tun; fi")
             // hev-socks5-tunnel config: it creates the tun ($TUN) itself and forwards it to the
             // in-process core's SOCKS inbound on loopback. MTU comes from the existing VPN MTU
-            // setting. No fwmark on hev's sockets: its only upstream connection is to 127.0.0.1
-            // (loopback, already RETURNed by the 127.0.0.0/8 bypass) and the core's real outbound
-            // runs as the app uid (RETURNed by the uid-owner rule), so traffic can't loop.
+            // setting. hev sockets are SO_MARK'd with FWMARK (see buildHevConfig) so mangle can
+            // RETURN them; the core's real outbound still runs as the app uid (uid-owner RETURN).
             appendLine("cat > '$cfgFile' <<'HEVCFG'")
             append(buildHevConfig(port, ipv6))
             appendLine("HEVCFG")
@@ -726,7 +784,7 @@ object RootProxyManager {
             appendLine("ip rule add uidrange $appUid-$appUid lookup main priority $APP_UID_RULE_PREF 2>/dev/null || true")
             // mark the device's own packets into the tun (Root mode only)
             if (captureDeviceTraffic) {
-                append(buildMangleMarking("iptables", appUid, perAppEnabled, bypassApps, selectedUids))
+                append(buildMangleMarking("\$IPT", appUid, perAppEnabled, bypassApps, selectedUids))
             }
             // optionally route hotspot / USB-tethered clients through the tun too
             if (lanShare) {
@@ -740,7 +798,7 @@ object RootProxyManager {
                     appendLine("ip -6 addr add ${AppConfig.ROOT_TUN_ADDR_V6} dev $TUN 2>/dev/null || true")
                     appendLine("ip -6 route replace default dev $TUN table $TABLE 2>/dev/null || true")
                     appendLine("ip -6 rule add fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
-                    append(buildMangleMarking("ip6tables", appUid, perAppEnabled, bypassApps, selectedUids))
+                    append(buildMangleMarking("\$IP6T", appUid, perAppEnabled, bypassApps, selectedUids))
                 } else {
                     // v6 disabled: blackhole native v6 egress for the captured apps so they
                     // fall back to v4-through-proxy, matching what a v4-only VpnService does.
@@ -785,6 +843,10 @@ object RootProxyManager {
             appendLine("  port: $socksPort")
             appendLine("  address: '${AppConfig.LOOPBACK}'")
             appendLine("  udp: 'udp'")
+            // Industry-standard anti-loop for root tun2socks: mark hev's own sockets so the
+            // mangle chain can RETURN them (see FWMARK RETURN rule). Without this, uid0 hev
+            // traffic can be re-captured when loopback/owner matches flap on OEM kernels.
+            appendLine("  mark: $FWMARK")
             if (escapedSocksUsername != null && escapedSocksPassword != null) {
                 appendLine("  username: '${escapedSocksUsername}'")
                 appendLine("  password: '${escapedSocksPassword}'")
@@ -887,28 +949,28 @@ object RootProxyManager {
         val bypassSelected = perAppEnabled && bypassApps && selectedUids.isNotEmpty()
         val reject = "-j REJECT --reject-with icmp6-adm-prohibited"
         return buildString {
-            appendLine("ip6tables -t filter -N $chain 2>/dev/null || true")
-            appendLine("ip6tables -t filter -F $chain")
+            appendLine("\$IP6T -t filter -N $chain 2>/dev/null || true")
+            appendLine("\$IP6T -t filter -F $chain")
             // never touch the helper, the core, loopback, NDP/link-local/multicast or LAN
-            appendLine("ip6tables -t filter -A $chain -m mark --mark $FWMARK -j RETURN")
-            appendLine("ip6tables -t filter -A $chain -m owner --uid-owner $appUid -j RETURN")
-            appendLine("ip6tables -t filter -A $chain -o $TUN -j RETURN 2>/dev/null || true")
-            appendLine("ip6tables -t filter -A $chain -o lo -j RETURN")
-            bypassCidrsV6.forEach { appendLine("ip6tables -t filter -A $chain -d $it -j RETURN") }
+            appendLine("\$IP6T -t filter -A $chain -m mark --mark $FWMARK -j RETURN")
+            appendLine("\$IP6T -t filter -A $chain -m owner --uid-owner $appUid -j RETURN")
+            appendLine("\$IP6T -t filter -A $chain -o $TUN -j RETURN 2>/dev/null || true")
+            appendLine("\$IP6T -t filter -A $chain -o lo -j RETURN")
+            bypassCidrsV6.forEach { appendLine("\$IP6T -t filter -A $chain -d $it -j RETURN") }
             // bypass mode: bypassed apps keep their native v6
             if (bypassSelected) {
-                selectedUids.forEach { appendLine("ip6tables -t filter -A $chain -m owner --uid-owner $it -j RETURN") }
+                selectedUids.forEach { appendLine("\$IP6T -t filter -A $chain -m owner --uid-owner $it -j RETURN") }
             }
             if (allowMode) {
                 // proxy mode: only the selected apps lose v6 (so they fall back to v4-via-proxy).
                 // None resolved -> reject nothing, mirroring the v4 chain's fail-closed handling.
-                selectedUids.forEach { appendLine("ip6tables -t filter -A $chain -m owner --uid-owner $it $reject") }
+                selectedUids.forEach { appendLine("\$IP6T -t filter -A $chain -m owner --uid-owner $it $reject") }
             } else {
                 // all-apps / bypass: reject everyone left
-                appendLine("ip6tables -t filter -A $chain $reject")
+                appendLine("\$IP6T -t filter -A $chain $reject")
             }
-            appendLine("ip6tables -t filter -D OUTPUT -j $chain 2>/dev/null || true")
-            appendLine("ip6tables -t filter -A OUTPUT -j $chain")
+            appendLine("\$IP6T -t filter -D OUTPUT -j $chain 2>/dev/null || true")
+            appendLine("\$IP6T -t filter -A OUTPUT -j $chain")
         }
     }
 
@@ -1018,8 +1080,10 @@ object RootProxyManager {
         val oomGuardPid = File(runDir, "oomguard.pid").absolutePath
         val corePid = Process.myPid()
         return buildString {
+            appendLine("IPT=iptables; command -v iptables-legacy >/dev/null 2>&1 && IPT=iptables-legacy")
+            appendLine("IP6T=ip6tables; command -v ip6tables-legacy >/dev/null 2>&1 && IP6T=ip6tables-legacy")
             // mangle (TUN2SOCKS), both families
-            for (cmd in listOf("iptables", "ip6tables")) {
+            for (cmd in listOf("\$IPT", "\$IP6T")) {
                 appendLine("$cmd -t mangle -D OUTPUT -j $CHAIN 2>/dev/null || true")
                 appendLine("$cmd -t mangle -F $CHAIN 2>/dev/null || true")
                 appendLine("$cmd -t mangle -X $CHAIN 2>/dev/null || true")

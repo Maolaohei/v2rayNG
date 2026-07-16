@@ -89,6 +89,49 @@ class CoreRootService : Service(), ServiceControl {
 
         // Never reuse a previous VPN TUN PFD in root mode.
         CoreServiceManager.bindVpnInterface(null)
+
+        // START_STICKY / system redelivery must NOT full-teardown a healthy pipeline.
+        // Re-entry that always called startDetailed() previously caused 1-3s blackholes and
+        // "sometimes works" intermittency under memory pressure / task-manager thrash.
+        val alreadyLive = CoreServiceManager.isRunning() || CoreServiceManager.hasLiveSession()
+        if (alreadyLive) {
+            setupJob?.cancel()
+            setupJob = serviceScope.launch {
+                if (RootProxyManager.isHealthy(this@CoreRootService)) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: re-entry while healthy, skip rebuild")
+                    startWatchdog()
+                    return@launch
+                }
+                if (!waitLocalSocksReady()) {
+                    // Core may be mid soft-restart; prefer ensure over fail-close on sticky redelivery.
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: re-entry SOCKS not ready yet, ensure later")
+                    val err = RootProxyManager.ensureRunning(this@CoreRootService)
+                    if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
+                        LogUtil.e(AppConfig.TAG, "StartCore-Root: re-entry ensure failed: $err")
+                    }
+                    startWatchdog()
+                    return@launch
+                }
+                LogUtil.w(AppConfig.TAG, "StartCore-Root: re-entry unhealthy, graduated ensure (no forced teardown)")
+                val err = RootProxyManager.ensureRunning(this@CoreRootService)
+                if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
+                    // Only full rebuild once ensure cannot recover; avoid thrash on sticky restarts.
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: re-entry ensure failed ($err), one full rebuild")
+                    val full = RootProxyManager.startDetailed(this@CoreRootService)
+                    if (full != null) {
+                        LogUtil.e(AppConfig.TAG, "StartCore-Root: re-entry full rebuild failed: $full")
+                        // Keep service if session still live; fail-close only when core is gone.
+                        if (!CoreServiceManager.isRunning() && !CoreServiceManager.hasLiveSession()) {
+                            failAndStop(full)
+                            return@launch
+                        }
+                    }
+                }
+                startWatchdog()
+            }
+            return START_STICKY
+        }
+
         if (!CoreServiceManager.startCoreLoop(null)) {
             LogUtil.e(AppConfig.TAG, "StartCore-Root: core failed to start")
             stopService()
@@ -111,7 +154,7 @@ class CoreRootService : Service(), ServiceControl {
             startWatchdog()
         }
 
-        // Sticky so system can recreate after low-memory kills; onStartCommand will re-setup.
+        // Sticky so system can recreate after low-memory kills; onStartCommand re-enters softly.
         return START_STICKY
     }
 
