@@ -141,6 +141,31 @@ object CoreServiceManager {
         MessageUtil.sendMsg2Service(context, AppConfig.MSG_STATE_STOP, "")
     }
 
+    /**
+     * Hard mode switch (VPN <-> ROOT <-> Proxy) must tear down the *daemon* process service.
+     * Main-process serviceControl/isRunning are always empty (core lives in
+     * `:RunSoLibV2RayDaemon`), so UI wait loops cannot observe teardown. Explicitly
+     * stopService() all mode classes after the STOP broadcast so the previous FGS
+     * cannot race a newly started one (classic "VPN -> ROOT stuck Connecting").
+     */
+    fun stopAllModeServices(context: Context) {
+        beginUserStop()
+        MessageUtil.sendMsg2Service(context, AppConfig.MSG_STATE_STOP, "")
+        val app = context.applicationContext
+        val classes = listOf(
+            CoreVpnService::class.java,
+            CoreRootService::class.java,
+            CoreProxyOnlyService::class.java,
+        )
+        for (cls in classes) {
+            try {
+                app.stopService(Intent(app, cls))
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "StartCore-Manager: stopService ${cls.simpleName} failed", e)
+            }
+        }
+    }
+
     /** Mark a full user/system stop so any in-flight soft-restart cannot revive the session. */
     private fun beginUserStop() {
         userStopRequested.set(true)

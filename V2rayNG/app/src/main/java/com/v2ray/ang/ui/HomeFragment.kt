@@ -239,29 +239,53 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         if (!isAdded) return
         SettingsChangeManager.consumeRestartService()
         modeSwitchJob?.cancel()
+        cancelStopConfirm()
         modeToggleReady = false
         binding.modeToggle.isEnabled = false
+        stickyRunning = false
+        // Keep switch visually starting for the new mode.
+        switchReady = false
+        binding.switchConnection.isChecked = true
         applyRunningState(isLoading = true, isRunning = false)
-        CoreServiceManager.stopVService(requireContext())
+        armConnectingTimeout(timeoutMs = 20_000L)
+
+        // Previous wait used main-process CoreServiceManager flags — always empty because
+        // the core runs in :RunSoLibV2RayDaemon. That made VPN→ROOT start immediately while
+        // VPN was still tearing down, so ROOT startCoreLoop failed and UI stayed Connecting.
+        CoreServiceManager.stopAllModeServices(requireContext())
+
         modeSwitchJob = viewLifecycleOwner.lifecycleScope.launch {
-            var waited = 0
-            while (
-                waited < 30 &&
-                (
-                    CoreServiceManager.serviceControl != null ||
-                        CoreServiceManager.isRunning() ||
-                        CoreServiceManager.isSoftRestarting()
-                )
-            ) {
-                delay(100L)
-                waited++
+            try {
+                // Let STOP broadcast + stopService hit the daemon and drop the VPN TUN.
+                delay(350L)
+                var waited = 0
+                while (waited < 40 && mainViewModel.isRunning.value == true) {
+                    delay(100L)
+                    waited++
+                }
+                // Extra settle: VpnService stopSelf + iface close is async after STOP_SUCCESS.
+                delay(600L)
+                if (!isAdded || view == null) return@launch
+                SettingsChangeManager.consumeRestartService()
+                // Start the *new* mode service class (prefs already updated by applyRunMode).
+                when (SettingsManager.getRunMode()) {
+                    AppConfig.VPN -> {
+                        val prepare = VpnService.prepare(requireContext())
+                        if (prepare == null) {
+                            startV2Ray()
+                        } else {
+                            host.requestVpnPermission.launch(prepare)
+                        }
+                    }
+                    else -> startV2Ray()
+                }
+            } finally {
+                if (isAdded && view != null) {
+                    binding.modeToggle.isEnabled = true
+                    modeToggleReady = true
+                    refreshModeToggle()
+                }
             }
-            if (!isAdded) return@launch
-            SettingsChangeManager.consumeRestartService()
-            binding.modeToggle.isEnabled = true
-            modeToggleReady = true
-            refreshModeToggle()
-            handleConnectionToggle(wantStart = true)
         }
     }
 
@@ -383,9 +407,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         binding.switchConnection.isChecked = wantStart
         applyRunningState(isLoading = true, isRunning = false)
         if (!wantStart) {
+            stickyRunning = false
             CoreServiceManager.stopVService(requireContext())
             return
         }
+        armConnectingTimeout()
         when (SettingsManager.getRunMode()) {
             AppConfig.VPN -> {
                 val intent = VpnService.prepare(requireContext())
@@ -487,10 +513,10 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         autoPingJob = null
     }
 
-    private fun armConnectingTimeout() {
+    private fun armConnectingTimeout(timeoutMs: Long = CONNECTING_TIMEOUT_MS) {
         clearConnectingTimeout()
         connectingTimeoutJob = viewLifecycleOwner.lifecycleScope.launch {
-            delay(CONNECTING_TIMEOUT_MS)
+            delay(timeoutMs)
             if (!isAdded || view == null) return@launch
             // No START_SUCCESS/FAILURE arrived; recover switch so UI cannot stick forever.
             if (uiConnecting || !binding.switchConnection.isEnabled) {

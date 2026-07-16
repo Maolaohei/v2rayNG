@@ -143,8 +143,9 @@ class CoreRootService : Service(), ServiceControl {
         }
 
         if (!CoreServiceManager.startCoreLoop(null)) {
-            LogUtil.e(AppConfig.TAG, "StartCore-Root: core failed to start")
-            stopService()
+            LogUtil.e(AppConfig.TAG, "StartCore-Root: core failed to start (still running or service race)")
+            // Notify UI so mode-switch cannot stick on Connecting forever.
+            failAndStop(RootProxyManager.RootError.UNKNOWN)
             return START_NOT_STICKY
         }
 
