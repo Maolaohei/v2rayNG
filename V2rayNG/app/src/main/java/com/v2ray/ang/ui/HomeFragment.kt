@@ -16,10 +16,12 @@ import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toTrafficString
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.root.RootManager
+import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
 import com.v2ray.ang.handler.TrafficStatsManager
+import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -489,6 +491,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         if (!hidden) {
+            resyncConnectionState()
             refreshModeToggle()
             refreshSelectedServerMeta()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
@@ -501,11 +504,41 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     override fun onResume() {
         super.onResume()
+        resyncConnectionState()
         refreshModeToggle()
         refreshSelectedServerMeta()
         binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         refreshMetricsFromCache()
         startTrafficUpdates()
+    }
+
+    /**
+     * Returning to the home UI must not trust a stale isRunning=false from ViewModel
+     * (e.g. startListenBroadcast reset, missed broadcast while backgrounded).
+     * Re-query live core/service state and re-register with the service.
+     */
+    private fun resyncConnectionState() {
+        if (!isAdded || view == null) return
+        // Ask service to re-emit RUNNING / NOT_RUNNING.
+        mainViewModel.startListenBroadcast()
+        val live = CoreServiceManager.hasLiveSession()
+        if (live) {
+            // Keep switch/caption on Running even before broadcast returns.
+            applyRunningState(isLoading = false, isRunning = true)
+            // ROOT: heal hev/rules if they died while app was in background.
+            if (SettingsManager.isRootMode() && !CoreServiceManager.isSoftRestarting()) {
+                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                    val err = RootProxyManager.ensureRunning(requireContext().applicationContext)
+                    if (err != null) {
+                        LogUtil.w(AppConfig.TAG, "Home: root ensure on resume failed: $err")
+                        // Service watchdog owns fail-closed teardown after repeated failures.
+                    }
+                }
+            }
+        } else if (mainViewModel.isRunning.value == true) {
+            // UI thought running but core/session is gone.
+            applyRunningState(isLoading = false, isRunning = false)
+        }
     }
 
     override fun onPause() {

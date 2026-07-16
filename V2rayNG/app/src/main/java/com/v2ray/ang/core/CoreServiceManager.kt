@@ -327,6 +327,18 @@ object CoreServiceManager {
     fun isSoftRestarting(): Boolean = softRestarting.get()
 
     /**
+     * True while a proxy session should be considered live for UI re-sync.
+     * Includes soft-restart windows and an active VPN TUN, but does NOT treat
+     * "ROOT preference selected" alone as running.
+     */
+    fun hasLiveSession(): Boolean {
+        if (userStopRequested.get()) return false
+        return coreController.isRunning ||
+            softRestarting.get() ||
+            activeVpnInterface != null
+    }
+
+    /**
      * Gets the name of the currently running server.
      * @return The name of the running server.
      */
@@ -966,7 +978,10 @@ object CoreServiceManager {
             val serviceControl = serviceControl ?: return
             when (intent?.getIntExtra("key", 0)) {
                 AppConfig.MSG_REGISTER_CLIENT -> {
-                    if (coreController.isRunning) {
+                    // Soft-restart may briefly report core not running while the foreground
+                    // service is still the active session. Prefer RUNNING only for real live
+                    // sessions - never solely because the ROOT preference is selected.
+                    if (hasLiveSession()) {
                         MessageUtil.sendMsg2UI(serviceControl.getService(), AppConfig.MSG_STATE_RUNNING, "")
                     } else {
                         MessageUtil.sendMsg2UI(serviceControl.getService(), AppConfig.MSG_STATE_NOT_RUNNING, "")

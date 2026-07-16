@@ -58,7 +58,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val mFilter = IntentFilter(AppConfig.BROADCAST_ACTION_ACTIVITY)
             ContextCompat.registerReceiver(getApplication(), mMsgReceiver, mFilter, Utils.receiverFlags())
             broadcastRegistered = true
-            isRunning.value = false
+            // Only reset on first registration. Re-entry while service is already up
+            // must not flash the home switch to Stopped before MSG_STATE_RUNNING arrives.
+            if (isRunning.value == null) {
+                isRunning.value = false
+            }
         }
         MessageUtil.sendMsg2Service(getApplication(), AppConfig.MSG_REGISTER_CLIENT, "")
     }

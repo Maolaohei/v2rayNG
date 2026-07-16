@@ -17,25 +17,29 @@ import com.v2ray.ang.util.MyContextWrapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.net.InetSocketAddress
 import java.net.Socket
 
 /**
- * Foreground service for the root (system-wide) run modes. Unlike [CoreVpnService] it
- * does not use Android VpnService — traffic is routed by iptables instead
- * (see [RootProxyManager]).
+ * Root-mode service: starts the Xray core with a local SOCKS inbound only (no VpnService
+ * TUN fd). System-wide traffic is routed by iptables instead (see [RootProxyManager]).
  *
- * The in-process core is started first (so its listener is up and the foreground
- * notification is posted promptly), then the root routing rules are installed off the
- * main thread only after local SOCKS is accepting connections.
+ * Core starts first, then root routing is installed only after local SOCKS accepts
+ * connections. A lightweight watchdog keeps hev/tun alive while the service runs and
+ * fail-closes after repeated repair failures.
  */
 class CoreRootService : Service(), ServiceControl {
 
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(serviceJob + Dispatchers.IO)
     private var setupJob: Job? = null
+    private var watchdogJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -54,8 +58,8 @@ class CoreRootService : Service(), ServiceControl {
             return START_NOT_STICKY
         }
 
-        setupJob = CoroutineScope(Dispatchers.IO).launch {
-            // Wait until local SOCKS is ready before installing hev/iptables.
+        setupJob?.cancel()
+        setupJob = serviceScope.launch {
             if (!waitLocalSocksReady()) {
                 LogUtil.e(AppConfig.TAG, "StartCore-Root: local SOCKS not ready")
                 failAndStop(RootProxyManager.RootError.SOCKS_NOT_READY)
@@ -65,26 +69,64 @@ class CoreRootService : Service(), ServiceControl {
             if (err != null) {
                 LogUtil.e(AppConfig.TAG, "StartCore-Root: failed to start root mode: $err")
                 failAndStop(err)
+                return@launch
             }
+            startWatchdog()
         }
 
+        // Sticky so system can recreate after low-memory kills; onStartCommand will re-setup.
         return START_STICKY
     }
 
-    private suspend fun waitLocalSocksReady(timeoutMs: Long = 4000L): Boolean {
+    private fun startWatchdog() {
+        if (watchdogJob?.isActive == true) return
+        watchdogJob = serviceScope.launch {
+            var consecutiveFailures = 0
+            // First check after a warm-up window; then periodically.
+            delay(15_000L)
+            while (isActive && CoreServiceManager.isRunning()) {
+                if (CoreServiceManager.isSoftRestarting()) {
+                    delay(2_000L)
+                    continue
+                }
+                if (!RootProxyManager.isHealthy(this@CoreRootService)) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: hev/tun unhealthy, repairing")
+                    val err = RootProxyManager.ensureRunning(this@CoreRootService)
+                    if (err != null) {
+                        consecutiveFailures++
+                        LogUtil.e(
+                            AppConfig.TAG,
+                            "StartCore-Root: watchdog repair failed ($consecutiveFailures/3): $err"
+                        )
+                        if (consecutiveFailures >= 3) {
+                            failAndStop(err)
+                            return@launch
+                        }
+                    } else {
+                        consecutiveFailures = 0
+                    }
+                } else {
+                    consecutiveFailures = 0
+                }
+                delay(20_000L)
+            }
+        }
+    }
+
+    private suspend fun waitLocalSocksReady(timeoutMs: Long = 6000L): Boolean {
         val port = SettingsManager.getSocksPort()
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (!CoreServiceManager.isRunning()) return false
             try {
                 Socket().use { s ->
-                    s.connect(InetSocketAddress(AppConfig.LOOPBACK, port), 200)
+                    s.connect(InetSocketAddress(AppConfig.LOOPBACK, port), 250)
                     return true
                 }
             } catch (_: Exception) {
                 // retry
             }
-            delay(100L)
+            delay(120L)
         }
         return false
     }
@@ -106,9 +148,11 @@ class CoreRootService : Service(), ServiceControl {
 
     override fun onDestroy() {
         super.onDestroy()
+        watchdogJob?.cancel()
         runBlocking { setupJob?.cancelAndJoin() }
+        serviceJob.cancel()
         // Remove routing rules BEFORE stopping the core so traffic is never redirected
-        // to a dead listener. Synchronous on purpose — leaving rules behind breaks the net.
+        // to a dead listener. Synchronous on purpose - leaving rules behind breaks the net.
         RootProxyManager.stop(this)
         CoreServiceManager.stopCoreLoop()
     }

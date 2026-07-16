@@ -5,6 +5,11 @@ import android.content.pm.PackageManager
 import com.v2ray.ang.AppConfig
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Resolves package names to kernel UIDs for ROOT iptables owner-match rules.
+ * Expands related UIDs (same-uid packages / sharedUserId siblings) so multi-process
+ * clients are less likely to leak past per-app capture.
+ */
 object PackageUidResolver {
 
     // In-process cache to avoid resolving the same package UID repeatedly.
@@ -14,10 +19,58 @@ object PackageUidResolver {
         get() = packageUidCache
 
     fun packageNamesToUids(context: Context, packageNames: List<String>): List<String> {
-        return packageNames.mapNotNull { pkg ->
-            packageUidCache[pkg] ?: resolveUid(context, pkg)?.also { uid ->
+        val out = LinkedHashSet<String>()
+        packageNames.forEach { pkg ->
+            // Primary UID (cached).
+            val primary = packageUidCache[pkg] ?: resolveUid(context, pkg)?.also { uid ->
                 packageUidCache[pkg] = uid
             }
+            if (primary != null) out.add(primary)
+            // Some clients (e.g. multi-process / sharedUserId) may emit traffic from sibling UIDs.
+            resolveRelatedUids(context, pkg).forEach { out.add(it) }
+        }
+        val list = out.toList()
+        if (packageNames.isNotEmpty()) {
+            LogUtil.i(
+                AppConfig.TAG,
+                "PackageUidResolver: ${packageNames.joinToString()} -> uids=[${list.joinToString()}]"
+            )
+        }
+        return list
+    }
+
+    private fun resolveRelatedUids(context: Context, packageName: String): List<String> {
+        return try {
+            val pm = context.packageManager
+            val appInfo = pm.getApplicationInfo(packageName, 0)
+            val uids = linkedSetOf(appInfo.uid.toString())
+
+            // Packages already sharing this UID (split APKs / multi-package same uid).
+            try {
+                pm.getPackagesForUid(appInfo.uid)?.forEach { siblingPkg ->
+                    try {
+                        uids.add(pm.getApplicationInfo(siblingPkg, 0).uid.toString())
+                    } catch (_: Exception) {
+                        // ignore missing sibling
+                    }
+                }
+            } catch (_: Exception) {
+                // older / restricted PackageManager
+            }
+
+            // Packages sharing the same sharedUserId (if any) should share proxy policy.
+            val shared = appInfo.sharedUserId
+            if (!shared.isNullOrBlank()) {
+                @Suppress("DEPRECATION")
+                pm.getInstalledApplications(0).forEach { info ->
+                    if (info.sharedUserId == shared) {
+                        uids.add(info.uid.toString())
+                    }
+                }
+            }
+            uids.toList()
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 

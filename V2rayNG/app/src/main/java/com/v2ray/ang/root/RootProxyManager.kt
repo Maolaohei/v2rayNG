@@ -95,14 +95,19 @@ object RootProxyManager {
 
     private fun pidFile(context: Context): File = File(runDir(context), "tun2socks.pid")
 
-    /** True when hev helper process is alive (pid file + /proc). */
+    /**
+     * True when hev helper process is alive.
+     * MUST check via su: app UID cannot reliably see root-owned /proc/<pid> on modern Android,
+     * which previously caused false HEV_DEAD and intermittent start failures.
+     */
     fun isHevAlive(context: Context): Boolean {
         return try {
             val pf = pidFile(context)
             if (!pf.exists()) return false
             val pid = pf.readText().trim().toIntOrNull() ?: return false
             if (pid <= 1) return false
-            File("/proc/$pid").exists()
+            // kill -0: exists and signalable; works for root-started helper when run via su.
+            RootShell.exec("kill -0 $pid >/dev/null 2>&1").success
         } catch (_: Exception) {
             false
         }
@@ -114,13 +119,15 @@ object RootProxyManager {
         return r.success
     }
 
+    fun isHealthy(context: Context): Boolean = isHevAlive(context) && isTunUp()
+
     /**
-     * Soft-restart helper: if hev+tun already healthy, skip full reinstall.
+     * Soft-restart / watchdog helper: if hev+tun already healthy, skip full reinstall.
      * Otherwise rebuild rules (teardown+setup). Returns null on success, error otherwise.
      */
     fun ensureRunning(context: Context): RootError? {
         lastError = null
-        if (isHevAlive(context) && isTunUp()) {
+        if (isHealthy(context)) {
             LogUtil.i(AppConfig.TAG, "RootProxyManager: hev/tun healthy, skip rebind")
             return null
         }
@@ -143,17 +150,31 @@ object RootProxyManager {
             teardown(context)
             return lastError
         }
-        if (!isHevAlive(context)) {
-            lastError = RootError.HEV_DEAD
-            teardown(context)
-            return lastError
-        }
-        if (!isTunUp()) {
-            lastError = RootError.TUN_FAILED
+        // hev is started in background; give it a short window before declaring dead.
+        if (!waitUntilHealthy(context, timeoutMs = 3500L)) {
+            lastError = when {
+                !isTunUp() && !isHevAlive(context) -> RootError.HEV_DEAD
+                !isTunUp() -> RootError.TUN_FAILED
+                else -> RootError.HEV_DEAD
+            }
+            LogUtil.e(AppConfig.TAG, "RootProxyManager: post-setup health failed ($lastError)")
             teardown(context)
             return lastError
         }
         return null
+    }
+
+    private fun waitUntilHealthy(context: Context, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isHealthy(context)) return true
+            try {
+                Thread.sleep(150L)
+            } catch (_: InterruptedException) {
+                break
+            }
+        }
+        return isHealthy(context)
     }
 
     private fun classifySetupFailure(output: String): RootError {
@@ -236,7 +257,12 @@ object RootProxyManager {
         val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS)
         val selectedUids = if (perAppEnabled) {
             val pkgs = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)?.toList().orEmpty()
-            if (pkgs.isNotEmpty()) PackageUidResolver.packageNamesToUids(context, pkgs) else emptyList()
+            if (pkgs.isNotEmpty()) {
+                // Expand to all UIDs for the package (main + sharedUserId siblings when resolvable).
+                PackageUidResolver.packageNamesToUids(context, pkgs).distinct()
+            } else {
+                emptyList()
+            }
         } else {
             emptyList()
         }
@@ -310,18 +336,31 @@ object RootProxyManager {
     private fun buildHevConfig(socksPort: Int, ipv6: Boolean): String {
         val v4 = AppConfig.ROOT_TUN_ADDR_V4.substringBefore("/")
         val v6 = AppConfig.ROOT_TUN_ADDR_V6.substringBefore("/")
+        // Align timeouts/log with VPN TProxyService for stability. Keep multi-queue off.
+        // tcp-fastopen is disabled: mixed OEM kernels make it a net loss under ROOT.
+        val timeoutSetting = MmkvManager.decodeSettingsString(AppConfig.PREF_HEV_TUNNEL_RW_TIMEOUT)
+            ?: AppConfig.HEVTUN_RW_TIMEOUT
+        val parts = timeoutSetting.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        val tcpTimeout = parts.getOrNull(0)?.toIntOrNull() ?: 300
+        val udpTimeout = parts.getOrNull(1)?.toIntOrNull() ?: 60
+        val logLevel = MmkvManager.decodeSettingsString(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL) ?: "warn"
         return buildString {
             appendLine("tunnel:")
             appendLine("  name: '$TUN'")
             appendLine("  mtu: ${SettingsManager.getVpnMtu()}")
-            appendLine("  multi-queue: true")
+            appendLine("  multi-queue: false")
             appendLine("  ipv4: '$v4'")
             if (ipv6) appendLine("  ipv6: '$v6'")
             appendLine("socks5:")
             appendLine("  port: $socksPort")
             appendLine("  address: '${AppConfig.LOOPBACK}'")
             appendLine("  udp: 'udp'")
-            appendLine("  tcp-fastopen: true")
+            appendLine("misc:")
+            appendLine("  tcp-read-write-timeout: ${tcpTimeout * 1000}")
+            appendLine("  udp-read-write-timeout: ${udpTimeout * 1000}")
+            appendLine("  log-level: $logLevel")
         }
     }
 
