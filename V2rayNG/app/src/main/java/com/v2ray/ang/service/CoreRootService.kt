@@ -49,6 +49,8 @@ class CoreRootService : Service(), ServiceControl {
     private var watchdogJob: Job? = null
     private val networkCallbackRegistered = AtomicBoolean(false)
     private val pendingNetworkRecover = AtomicBoolean(false)
+    @Volatile
+    private var lastSoftRestartAtMs = 0L
 
     private val connectivity by lazy { getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager }
 
@@ -74,7 +76,8 @@ class CoreRootService : Service(), ServiceControl {
                 val recover = pendingNetworkRecover.compareAndSet(true, false)
                 if (recover || !RootProxyManager.isHealthy(this@CoreRootService)) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: network available, recovering session")
-                    // Prefer pipeline ensure first; only soft-restart core when we actually lost net.
+                    // Prefer pipeline ensure first. Soft-restart core only after a real
+                    // onLost->onAvailable AND local SOCKS/core look dead (avoid TG flap).
                     scheduleNetworkRecover(reason = "network-available", softRestartCore = recover)
                 }
             }
@@ -200,7 +203,7 @@ class CoreRootService : Service(), ServiceControl {
     /**
      * Recover after connectivity changes.
      * - Always ensure local ROOT pipeline (hev/tun/rules/socks).
-     * - After a real onLost鈫抩nAvailable transition, also soft-restart the core so
+     * - After a real onLost閳姪nAvailable transition, also soft-restart the core so
      *   outbound sockets re-bind like VPN's network recovery path.
      */
     private fun scheduleNetworkRecover(reason: String, softRestartCore: Boolean) {
@@ -239,14 +242,30 @@ class CoreRootService : Service(), ServiceControl {
                 LogUtil.i(AppConfig.TAG, "StartCore-Root: pipeline healthy after $reason")
             }
 
-            // 3) Only soft-restart core when connectivity actually flapped (lost->available)
-            // and pipeline is still unhealthy 鈥?avoids needless core thrash on minor callbacks.
-            if (softRestartCore && CoreServiceManager.isRunning() && !RootProxyManager.isHealthy(this@CoreRootService)) {
-                LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason (still unhealthy)")
-                try {
-                    CoreServiceManager.restartCoreLoop()
-                } catch (e: Exception) {
-                    LogUtil.e(AppConfig.TAG, "StartCore-Root: soft-restart after $reason failed", e)
+            // 3) Soft-restart core only after a real lost->available flap when the LOCAL
+            // dataplane is dead (core down or SOCKS not accepting). Remote path issues
+            // and temporary probe noise must not drop app TCP (Telegram flap).
+            if (softRestartCore && CoreServiceManager.isRunning()) {
+                val stillUnhealthy = !RootProxyManager.isHealthy(this@CoreRootService)
+                val socksReady = RootProxyManager.isLocalSocksReady()
+                val coreAlive = try { CoreServiceManager.coreController.isRunning } catch (_: Exception) { false }
+                if (stillUnhealthy && !(coreAlive && socksReady)) {
+                    val now = System.currentTimeMillis()
+                    if (lastSoftRestartAtMs > 0L && now - lastSoftRestartAtMs < 60_000L) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart cooldown after $reason, skip")
+                    } else {
+                        lastSoftRestartAtMs = now
+                        LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason (local dataplane dead)")
+                        try {
+                            CoreServiceManager.restartCoreLoop()
+                        } catch (e: Exception) {
+                            LogUtil.e(AppConfig.TAG, "StartCore-Root: soft-restart after $reason failed", e)
+                        }
+                    }
+                } else if (stillUnhealthy) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline soft-unhealthy after $reason but SOCKS up; skip soft-restart")
+                } else {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: skip soft-restart after $reason (healthy)")
                 }
             }
             try {

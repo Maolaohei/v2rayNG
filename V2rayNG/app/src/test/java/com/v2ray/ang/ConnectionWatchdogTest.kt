@@ -1,9 +1,10 @@
-package com.v2ray.ang
+﻿package com.v2ray.ang
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.v2ray.ang.service.ConnectionWatchdog
 
 class ConnectionWatchdogTest {
 
@@ -12,17 +13,14 @@ class ConnectionWatchdogTest {
         var consecutiveFailures = 0
         val maxConsecutiveFailures = 2
 
-        // Simulate first failure
         consecutiveFailures++
         assertEquals(1, consecutiveFailures)
         assertFalse(consecutiveFailures >= maxConsecutiveFailures)
 
-        // Simulate second failure - should trigger restart
         consecutiveFailures++
         assertEquals(2, consecutiveFailures)
         assertTrue(consecutiveFailures >= maxConsecutiveFailures)
 
-        // Reset after restart
         consecutiveFailures = 0
         assertEquals(0, consecutiveFailures)
     }
@@ -32,12 +30,10 @@ class ConnectionWatchdogTest {
         var consecutiveFailures = 0
         val maxConsecutiveFailures = 2
 
-        // Simulate some failures
         consecutiveFailures++
         consecutiveFailures++
         assertTrue(consecutiveFailures >= maxConsecutiveFailures)
 
-        // Simulate successful connection
         consecutiveFailures = 0
         assertEquals(0, consecutiveFailures)
     }
@@ -46,8 +42,6 @@ class ConnectionWatchdogTest {
     fun test_checkIntervalCalculation() {
         val checkIntervalMs = 5 * 60 * 1000L
         val checkIntervalSeconds = checkIntervalMs / 1000
-
-        // Should be 5 minutes
         assertEquals(300L, checkIntervalSeconds)
     }
 
@@ -57,17 +51,14 @@ class ConnectionWatchdogTest {
         var consecutiveFailures = 0
         var shouldRestart = false
 
-        // First failure - no restart
         consecutiveFailures++
         shouldRestart = consecutiveFailures >= maxConsecutiveFailures
         assertFalse(shouldRestart)
 
-        // Second failure - restart
         consecutiveFailures++
         shouldRestart = consecutiveFailures >= maxConsecutiveFailures
         assertTrue(shouldRestart)
 
-        // Reset
         consecutiveFailures = 0
         shouldRestart = consecutiveFailures >= maxConsecutiveFailures
         assertFalse(shouldRestart)
@@ -78,13 +69,91 @@ class ConnectionWatchdogTest {
         var consecutiveFailures = 0
         val maxConsecutiveFailures = 2
 
-        // Fail twice
         consecutiveFailures++
         consecutiveFailures++
         assertTrue(consecutiveFailures >= maxConsecutiveFailures)
 
-        // Success resets counter
         consecutiveFailures = 0
         assertFalse(consecutiveFailures >= maxConsecutiveFailures)
+    }
+
+    @Test
+    fun remoteDelayFail_withLiveVpnCore_skipsSoftRestart() {
+        assertFalse(
+            ConnectionWatchdog.shouldSoftRestart(
+                consecutiveFailures = 3,
+                maxConsecutiveFailures = 3,
+                coreRunning = true,
+                rootMode = false,
+                rootPipelineHealthy = false,
+                localSocksReady = false,
+            )
+        )
+    }
+
+    @Test
+    fun remoteDelayFail_withHealthyRoot_skipsSoftRestart() {
+        assertFalse(
+            ConnectionWatchdog.shouldSoftRestart(
+                consecutiveFailures = 3,
+                maxConsecutiveFailures = 3,
+                coreRunning = true,
+                rootMode = true,
+                rootPipelineHealthy = true,
+                localSocksReady = true,
+            )
+        )
+    }
+
+    @Test
+    fun remoteDelayFail_rootUnhealthyButSocksUp_skipsSoftRestart() {
+        assertFalse(
+            ConnectionWatchdog.shouldSoftRestart(
+                consecutiveFailures = 3,
+                maxConsecutiveFailures = 3,
+                coreRunning = true,
+                rootMode = true,
+                rootPipelineHealthy = false,
+                localSocksReady = true,
+            )
+        )
+    }
+
+    @Test
+    fun remoteDelayFail_coreDead_triggersSoftRestart() {
+        assertTrue(
+            ConnectionWatchdog.shouldSoftRestart(
+                consecutiveFailures = 3,
+                maxConsecutiveFailures = 3,
+                coreRunning = false,
+                rootMode = false,
+                rootPipelineHealthy = false,
+                localSocksReady = false,
+            )
+        )
+        assertTrue(
+            ConnectionWatchdog.shouldSoftRestart(
+                consecutiveFailures = 3,
+                maxConsecutiveFailures = 3,
+                coreRunning = false,
+                rootMode = true,
+                rootPipelineHealthy = false,
+                localSocksReady = false,
+            )
+        )
+    }
+
+    @Test
+    fun belowThreshold_neverSoftRestart() {
+        assertFalse(
+            ConnectionWatchdog.shouldSoftRestart(
+                consecutiveFailures = 2,
+                maxConsecutiveFailures = 3,
+                coreRunning = false,
+                rootMode = true,
+                rootPipelineHealthy = false,
+                localSocksReady = false,
+            )
+        )
     }
 }

@@ -1,4 +1,4 @@
-package com.v2ray.ang.service
+﻿package com.v2ray.ang.service
 
 import android.annotation.SuppressLint
 import android.app.Service
@@ -36,6 +36,8 @@ class CoreVpnService : VpnService(), ServiceControl {
     private var isRunning = false
     @Volatile
     private var pendingRestart = false
+    @Volatile
+    private var lastNetworkRecoverAtMs = 0L
     private var tun2SocksService: Tun2SocksControl? = null
 
     /**destroy
@@ -64,8 +66,16 @@ class CoreVpnService : VpnService(), ServiceControl {
                 setUnderlyingNetworks(arrayOf(network))
                 if (pendingRestart) {
                     pendingRestart = false
-                    LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, restarting core")
+                    // Debounce rapid lost/available flaps (signal dips). Soft-restart drops app TCP.
+                    // Still allow a real network handoff recover, but not more than once/min.
+                    val now = System.currentTimeMillis()
+                    if (lastNetworkRecoverAtMs > 0L && now - lastNetworkRecoverAtMs < 60_000L) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: network available after loss, recover cooldown, skip soft-restart")
+                        return
+                    }
                     if (isRunning && !CoreServiceManager.isSoftRestarting()) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, soft-restarting core")
+                        lastNetworkRecoverAtMs = now
                         try {
                             MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERING, "")
                         } catch (_: Exception) {
