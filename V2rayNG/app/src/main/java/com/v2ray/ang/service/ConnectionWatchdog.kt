@@ -98,7 +98,11 @@ object ConnectionWatchdog {
                             return
                         }
                         LogUtil.w(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline unhealthy, ensuring before soft-restart")
-                        RootProxyManager.ensureRunning(service)
+                        val ensureErr = RootProxyManager.ensureRunning(service)
+                        if (ensureErr == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
+                            LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT repair backed off, skip soft-restart")
+                            return
+                        }
                         if (RootProxyManager.isHealthy(service)) {
                             LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline restored, skip soft-restart")
                             consecutiveFailures = 0

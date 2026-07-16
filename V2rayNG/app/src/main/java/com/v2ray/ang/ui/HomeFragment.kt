@@ -531,7 +531,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             if (SettingsManager.isRootMode() && !CoreServiceManager.isSoftRestarting()) {
                 viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
                     val err = RootProxyManager.ensureRunning(requireContext().applicationContext)
-                    if (err != null) {
+                    if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
                         LogUtil.w(AppConfig.TAG, "Home: root ensure on resume failed: $err")
                     }
                 }
@@ -539,10 +539,24 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             return
         }
 
-        // Manager says not live. If ViewModel still thinks running, keep UI as-is and let the
-        // guarded REGISTER reply settle state (avoids false Stopped on tab switch races).
+        // Manager says not live. If ViewModel still thinks running, keep UI briefly and
+        // re-check after a short delay to absorb REGISTER races without sticky false Running.
         if (mainViewModel.isRunning.value == true) {
             applyRunningState(isLoading = false, isRunning = true)
+            viewLifecycleOwner.lifecycleScope.launch {
+                delay(400L)
+                if (!isAdded || view == null) return@launch
+                val stillLive = CoreServiceManager.hasLiveSession() || CoreServiceManager.isRunning()
+                if (!stillLive && mainViewModel.isRunning.value == true) {
+                    mainViewModel.isRunning.value = false
+                    applyRunningState(isLoading = false, isRunning = false)
+                } else if (stillLive) {
+                    if (mainViewModel.isRunning.value != true) {
+                        mainViewModel.isRunning.value = true
+                    }
+                    applyRunningState(isLoading = false, isRunning = true)
+                }
+            }
             return
         }
         applyRunningState(isLoading = false, isRunning = false)

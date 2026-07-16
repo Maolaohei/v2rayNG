@@ -203,6 +203,11 @@ class CoreRootService : Service(), ServiceControl {
                     LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline unhealthy, repairing")
                     val err = RootProxyManager.ensureRunning(this@CoreRootService)
                     val healthy = RootProxyManager.isHealthy(this@CoreRootService)
+                    if (err == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-Root: repair backed off, wait for next tick")
+                        delay(RootProxyManager.repairBackoffRemainingMs().coerceIn(1000L, 20_000L))
+                        continue
+                    }
                     if (!healthy) {
                         consecutiveFailures++
                         LogUtil.e(

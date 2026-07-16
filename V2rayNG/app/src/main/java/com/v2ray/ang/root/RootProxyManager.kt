@@ -63,6 +63,7 @@ object RootProxyManager {
         RULES_FAILED,
         SOCKS_NOT_READY,
         HEV_DEAD,
+        REPAIR_BACKED_OFF,
         UNKNOWN,
     }
 
@@ -84,6 +85,7 @@ object RootProxyManager {
             RootError.RULES_FAILED -> com.v2ray.ang.R.string.toast_root_rules_failed
             RootError.SOCKS_NOT_READY -> com.v2ray.ang.R.string.toast_root_socks_not_ready
             RootError.HEV_DEAD -> com.v2ray.ang.R.string.toast_root_hev_dead
+            RootError.REPAIR_BACKED_OFF -> com.v2ray.ang.R.string.toast_root_repair_backed_off
             RootError.UNKNOWN -> com.v2ray.ang.R.string.toast_root_start_failed
         }
         return context.getString(res)
@@ -235,10 +237,11 @@ object RootProxyManager {
 
         val backoffLeft = repairBackoffRemainingMs()
         if (backoffLeft > 0L) {
-            // Soft no-op during backoff: do NOT return a hard error (soft-restart rebind
-            // would otherwise tear down a live session). Callers must re-check isHealthy().
+            // Distinct from success (null). Soft-restart rebind treats this as soft-skip.
+            // Watchdog/home re-check isHealthy and do not count as permanent success.
             LogUtil.i(AppConfig.TAG, "RootProxyManager: repair backoff active (${backoffLeft}ms), skip")
-            return null
+            lastError = RootError.REPAIR_BACKED_OFF
+            return RootError.REPAIR_BACKED_OFF
         }
 
         val probe = probePipeline(context)
@@ -768,11 +771,11 @@ object RootProxyManager {
             // LAN/router resolver (192.168.x / 10.x) would be returned direct and resolved by
             // the local ISP resolver (DNS leak + CDN mis-resolution, e.g. Instagram media).
             // The MARK survives a later RETURN, so the marked query still routes into the tun.
-            appendLine("$cmd -t mangle -A $CHAIN -p udp --dport 53 -j MARK --set-xmark $MARK")
-            appendLine("$cmd -t mangle -A $CHAIN -p tcp --dport 53 -j MARK --set-xmark $MARK")
+            appendLine("$cmd -t mangle -A $CHAIN -p udp --dport 53 -j MARK --set-xmark $MARK/0xffff")
+            appendLine("$cmd -t mangle -A $CHAIN -p tcp --dport 53 -j MARK --set-xmark $MARK/0xffff")
             // FakeDNS pool must always go through TUN/proxy. Never treat it as "private LAN".
             if (cmd == "iptables") {
-                appendLine("$cmd -t mangle -A $CHAIN -d $FAKE_IP_CIDR -j MARK --set-xmark $MARK")
+                appendLine("$cmd -t mangle -A $CHAIN -d $FAKE_IP_CIDR -j MARK --set-xmark $MARK/0xffff")
             }
             // keep LAN / private destinations direct (per-family CIDR list)
             val cidrs = if (cmd == "ip6tables") bypassCidrsV6 else bypassCidrs
@@ -783,11 +786,11 @@ object RootProxyManager {
                 // instead of falling through to the catch-all below: a fail-open here would
                 // tunnel every unselected app 闁?both a privacy leak and the "per-app proxies
                 // everything after a reboot" bug.
-                selectedUids.forEach { appendLine("$cmd -t mangle -A $CHAIN -m owner --uid-owner $it -j MARK --set-xmark $MARK") }
+                selectedUids.forEach { appendLine("$cmd -t mangle -A $CHAIN -m owner --uid-owner $it -j MARK --set-xmark $MARK/0xffff") }
             } else {
                 // all-apps mode (per-app off) or bypass mode: capture EVERY remaining uid
                 // (incl uid 0 + system uids)
-                appendLine("$cmd -t mangle -A $CHAIN -j MARK --set-xmark $MARK")
+                appendLine("$cmd -t mangle -A $CHAIN -j MARK --set-xmark $MARK/0xffff")
             }
             appendLine("$cmd -t mangle -D OUTPUT -j $CHAIN 2>/dev/null || true")
             appendLine("$cmd -t mangle -A OUTPUT -j $CHAIN")
@@ -922,10 +925,10 @@ object RootProxyManager {
                 // keep loopback, link-local (NDP/RA) and ULA/multicast direct.
                 appendLine("ip6tables -t mangle -N $v6pre 2>/dev/null || true")
                 appendLine("ip6tables -t mangle -F $v6pre")
-                appendLine("ip6tables -t mangle -A $v6pre ! -i $TUN -p udp --dport 53 -j MARK --set-xmark $MARK")
-                appendLine("ip6tables -t mangle -A $v6pre ! -i $TUN -p tcp --dport 53 -j MARK --set-xmark $MARK")
+                appendLine("ip6tables -t mangle -A $v6pre ! -i $TUN -p udp --dport 53 -j MARK --set-xmark $MARK/0xffff")
+                appendLine("ip6tables -t mangle -A $v6pre ! -i $TUN -p tcp --dport 53 -j MARK --set-xmark $MARK/0xffff")
                 bypassCidrsV6.forEach { appendLine("ip6tables -t mangle -A $v6pre ! -i $TUN -d $it -j RETURN") }
-                appendLine("ip6tables -t mangle -A $v6pre ! -i $TUN -j MARK --set-xmark $MARK")
+                appendLine("ip6tables -t mangle -A $v6pre ! -i $TUN -j MARK --set-xmark $MARK/0xffff")
                 appendLine("ip6tables -t mangle -D PREROUTING -j $v6pre 2>/dev/null || true")
                 appendLine("ip6tables -t mangle -A PREROUTING -j $v6pre")
                 // fail closed: any forwarded v6 that wasn't marked into the tun (e.g. the
@@ -982,6 +985,9 @@ object RootProxyManager {
             for (pref in listOf(900, 5000, 5010, 5020, 5025, 5026, 5027, 5030, 5040, 5050, 6000)) {
                 appendLine("ip rule del pref $pref 2>/dev/null || true")
             }
+            // FakeDNS routes (policy table flushed above; also clear main-table leftovers)
+            appendLine("ip route del $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
+            appendLine("ip route del $FAKE_IP_CIDR table $TABLE 2>/dev/null || true")
             // tun device down + helper process
             appendLine("ip link set dev $TUN down 2>/dev/null || true")
             appendLine("[ -f '$pidFile' ] && kill \$(cat '$pidFile') 2>/dev/null || true")

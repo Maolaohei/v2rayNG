@@ -303,6 +303,7 @@
     <string name="toast_root_rules_failed">ROOT mode failed: iptables/routing setup failed</string>
     <string name="toast_root_socks_not_ready">ROOT mode failed: local SOCKS is not ready</string>
     <string name="toast_root_hev_dead">ROOT mode failed: tunnel helper process is not running</string>
+    <string name="toast_root_repair_backed_off">ROOT tunnel is recovering; retry shortly</string>
     <string name="summary_root_dynamic_socks_disabled">Disabled in ROOT mode (stable local SOCKS port required)</string>
     <string name="summary_root_vpn_only_setting">VPN-only setting; not used while ROOT mode is active</string>
     <string name="home_mode_root_settings_summary">Managed on Home · ROOT</string>

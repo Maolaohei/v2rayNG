@@ -62,6 +62,8 @@ object CoreServiceManager {
     private val intentionalStopEpoch = AtomicLong(0)
     /** True while we intentionally stop the core only to restart it in-place. */
     private val softRestarting = AtomicBoolean(false)
+    /** True after successful core start until full stop. Survives brief core flaps. */
+    private val sessionActive = AtomicBoolean(false)
     /** Bumped on user/full stop so in-flight soft-restarts cannot revive the session. */
     private val sessionGeneration = AtomicInteger(0)
     /** Set when user/system requests a full stop; blocks soft-restart completion. */
@@ -205,7 +207,9 @@ object CoreServiceManager {
                 // and only rebuilds when hev/tun/rules are actually down.
                 LogUtil.i(AppConfig.TAG, "StartCore-Manager: ensuring root routing after soft-restart")
                 val err = RootProxyManager.ensureRunning(service)
-                if (err != null) {
+                if (err == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: root ensure backed off after soft-restart, keep session")
+                } else if (err != null) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing ensure failed: $err")
                     MessageUtil.sendMsg2UI(
                         service,
@@ -328,16 +332,15 @@ object CoreServiceManager {
 
     /**
      * True while a proxy session should be considered live for UI re-sync.
-     * A live Android service control (VPN/ROOT/Proxy) counts even if the core
-     * briefly reports not-running, as long as the user has not requested stop.
-     * Preference alone is NOT enough.
+     * Requires an intentional active session (successful start) plus either a live core
+     * or a still-bound service control. Preference alone is never enough.
      */
     fun hasLiveSession(): Boolean {
         if (userStopRequested.get()) return false
         if (coreController.isRunning || softRestarting.get() || activeVpnInterface != null) {
             return true
         }
-        // Service process still owns the session (tab switch / brief core flap).
+        if (!sessionActive.get()) return false
         val control = serviceControl
         return control is CoreVpnService ||
             control is CoreRootService ||
@@ -665,6 +668,7 @@ object CoreServiceManager {
         }
 
         val startContent = if (softRestarting.get()) AppConfig.MSG_CONTENT_SOFT_START else ""
+        sessionActive.set(true)
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, startContent)
         TrafficStatsManager.startServiceTracking()
         NotificationManager.startSpeedNotification()
@@ -733,6 +737,7 @@ object CoreServiceManager {
         if (clearVpnInterface) {
             activeVpnInterface = null
             serviceControl = null
+            sessionActive.set(false)
         }
 
         if (receiverRegistered && (clearVpnInterface || !softRestarting.get())) {
