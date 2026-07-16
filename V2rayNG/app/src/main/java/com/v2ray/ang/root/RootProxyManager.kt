@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong
  * All rules live in dedicated chains ([AppConfig.ROOT_IPTABLES_CHAIN] in the mangle
  * table, [AppConfig.ROOT_FWD_CHAIN] for LAN sharing) plus a dedicated routing table, so
  * [teardown] is a clean, bounded flush. Teardown runs before every setup (to clear stale
- * rules) and on every stop path 闁?leaving rules behind after the core dies would break
+ * rules) and on every stop path 闂?leaving rules behind after the core dies would break
  * the device's connectivity.
  */
 object RootProxyManager {
@@ -42,7 +42,7 @@ object RootProxyManager {
     private const val MARK = AppConfig.ROOT_MARK_ROUTE
     private const val BYPASS_PRIORITY = AppConfig.ROOT_BYPASS_RULE_PRIORITY
     // Android app UIDs start at 10000. Magic_V2Ray only marks app range (+ a few system uids)
-    // instead of every system uid — fewer OEM side-effects under all-apps capture.
+    // instead of every system uid 鈥?fewer OEM side-effects under all-apps capture.
     private const val APP_UID_RANGE = "10000-2147483647"
     // Xray FakeDNS default pool. MUST be proxied (never LAN-bypassed).
     private const val FAKE_IP_CIDR = "198.18.0.0/15"
@@ -80,6 +80,8 @@ object RootProxyManager {
     private val repairing = AtomicBoolean(false)
     private val consecutiveRepairFailures = AtomicInteger(0)
     private val nextRepairAllowedAtMs = AtomicLong(0L)
+    private val lastFullRebuildAtMs = AtomicLong(0L)
+    private const val FULL_REBUILD_MIN_INTERVAL_MS = 120_000L
     private const val HEALTH_CACHE_MS = 800L
     @Volatile private var probeCacheAtMs: Long = 0L
     @Volatile private var probeCache: PipelineProbe? = null
@@ -231,9 +233,12 @@ object RootProxyManager {
     }
 
     /**
-     * Full local pipeline health: hev + tun + iptables/ip-rule + local SOCKS.
+     * Local pipeline health: hev + tun + iptables/ip-rule + local SOCKS.
+     *
+     * @param strict true for post-setup acceptance (must observe rules via su).
+     *               false for runtime (prefer not thrashing on flaky su: SOCKS up => keep session).
      */
-    fun isHealthy(context: Context): Boolean {
+    fun isHealthy(context: Context, strict: Boolean = false): Boolean {
         val now = System.currentTimeMillis()
         val probeCached = probeCache
         val probe = if (probeCached != null && probeCached.reliable && now - probeCacheAtMs in 0 until HEALTH_CACHE_MS) {
@@ -250,9 +255,6 @@ object RootProxyManager {
                 }
             }
         }
-        // Unreliable su probe must never report healthy: that would let startDetailed
-        // succeed without rules and skip repairs. ensureRunning handles soft-skip separately.
-        if (!probe.reliable) return false
 
         val socksCached = socksCache
         val socks = if (socksCached != null && now - socksCacheAtMs in 0 until HEALTH_CACHE_MS) {
@@ -263,8 +265,23 @@ object RootProxyManager {
                 socksCacheAtMs = now
             }
         }
+
+        // Runtime: flaky su must not look like a dead dataplane (that triggers rebuild storms).
+        if (!probe.reliable) {
+            if (!strict && socks) {
+                LogUtil.i(AppConfig.TAG, "RootProxyManager: unreliable probe but SOCKS up; runtime-healthy")
+                return true
+            }
+            return false
+        }
         return probe.localUp && socks
     }
+
+    /**
+     * Cheap runtime liveness used by UI / network paths that must not run su every time.
+     * True when local SOCKS accepts — the control plane Xray side is up.
+     */
+    fun isRuntimeLive(): Boolean = isLocalSocksReady()
     /** Remaining repair backoff in ms (0 = allowed now). */
     fun repairBackoffRemainingMs(): Long {
         val left = nextRepairAllowedAtMs.get() - System.currentTimeMillis()
@@ -410,7 +427,43 @@ object RootProxyManager {
                 return null
             }
 
+            // Never full-teardown while SOCKS + hev/tun still look usable — that is the main
+            // cause of random multi-second blackholes. Prefer light rules / soft-skip.
+            probe = probePipeline(context)
+            val socksUp = isLocalSocksReady()
+            if (socksUp && probe.reliable && probe.hevTunUp) {
+                if (!probe.rulesOk) {
+                    LogUtil.w(AppConfig.TAG, "RootProxyManager: rules flaky with live hev/SOCKS, light reinstall only")
+                    val lightErr = reinstallRulesOnly(context)
+                    invalidateHealthCache()
+                    if (lightErr == null && isHealthy(context)) {
+                        noteRepairSuccess()
+                        return null
+                    }
+                }
+                LogUtil.w(AppConfig.TAG, "RootProxyManager: skip full rebuild while SOCKS+hev/tun live")
+                lastError = RootError.REPAIR_BACKED_OFF
+                noteRepairFailure()
+                return RootError.REPAIR_BACKED_OFF
+            }
+            if (socksUp && !probe.reliable) {
+                LogUtil.w(AppConfig.TAG, "RootProxyManager: skip full rebuild (unreliable probe, SOCKS up)")
+                lastError = RootError.REPAIR_BACKED_OFF
+                return RootError.REPAIR_BACKED_OFF
+            }
+
+            val sinceFull = System.currentTimeMillis() - lastFullRebuildAtMs.get()
+            if (lastFullRebuildAtMs.get() > 0L && sinceFull < FULL_REBUILD_MIN_INTERVAL_MS) {
+                LogUtil.w(
+                    AppConfig.TAG,
+                    "RootProxyManager: full rebuild rate-limited (${FULL_REBUILD_MIN_INTERVAL_MS - sinceFull}ms left)"
+                )
+                lastError = RootError.REPAIR_BACKED_OFF
+                return RootError.REPAIR_BACKED_OFF
+            }
+
             LogUtil.w(AppConfig.TAG, "RootProxyManager: pipeline unhealthy, full rebuild")
+            lastFullRebuildAtMs.set(System.currentTimeMillis())
             val err = startDetailed(context)
             invalidateHealthCache()
             if (err == null) {
@@ -552,14 +605,14 @@ object RootProxyManager {
     private fun waitUntilHealthy(context: Context, timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (isHealthy(context)) return true
+            if (isHealthy(context, strict = true)) return true
             try {
                 Thread.sleep(150L)
             } catch (_: InterruptedException) {
                 break
             }
         }
-        return isHealthy(context)
+        return isHealthy(context, strict = true)
     }
 
     private fun waitUntilSocksReady(timeoutMs: Long): Boolean {
@@ -776,7 +829,7 @@ object RootProxyManager {
         if (perAppEnabled && !bypassApps && selectedUids.isEmpty()) {
             LogUtil.w(
                 AppConfig.TAG,
-                "RootProxyManager: per-app allow-list is empty — no app traffic will be marked into TUN"
+                "RootProxyManager: per-app allow-list is empty 鈥?no app traffic will be marked into TUN"
             )
         }
 
@@ -788,7 +841,7 @@ object RootProxyManager {
             appendLine("IP6T=ip6tables; command -v ip6tables-legacy >/dev/null 2>&1 && IP6T=ip6tables-legacy")
             // Protect the core (this app process) from the Android low-memory killer.
             // system_server keeps recomputing oom_score_adj for app processes, so a single
-            // write would be reverted 闁?re-pin it from a small root loop instead.
+            // write would be reverted 闂?re-pin it from a small root loop instead.
             appendLine("nohup sh -c 'while true; do echo ${AppConfig.ROOT_OOM_SCORE} > /proc/$corePid/oom_score_adj 2>/dev/null; sleep 5; done' >/dev/null 2>&1 &")
             appendLine("echo \$! > '$oomGuardPid'")
             // tun device node
@@ -956,7 +1009,7 @@ object RootProxyManager {
                 // Proxy ONLY the explicitly selected apps. If nothing resolved (e.g. the
                 // selected packages failed to resolve to uids at early boot), mark nothing
                 // instead of falling through to the catch-all below: a fail-open here would
-                // tunnel every unselected app 闁?both a privacy leak and the "per-app proxies
+                // tunnel every unselected app 闂?both a privacy leak and the "per-app proxies
                 // everything after a reboot" bug.
                 selectedUids.forEach { appendLine("$cmd -t mangle -A $CHAIN -m owner --uid-owner $it -j MARK --set-xmark $MARK/0xffff") }
             } else {
@@ -1083,7 +1136,7 @@ object RootProxyManager {
             appendLine("ip6tables -I FORWARD -j $v6fwd")
             if (ipv6) {
                 // When the device itself isn't capturing v6 (VPN-mode sharing) the tun table
-                // has no v6 default and the tun has no v6 address 闁?add them so marked client
+                // has no v6 default and the tun has no v6 address 闂?add them so marked client
                 // v6 has somewhere to go. In Root mode the device-capture block already did.
                 if (!captureDeviceTraffic) {
                     appendLine("ip -6 addr add ${AppConfig.ROOT_TUN_ADDR_V6} dev $TUN 2>/dev/null || true")

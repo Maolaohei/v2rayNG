@@ -235,15 +235,24 @@ object CoreServiceManager {
                 if (err == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: root ensure backed off after soft-restart, keep session")
                 } else if (err != null) {
-                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing ensure failed: $err")
-                    MessageUtil.sendMsg2UI(
-                        service,
-                        AppConfig.MSG_STATE_START_FAILURE,
-                        RootProxyManager.userMessage(service, err)
-                    )
-                    TrafficStatsManager.stopServiceTracking()
-                    NotificationManager.cancelNotification()
-                    try { serviceControl?.stopService() } catch (_: Exception) { }
+                    // Soft-restart already brought core back. Killing FGS here on a transient
+                    // root-rule glitch causes user-visible random disconnects.
+                    if (RootProxyManager.isRuntimeLive() || coreController.isRunning) {
+                        LogUtil.e(
+                            AppConfig.TAG,
+                            "StartCore-Manager: root ensure failed after soft-restart ($err) but core/SOCKS live; keep session"
+                        )
+                    } else {
+                        LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing ensure failed: $err")
+                        MessageUtil.sendMsg2UI(
+                            service,
+                            AppConfig.MSG_STATE_START_FAILURE,
+                            RootProxyManager.userMessage(service, err)
+                        )
+                        TrafficStatsManager.stopServiceTracking()
+                        NotificationManager.cancelNotification()
+                        try { serviceControl?.stopService() } catch (_: Exception) { }
+                    }
                 }
                 return
             }
@@ -651,7 +660,7 @@ object CoreServiceManager {
 
         currentConfig = config
         // Only Android VPN mode may feed a TUN fd into core. Root/Proxy must never pass a
-        // stale VpnService PFD — that triggers "inappropriate ioctl for device" on start.
+        // stale VpnService PFD 鈥?that triggers "inappropriate ioctl for device" on start.
         if (SettingsManager.isVpnMode()) {
             if (vpnInterface != null) {
                 activeVpnInterface = vpnInterface

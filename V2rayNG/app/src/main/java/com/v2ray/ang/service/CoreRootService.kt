@@ -74,8 +74,12 @@ class CoreRootService : Service(), ServiceControl {
                     }
                 }
                 val recover = pendingNetworkRecover.compareAndSet(true, false)
-                if (recover || !RootProxyManager.isHealthy(this@CoreRootService)) {
-                    LogUtil.i(AppConfig.TAG, "StartCore-Root: network available, recovering session")
+                // Skip recover storms: if this is not a lost->available flap and SOCKS is live,
+                // bypass rebind above is enough. isHealthy(strict su) alone was too noisy.
+                val needRecover = recover || !RootProxyManager.isRuntimeLive() ||
+                    !RootProxyManager.isHealthy(this@CoreRootService)
+                if (needRecover) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: network available, recovering session (flap=$recover)")
                     // Prefer pipeline ensure first. Soft-restart core only after a real
                     // onLost->onAvailable AND local SOCKS/core look dead (avoid TG flap).
                     scheduleNetworkRecover(reason = "network-available", softRestartCore = recover)
@@ -130,8 +134,10 @@ class CoreRootService : Service(), ServiceControl {
                 }
                 LogUtil.w(AppConfig.TAG, "StartCore-Root: re-entry unhealthy, graduated ensure (no forced teardown)")
                 val err = RootProxyManager.ensureRunning(this@CoreRootService)
-                if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
-                    // Only full rebuild once ensure cannot recover; avoid thrash on sticky restarts.
+                if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF &&
+                    !RootProxyManager.isRuntimeLive()
+                ) {
+                    // Only full rebuild when SOCKS is also dead; otherwise keep waiting.
                     LogUtil.w(AppConfig.TAG, "StartCore-Root: re-entry ensure failed ($err), one full rebuild")
                     val full = RootProxyManager.startDetailed(this@CoreRootService)
                     if (full != null) {
@@ -203,7 +209,7 @@ class CoreRootService : Service(), ServiceControl {
     /**
      * Recover after connectivity changes.
      * - Always ensure local ROOT pipeline (hev/tun/rules/socks).
-     * - After a real onLost閳姪nAvailable transition, also soft-restart the core so
+     * - After a real onLost闂佹剚鍋呮慨鐚睞vailable transition, also soft-restart the core so
      *   outbound sockets re-bind like VPN's network recovery path.
      */
     private fun scheduleNetworkRecover(reason: String, softRestartCore: Boolean) {
@@ -295,7 +301,7 @@ class CoreRootService : Service(), ServiceControl {
                 }
                 if (RootProxyManager.isHealthy(this@CoreRootService)) {
                     consecutiveHardFailures = 0
-                    delay(30_000L)
+                    delay(45_000L)
                     continue
                 }
 
@@ -334,7 +340,7 @@ class CoreRootService : Service(), ServiceControl {
                     // Soft unhealthy (rules/socks flap): keep service, retry later.
                     LogUtil.w(AppConfig.TAG, "StartCore-Root: soft unhealthy ($err), keep session and retry")
                     consecutiveHardFailures = 0
-                    delay(20_000L)
+                    delay(30_000L)
                 }
             }
         }

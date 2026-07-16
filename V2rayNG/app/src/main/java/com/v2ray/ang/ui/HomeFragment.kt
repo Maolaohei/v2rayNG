@@ -784,8 +784,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             applyRunningState(isLoading = false, isRunning = true)
             // Quiet re-REGISTER: ViewModel ignores NOT_RUNNING while sticky Running.
             mainViewModel.startListenBroadcast()
-            // ROOT heal is fire-and-forget; must never drive the switch to Stopped.
-            if (SettingsManager.isRootMode()) {
+            // ROOT: never full-heal on every tab resume - that caused random blackholes.
+            // Only touch pipeline when local SOCKS is actually down.
+            if (SettingsManager.isRootMode() && !RootProxyManager.isRuntimeLive()) {
                 viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
                     try {
                         val err = RootProxyManager.ensureRunning(requireContext().applicationContext)
