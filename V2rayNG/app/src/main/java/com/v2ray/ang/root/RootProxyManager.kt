@@ -76,6 +76,11 @@ object RootProxyManager {
     private val repairing = AtomicBoolean(false)
     private val consecutiveRepairFailures = AtomicInteger(0)
     private val nextRepairAllowedAtMs = AtomicLong(0L)
+    private const val HEALTH_CACHE_MS = 800L
+    @Volatile private var probeCacheAtMs: Long = 0L
+    @Volatile private var probeCache: PipelineProbe? = null
+    @Volatile private var socksCacheAtMs: Long = 0L
+    @Volatile private var socksCache: Boolean? = null
 
     fun userMessage(context: Context, error: RootError = lastError ?: RootError.UNKNOWN): String {
         val res = when (error) {
@@ -195,10 +200,27 @@ object RootProxyManager {
      * Full local pipeline health: hev + tun + iptables/ip-rule + local SOCKS.
      */
     fun isHealthy(context: Context): Boolean {
-        val p = probePipeline(context)
-        return p.localUp && isLocalSocksReady()
+        val now = System.currentTimeMillis()
+        val probeCached = probeCache
+        val probe = if (probeCached != null && now - probeCacheAtMs in 0 until HEALTH_CACHE_MS) {
+            probeCached
+        } else {
+            probePipeline(context).also {
+                probeCache = it
+                probeCacheAtMs = now
+            }
+        }
+        val socksCached = socksCache
+        val socks = if (socksCached != null && now - socksCacheAtMs in 0 until HEALTH_CACHE_MS) {
+            socksCached
+        } else {
+            isLocalSocksReady().also {
+                socksCache = it
+                socksCacheAtMs = now
+            }
+        }
+        return probe.localUp && socks
     }
-
     /** Remaining repair backoff in ms (0 = allowed now). */
     fun repairBackoffRemainingMs(): Long {
         val left = nextRepairAllowedAtMs.get() - System.currentTimeMillis()
@@ -216,6 +238,15 @@ object RootProxyManager {
         val delayMs = (2000L * (1L shl (n - 1))).coerceAtMost(60_000L)
         nextRepairAllowedAtMs.set(System.currentTimeMillis() + delayMs)
         LogUtil.w(AppConfig.TAG, "RootProxyManager: repair backoff ${delayMs}ms after $n failures")
+        invalidateHealthCache()
+    }
+
+
+    private fun invalidateHealthCache() {
+        probeCacheAtMs = 0L
+        probeCache = null
+        socksCacheAtMs = 0L
+        socksCache = null
     }
 
     /**
@@ -225,6 +256,7 @@ object RootProxyManager {
      * 3) hev/tun up, rules missing -> reinstall rules only (keep hev)
      * 4) hev dead, tun/device still usable -> restart hev only + light rules
      * 5) otherwise full teardown+setup
+     * Re-probes between stages so decisions are not based on a stale snapshot.
      * Concurrent callers wait for the in-flight repair. Failures apply exponential backoff.
      */
     fun ensureRunning(context: Context): RootError? {
@@ -244,7 +276,8 @@ object RootProxyManager {
             return RootError.REPAIR_BACKED_OFF
         }
 
-        val probe = probePipeline(context)
+        var probe = probePipeline(context)
+        invalidateHealthCache()
         if (probe.localUp && !isLocalSocksReady()) {
             LogUtil.i(AppConfig.TAG, "RootProxyManager: local path up, waiting for SOCKS")
             if (waitUntilSocksReady(timeoutMs = 4000L)) {
@@ -274,25 +307,32 @@ object RootProxyManager {
         }
 
         try {
+            invalidateHealthCache()
+            probe = probePipeline(context)
+
             // 3) rules-only when tunnel helper is still up.
             if (probe.hevTunUp && !probe.rulesOk) {
                 LogUtil.w(AppConfig.TAG, "RootProxyManager: rules missing, light reinstall")
                 val lightErr = reinstallRulesOnly(context)
+                invalidateHealthCache()
                 if (lightErr == null && isHealthy(context)) {
                     noteRepairSuccess()
                     return null
                 }
                 LogUtil.w(AppConfig.TAG, "RootProxyManager: light rules reinstall failed ($lightErr), escalate")
+                probe = probePipeline(context)
             }
 
             // 4) hev dead: try restart helper without full teardown first.
             if (!probe.hevAlive) {
                 LogUtil.w(AppConfig.TAG, "RootProxyManager: hev dead, trying hev-only restart")
                 val hevErr = restartHevOnly(context)
+                invalidateHealthCache()
                 if (hevErr == null) {
                     val after = probePipeline(context)
                     if (!after.rulesOk) {
                         val lightErr = reinstallRulesOnly(context)
+                        invalidateHealthCache()
                         if (lightErr == null && isHealthy(context)) {
                             noteRepairSuccess()
                             return null
@@ -303,10 +343,19 @@ object RootProxyManager {
                     }
                 }
                 LogUtil.w(AppConfig.TAG, "RootProxyManager: hev-only restart insufficient, full rebuild")
+                probe = probePipeline(context)
+            }
+
+            // Fresh check before the expensive full rebuild.
+            invalidateHealthCache()
+            if (isHealthy(context)) {
+                noteRepairSuccess()
+                return null
             }
 
             LogUtil.w(AppConfig.TAG, "RootProxyManager: pipeline unhealthy, full rebuild")
             val err = startDetailed(context)
+            invalidateHealthCache()
             if (err == null) {
                 noteRepairSuccess()
             } else {
@@ -321,6 +370,7 @@ object RootProxyManager {
 
     fun startDetailed(context: Context): RootError? {
         lastError = null
+        invalidateHealthCache()
         teardown(context)
         val script = buildTun2socksSetup(context)
         if (script == null) {
@@ -513,6 +563,7 @@ object RootProxyManager {
     }
 
     private fun teardown(context: Context) {
+        invalidateHealthCache()
         RootShell.runScript(context, "teardown_rules.sh", buildTeardown(context))
     }
 
@@ -614,6 +665,22 @@ object RootProxyManager {
             }
         } else {
             emptyList()
+        }
+
+        val perAppMode = when {
+            !perAppEnabled -> "all-apps"
+            bypassApps -> "bypass-selected"
+            else -> "proxy-selected"
+        }
+        LogUtil.i(
+            AppConfig.TAG,
+            "RootProxyManager: per-app mode=$perAppMode selectedUids=${selectedUids.size} captureDevice=$captureDeviceTraffic"
+        )
+        if (perAppEnabled && !bypassApps && selectedUids.isEmpty()) {
+            LogUtil.w(
+                AppConfig.TAG,
+                "RootProxyManager: per-app allow-list is empty — no app traffic will be marked into TUN"
+            )
         }
 
         return buildString {

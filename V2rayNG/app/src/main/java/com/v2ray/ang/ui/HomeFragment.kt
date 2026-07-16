@@ -54,6 +54,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var autoPingJob: Job? = null
     private var lastAutoPingAtMs: Long = 0L
     private var modeSwitchJob: Job? = null
+    private var resyncDebounceJob: Job? = null
 
     private val dayListener: (Long) -> Unit = { total ->
         if (isAdded) {
@@ -491,25 +492,41 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         if (!hidden) {
-            resyncConnectionState()
+            // Primary path for bottom-nav show(); onResume alone is not enough while hidden.
+            scheduleResyncConnectionState()
             refreshModeToggle()
             refreshSelectedServerMeta()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
             refreshMetricsFromCache()
             startTrafficUpdates()
         } else {
+            resyncDebounceJob?.cancel()
             stopTrafficUpdates()
         }
     }
 
     override fun onResume() {
         super.onResume()
-        resyncConnectionState()
-        refreshModeToggle()
-        refreshSelectedServerMeta()
-        binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
-        refreshMetricsFromCache()
-        startTrafficUpdates()
+        // Avoid double REGISTER when hide/show also fires onHiddenChanged(false).
+        if (!isHidden) {
+            scheduleResyncConnectionState()
+            refreshModeToggle()
+            refreshSelectedServerMeta()
+            binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
+            refreshMetricsFromCache()
+            startTrafficUpdates()
+        }
+    }
+
+    /** Collapse onHiddenChanged + onResume double fire into one REGISTER/resync. */
+    private fun scheduleResyncConnectionState() {
+        if (!isAdded || view == null) return
+        resyncDebounceJob?.cancel()
+        resyncDebounceJob = viewLifecycleOwner.lifecycleScope.launch {
+            delay(250L)
+            if (!isAdded || view == null || isHidden) return@launch
+            resyncConnectionState()
+        }
     }
 
     /**
@@ -545,7 +562,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             applyRunningState(isLoading = false, isRunning = true)
             viewLifecycleOwner.lifecycleScope.launch {
                 delay(400L)
-                if (!isAdded || view == null) return@launch
+                if (!isAdded || view == null || isHidden) return@launch
                 val stillLive = CoreServiceManager.hasLiveSession() || CoreServiceManager.isRunning()
                 if (!stillLive && mainViewModel.isRunning.value == true) {
                     mainViewModel.isRunning.value = false
@@ -570,6 +587,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     override fun onDestroyView() {
+        resyncDebounceJob?.cancel()
         stopTrafficUpdates()
         clearConnectingTimeout()
         cancelAutoConnectivityTest()
