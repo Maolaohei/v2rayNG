@@ -40,6 +40,10 @@ object RootProxyManager {
     private const val APP_UID_RULE_PREF = 900
     private const val FWMARK = AppConfig.ROOT_FWMARK
     private const val MARK = AppConfig.ROOT_MARK_ROUTE
+    private const val BYPASS_PRIORITY = AppConfig.ROOT_BYPASS_RULE_PRIORITY
+    // Android app UIDs start at 10000. Magic_V2Ray only marks app range (+ a few system uids)
+    // instead of every system uid — fewer OEM side-effects under all-apps capture.
+    private const val APP_UID_RANGE = "10000-2147483647"
     // Xray FakeDNS default pool. MUST be proxied (never LAN-bypassed).
     private const val FAKE_IP_CIDR = "198.18.0.0/15"
 
@@ -616,6 +620,41 @@ object RootProxyManager {
         LogUtil.i(AppConfig.TAG, "RootProxyManager: rules removed")
     }
 
+    /**
+     * Magic_V2Ray-style network rebind: keep hev/TUN, only refresh
+     * `fwmark FWMARK -> main` so bypass sockets follow the current default iface.
+     * Cheap enough to run on every ConnectivityManager onAvailable.
+     */
+    fun rebindPhysicalBypass(context: Context): Boolean {
+        val script = buildString {
+            appendLine("set +e")
+            append(buildBypassMarkRules())
+            appendLine("echo BYPASS_OK")
+        }
+        val result = RootShell.runScript(context, "rebind_bypass.sh", script)
+        val ok = result.success || result.output.contains("BYPASS_OK")
+        if (!ok) {
+            LogUtil.w(AppConfig.TAG, "RootProxyManager: physical bypass rebind failed: ${result.output.trim()}")
+        } else {
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: physical bypass rebind ok")
+        }
+        return ok
+    }
+
+    /** Shell snippet: hev SO_MARK (FWMARK) always prefers main table over TUN policy. */
+    private fun buildBypassMarkRules(): String = buildString {
+        // IPv4 + IPv6. Priority lower-number = higher precedence than TUN MARK rule.
+        appendLine("ip rule del fwmark $FWMARK table main priority $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip rule del pref $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip rule add fwmark $FWMARK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip -6 rule del fwmark $FWMARK table main priority $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip -6 rule del pref $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip -6 rule add fwmark $FWMARK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
+        // Keep rp_filter relaxed on TUN (Magic locks this).
+        appendLine("echo 0 > /proc/sys/net/ipv4/conf/$TUN/rp_filter 2>/dev/null || true")
+        appendLine("echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true")
+    }
+
     private fun teardown(context: Context) {
         invalidateHealthCache()
         RootShell.runScript(context, "teardown_rules.sh", buildTeardown(context))
@@ -663,6 +702,8 @@ object RootProxyManager {
             appendLine("ip route replace $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
             appendLine("ip rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
             appendLine("ip rule add fwmark $MARK table $TABLE priority $PRIORITY")
+            // Magic dual-mark: hev SO_MARK(FWMARK) must prefer main over TUN table.
+            append(buildBypassMarkRules())
             // Anti-loop harden: core/app UID always prefers main table even if marked.
             appendLine("ip rule del pref $APP_UID_RULE_PREF 2>/dev/null || true")
             appendLine("ip rule add uidrange $appUid-$appUid lookup main priority $APP_UID_RULE_PREF 2>/dev/null || true")
@@ -779,6 +820,8 @@ object RootProxyManager {
             appendLine("ip route replace $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
             appendLine("ip rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
             appendLine("ip rule add fwmark $MARK table $TABLE priority $PRIORITY")
+            // Magic dual-mark: hev SO_MARK(FWMARK) must prefer main over TUN table.
+            append(buildBypassMarkRules())
             // Anti-loop harden: core/app UID always prefers main table even if marked.
             appendLine("ip rule del pref $APP_UID_RULE_PREF 2>/dev/null || true")
             appendLine("ip rule add uidrange $appUid-$appUid lookup main priority $APP_UID_RULE_PREF 2>/dev/null || true")
@@ -917,9 +960,10 @@ object RootProxyManager {
                 // everything after a reboot" bug.
                 selectedUids.forEach { appendLine("$cmd -t mangle -A $CHAIN -m owner --uid-owner $it -j MARK --set-xmark $MARK/0xffff") }
             } else {
-                // all-apps mode (per-app off) or bypass mode: capture EVERY remaining uid
-                // (incl uid 0 + system uids)
-                appendLine("$cmd -t mangle -A $CHAIN -j MARK --set-xmark $MARK/0xffff")
+                // all-apps / bypass-selected: capture app UID range only (Magic_V2Ray style).
+                // DNS is already marked above by dport 53 (covers netd). Marking every low
+                // system uid (0-9999) has caused OEM instability; skip them on purpose.
+                appendLine("$cmd -t mangle -A $CHAIN -m owner --uid-owner $APP_UID_RANGE -j MARK --set-xmark $MARK/0xffff")
             }
             appendLine("$cmd -t mangle -D OUTPUT -j $CHAIN 2>/dev/null || true")
             appendLine("$cmd -t mangle -A OUTPUT -j $CHAIN")
@@ -966,8 +1010,8 @@ object RootProxyManager {
                 // None resolved -> reject nothing, mirroring the v4 chain's fail-closed handling.
                 selectedUids.forEach { appendLine("\$IP6T -t filter -A $chain -m owner --uid-owner $it $reject") }
             } else {
-                // all-apps / bypass: reject everyone left
-                appendLine("\$IP6T -t filter -A $chain $reject")
+                // all-apps / bypass: reject only app UID range (match v4 capture set)
+                appendLine("\$IP6T -t filter -A $chain -m owner --uid-owner $APP_UID_RANGE $reject")
             }
             appendLine("\$IP6T -t filter -D OUTPUT -j $chain 2>/dev/null || true")
             appendLine("\$IP6T -t filter -A OUTPUT -j $chain")
@@ -1113,9 +1157,11 @@ object RootProxyManager {
             appendLine("ip6tables -t mangle -D PREROUTING -j ${AppConfig.ROOT_V6_PRE_CHAIN} 2>/dev/null || true")
             appendLine("ip6tables -t mangle -F ${AppConfig.ROOT_V6_PRE_CHAIN} 2>/dev/null || true")
             appendLine("ip6tables -t mangle -X ${AppConfig.ROOT_V6_PRE_CHAIN} 2>/dev/null || true")
-            for (pref in listOf(900, 5000, 5010, 5020, 5025, 5026, 5027, 5030, 5040, 5050, 6000)) {
+            for (pref in listOf(900, $BYPASS_PRIORITY, 5000, 5010, 5020, 5025, 5026, 5027, 5030, 5040, 5050, 6000)) {
                 appendLine("ip rule del pref $pref 2>/dev/null || true")
             }
+            appendLine("ip rule del fwmark $FWMARK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
+            appendLine("ip -6 rule del fwmark $FWMARK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
             // FakeDNS routes (policy table flushed above; also clear main-table leftovers)
             appendLine("ip route del $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
             appendLine("ip route del $FAKE_IP_CIDR table $TABLE 2>/dev/null || true")

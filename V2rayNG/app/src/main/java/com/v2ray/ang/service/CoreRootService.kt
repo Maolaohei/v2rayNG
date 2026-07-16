@@ -62,9 +62,19 @@ class CoreRootService : Service(), ServiceControl {
     private val defaultNetworkCallback by lazy {
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
+                // Always rebind hev FWMARK -> main (Magic_V2Ray apply_mark_rule equivalent).
+                // Cheap and prevents blackhole after Wi-Fi/cellular handoff without full rebuild.
+                serviceScope.launch {
+                    try {
+                        RootProxyManager.rebindPhysicalBypass(this@CoreRootService)
+                    } catch (e: Exception) {
+                        LogUtil.w(AppConfig.TAG, "StartCore-Root: bypass rebind onAvailable failed", e)
+                    }
+                }
                 val recover = pendingNetworkRecover.compareAndSet(true, false)
                 if (recover || !RootProxyManager.isHealthy(this@CoreRootService)) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: network available, recovering session")
+                    // Prefer pipeline ensure first; only soft-restart core when we actually lost net.
                     scheduleNetworkRecover(reason = "network-available", softRestartCore = recover)
                 }
             }
@@ -200,26 +210,35 @@ class CoreRootService : Service(), ServiceControl {
             delay(800L)
             if (CoreServiceManager.isSoftRestarting()) return@launch
 
-            if (softRestartCore && CoreServiceManager.isRunning()) {
-                LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason")
+            if (!CoreServiceManager.isRunning() && !CoreServiceManager.hasLiveSession()) return@launch
+
+            // 1) Light: rebind dual-mark bypass to current default route (no teardown).
+            try {
+                RootProxyManager.rebindPhysicalBypass(this@CoreRootService)
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "StartCore-Root: bypass rebind after $reason failed", e)
+            }
+
+            // 2) Ensure hev/tun/rules/socks without full rebuild when possible.
+            if (CoreServiceManager.isRunning() && !RootProxyManager.isHealthy(this@CoreRootService)) {
+                LogUtil.w(AppConfig.TAG, "StartCore-Root: ensuring pipeline after $reason")
+                val err = RootProxyManager.ensureRunning(this@CoreRootService)
+                if (err != null) {
+                    LogUtil.e(AppConfig.TAG, "StartCore-Root: ensure after $reason failed: $err")
+                }
+            } else if (RootProxyManager.isHealthy(this@CoreRootService)) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: pipeline healthy after $reason")
+            }
+
+            // 3) Only soft-restart core when connectivity actually flapped (lost->available)
+            // and pipeline is still unhealthy — avoids needless core thrash on minor callbacks.
+            if (softRestartCore && CoreServiceManager.isRunning() && !RootProxyManager.isHealthy(this@CoreRootService)) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason (still unhealthy)")
                 try {
                     CoreServiceManager.restartCoreLoop()
                 } catch (e: Exception) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Root: soft-restart after $reason failed", e)
                 }
-                // restartCoreLoop already re-ensures ROOT routing in its finally path.
-                return@launch
-            }
-
-            if (!CoreServiceManager.isRunning()) return@launch
-            if (RootProxyManager.isHealthy(this@CoreRootService)) {
-                LogUtil.i(AppConfig.TAG, "StartCore-Root: pipeline healthy after $reason")
-                return@launch
-            }
-            LogUtil.w(AppConfig.TAG, "StartCore-Root: ensuring pipeline after $reason")
-            val err = RootProxyManager.ensureRunning(this@CoreRootService)
-            if (err != null) {
-                LogUtil.e(AppConfig.TAG, "StartCore-Root: ensure after $reason failed: $err")
             }
         }
     }

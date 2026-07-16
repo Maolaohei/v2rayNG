@@ -204,10 +204,12 @@ object AppConfig {
     /** Root (system-wide) mode runtime constants. */
     const val ROOT_RUNTIME_DIR = "root"
     const val ROOT_IPTABLES_CHAIN = "V2RAY_NG"
-    const val ROOT_FWMARK = 255            // defensive RETURN tag; hev's only upstream socket is loopback (already bypassed)
+    // Magic_V2Ray-style dual-mark: hev/core bypass uses FWMARK; app traffic uses MARK_ROUTE.
+    const val ROOT_FWMARK = 255            // hev socks5 SO_MARK + mangle RETURN + lookup main
     const val ROOT_MARK_ROUTE = 0x1624   // packets to push into root tun (avoid mark 1 clash with Android netd)
     const val ROOT_ROUTE_TABLE = 2024
-    const val ROOT_RULE_PRIORITY = 1000
+    const val ROOT_RULE_PRIORITY = 1000      // fwmark MARK_ROUTE -> TUN table
+    const val ROOT_BYPASS_RULE_PRIORITY = 990 // fwmark FWMARK -> main (higher prio than TUN rule)
     const val ROOT_TUN_NAME = "v2raytun0"
     const val ROOT_TUN_ADDR_V4 = "10.10.14.1/30" // small p2p addr; do NOT use FakeDNS 198.18.0.0/15 pool
     const val ROOT_TUN_ADDR_V6 = "fdfe:dcba:9876::1/64"
