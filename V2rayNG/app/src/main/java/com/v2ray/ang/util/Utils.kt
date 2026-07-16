@@ -171,6 +171,17 @@ object Utils {
                 }
             }
 
+            // Bracketed IPv6 with optional port: [2001:db8::1]:443
+            if (addr.startsWith("[")) {
+                val close = addr.indexOf(']')
+                if (close > 1) {
+                    val maybePort = addr.substring(close + 1)
+                    if (maybePort.isEmpty() || maybePort.matches(Regex("^:\\d+$"))) {
+                        addr = addr.substring(1, close)
+                    }
+                }
+            }
+
             // Handle IPv4-mapped IPv6 addresses
             if (addr.startsWith("::ffff:") && '.' in addr) {
                 addr = addr.drop(7)

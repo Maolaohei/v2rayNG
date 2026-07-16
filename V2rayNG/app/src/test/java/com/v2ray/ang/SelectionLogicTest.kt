@@ -207,6 +207,8 @@ class SelectionLogicTest {
         adapter2.selectGuid(adapter1.selectedGuid)
 
         adapter2.selectGuid("D")
+        // Only assert the final hop on adapter1 (B -> D). Earlier selects leave history.
+        adapter1.clearNotifications()
         adapter1.selectGuid(adapter2.selectedGuid)
 
         assertEquals("D", adapter1.selectedGuid)

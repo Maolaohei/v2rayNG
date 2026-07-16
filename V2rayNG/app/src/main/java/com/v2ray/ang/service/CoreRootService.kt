@@ -96,6 +96,9 @@ class CoreRootService : Service(), ServiceControl {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogUtil.i(AppConfig.TAG, "StartCore-Root: command received")
+        // FGS contract: startForegroundService() requires startForeground() within ~5-10s.
+        // Do this BEFORE any SOCKS/su/hev work so ANR/crash cannot fire mid-setup.
+        NotificationManager.showNotification(null)
 
         // Never reuse a previous VPN TUN PFD in root mode.
         CoreServiceManager.bindVpnInterface(null)
@@ -197,7 +200,7 @@ class CoreRootService : Service(), ServiceControl {
     /**
      * Recover after connectivity changes.
      * - Always ensure local ROOT pipeline (hev/tun/rules/socks).
-     * - After a real onLost→onAvailable transition, also soft-restart the core so
+     * - After a real onLost鈫抩nAvailable transition, also soft-restart the core so
      *   outbound sockets re-bind like VPN's network recovery path.
      */
     private fun scheduleNetworkRecover(reason: String, softRestartCore: Boolean) {
@@ -237,7 +240,7 @@ class CoreRootService : Service(), ServiceControl {
             }
 
             // 3) Only soft-restart core when connectivity actually flapped (lost->available)
-            // and pipeline is still unhealthy — avoids needless core thrash on minor callbacks.
+            // and pipeline is still unhealthy 鈥?avoids needless core thrash on minor callbacks.
             if (softRestartCore && CoreServiceManager.isRunning() && !RootProxyManager.isHealthy(this@CoreRootService)) {
                 LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason (still unhealthy)")
                 try {
