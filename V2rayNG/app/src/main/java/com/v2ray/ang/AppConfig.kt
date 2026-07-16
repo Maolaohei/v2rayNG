@@ -205,11 +205,11 @@ object AppConfig {
     const val ROOT_RUNTIME_DIR = "root"
     const val ROOT_IPTABLES_CHAIN = "V2RAY_NG"
     const val ROOT_FWMARK = 255            // defensive RETURN tag; hev's only upstream socket is loopback (already bypassed)
-    const val ROOT_MARK_ROUTE = 1          // packets we want pushed into the tun device
+    const val ROOT_MARK_ROUTE = 0x1624   // packets to push into root tun (avoid mark 1 clash with Android netd)
     const val ROOT_ROUTE_TABLE = 2024
     const val ROOT_RULE_PRIORITY = 1000
     const val ROOT_TUN_NAME = "v2raytun0"
-    const val ROOT_TUN_ADDR_V4 = "198.18.0.1/15"
+    const val ROOT_TUN_ADDR_V4 = "10.10.14.1/30" // small p2p addr; do NOT use FakeDNS 198.18.0.0/15 pool
     const val ROOT_TUN_ADDR_V6 = "fdfe:dcba:9876::1/64"
 
     // hev-socks5-tunnel run as a standalone root binary (reuses the same project already

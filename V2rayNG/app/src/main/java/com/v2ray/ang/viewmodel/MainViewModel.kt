@@ -12,6 +12,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
+import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.R
 import com.v2ray.ang.dto.GroupMapItem
 import com.v2ray.ang.dto.SubscriptionUpdateResult
@@ -450,7 +451,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
-                    isRunning.value = false
+                    // Tab re-entry sends REGISTER; a stale/racy NOT_RUNNING must not
+                    // clobber a session that is still live in CoreServiceManager.
+                    if (CoreServiceManager.hasLiveSession() || CoreServiceManager.isRunning()) {
+                        isRunning.value = true
+                    } else {
+                        isRunning.value = false
+                    }
                 }
 
                 AppConfig.MSG_STATE_START_SUCCESS -> {

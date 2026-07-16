@@ -328,15 +328,22 @@ object CoreServiceManager {
 
     /**
      * True while a proxy session should be considered live for UI re-sync.
-     * Includes soft-restart windows and an active VPN TUN, but does NOT treat
-     * "ROOT preference selected" alone as running.
+     * A live Android service control (VPN/ROOT/Proxy) counts even if the core
+     * briefly reports not-running, as long as the user has not requested stop.
+     * Preference alone is NOT enough.
      */
     fun hasLiveSession(): Boolean {
         if (userStopRequested.get()) return false
-        return coreController.isRunning ||
-            softRestarting.get() ||
-            activeVpnInterface != null
+        if (coreController.isRunning || softRestarting.get() || activeVpnInterface != null) {
+            return true
+        }
+        // Service process still owns the session (tab switch / brief core flap).
+        val control = serviceControl
+        return control is CoreVpnService ||
+            control is CoreRootService ||
+            control is CoreProxyOnlyService
     }
+
 
     /**
      * Gets the name of the currently running server.

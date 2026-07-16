@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong
  * All rules live in dedicated chains ([AppConfig.ROOT_IPTABLES_CHAIN] in the mangle
  * table, [AppConfig.ROOT_FWD_CHAIN] for LAN sharing) plus a dedicated routing table, so
  * [teardown] is a clean, bounded flush. Teardown runs before every setup (to clear stale
- * rules) and on every stop path 閳?leaving rules behind after the core dies would break
+ * rules) and on every stop path 闁?leaving rules behind after the core dies would break
  * the device's connectivity.
  */
 object RootProxyManager {
@@ -40,11 +40,13 @@ object RootProxyManager {
     private const val APP_UID_RULE_PREF = 900
     private const val FWMARK = AppConfig.ROOT_FWMARK
     private const val MARK = AppConfig.ROOT_MARK_ROUTE
+    // Xray FakeDNS default pool. MUST be proxied (never LAN-bypassed).
+    private const val FAKE_IP_CIDR = "198.18.0.0/15"
 
     // Local / private / multicast destinations that must never be proxied.
     private val bypassCidrs = listOf(
         "0.0.0.0/8", "10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16",
-        "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4", "198.18.0.0/15"
+        "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4"
     )
 
     // IPv6 equivalents (loopback, link-local, ULA/private, multicast). Feeding the v4 list
@@ -409,9 +411,12 @@ object RootProxyManager {
             appendLine("echo ${AppConfig.ROOT_OOM_SCORE} > /proc/\$T2S_PID/oom_score_adj 2>/dev/null || true")
             appendLine("i=0; while [ \$i -lt 20 ]; do ip link show $TUN >/dev/null 2>&1 && break; sleep 0.3; i=\$((i+1)); done")
             appendLine("ip link show $TUN >/dev/null 2>&1 || { echo 'tun device did not come up'; cat '$logPath' 2>/dev/null; exit 1; }")
+            appendLine("ip addr flush dev $TUN 2>/dev/null || true")
             appendLine("ip addr add ${AppConfig.ROOT_TUN_ADDR_V4} dev $TUN 2>/dev/null || true")
             appendLine("ip link set dev $TUN up")
             appendLine("ip route replace default dev $TUN table $TABLE")
+            appendLine("ip route replace $FAKE_IP_CIDR dev $TUN table $TABLE 2>/dev/null || true")
+            appendLine("ip route replace $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
         }
         val result = RootShell.runScript(context, "restart_hev_only.sh", script)
         if (!result.success) {
@@ -540,9 +545,12 @@ object RootProxyManager {
             appendLine("ip link show $TUN >/dev/null 2>&1 || { echo 'tun device did not come up'; exit 1; }")
             appendLine("echo 0 > /proc/sys/net/ipv4/conf/$TUN/rp_filter 2>/dev/null || true")
             appendLine("echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true")
+            appendLine("ip addr flush dev $TUN 2>/dev/null || true")
             appendLine("ip addr add ${AppConfig.ROOT_TUN_ADDR_V4} dev $TUN 2>/dev/null || true")
             appendLine("ip link set dev $TUN up")
             appendLine("ip route replace default dev $TUN table $TABLE")
+            appendLine("ip route replace $FAKE_IP_CIDR dev $TUN table $TABLE 2>/dev/null || true")
+            appendLine("ip route replace $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
             appendLine("ip rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
             appendLine("ip rule add fwmark $MARK table $TABLE priority $PRIORITY")
             // Anti-loop harden: core/app UID always prefers main table even if marked.
@@ -610,7 +618,7 @@ object RootProxyManager {
             appendLine("BIN='${bin.absolutePath}'")
             // Protect the core (this app process) from the Android low-memory killer.
             // system_server keeps recomputing oom_score_adj for app processes, so a single
-            // write would be reverted 閳?re-pin it from a small root loop instead.
+            // write would be reverted 闁?re-pin it from a small root loop instead.
             appendLine("nohup sh -c 'while true; do echo ${AppConfig.ROOT_OOM_SCORE} > /proc/$corePid/oom_score_adj 2>/dev/null; sleep 5; done' >/dev/null 2>&1 &")
             appendLine("echo \$! > '$oomGuardPid'")
             // tun device node
@@ -634,9 +642,14 @@ object RootProxyManager {
             appendLine("echo 0 > /proc/sys/net/ipv4/conf/$TUN/rp_filter 2>/dev/null || true")
             appendLine("echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true")
             // address + default route in a dedicated table
+            appendLine("ip addr flush dev $TUN 2>/dev/null || true")
             appendLine("ip addr add ${AppConfig.ROOT_TUN_ADDR_V4} dev $TUN 2>/dev/null || true")
             appendLine("ip link set dev $TUN up")
+            // Policy table: default via TUN + FakeDNS pool via TUN (even if main has no connected route).
             appendLine("ip route replace default dev $TUN table $TABLE")
+            appendLine("ip route replace $FAKE_IP_CIDR dev $TUN table $TABLE 2>/dev/null || true")
+            appendLine("ip route replace $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
+            appendLine("ip rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
             appendLine("ip rule add fwmark $MARK table $TABLE priority $PRIORITY")
             // Anti-loop harden: core/app UID always prefers main table even if marked.
             appendLine("ip rule del pref $APP_UID_RULE_PREF 2>/dev/null || true")
@@ -757,6 +770,10 @@ object RootProxyManager {
             // The MARK survives a later RETURN, so the marked query still routes into the tun.
             appendLine("$cmd -t mangle -A $CHAIN -p udp --dport 53 -j MARK --set-xmark $MARK")
             appendLine("$cmd -t mangle -A $CHAIN -p tcp --dport 53 -j MARK --set-xmark $MARK")
+            // FakeDNS pool must always go through TUN/proxy. Never treat it as "private LAN".
+            if (cmd == "iptables") {
+                appendLine("$cmd -t mangle -A $CHAIN -d $FAKE_IP_CIDR -j MARK --set-xmark $MARK")
+            }
             // keep LAN / private destinations direct (per-family CIDR list)
             val cidrs = if (cmd == "ip6tables") bypassCidrsV6 else bypassCidrs
             cidrs.forEach { appendLine("$cmd -t mangle -A $CHAIN -d $it -j RETURN") }
@@ -764,7 +781,7 @@ object RootProxyManager {
                 // Proxy ONLY the explicitly selected apps. If nothing resolved (e.g. the
                 // selected packages failed to resolve to uids at early boot), mark nothing
                 // instead of falling through to the catch-all below: a fail-open here would
-                // tunnel every unselected app 閳?both a privacy leak and the "per-app proxies
+                // tunnel every unselected app 闁?both a privacy leak and the "per-app proxies
                 // everything after a reboot" bug.
                 selectedUids.forEach { appendLine("$cmd -t mangle -A $CHAIN -m owner --uid-owner $it -j MARK --set-xmark $MARK") }
             } else {
@@ -890,7 +907,7 @@ object RootProxyManager {
             appendLine("ip6tables -I FORWARD -j $v6fwd")
             if (ipv6) {
                 // When the device itself isn't capturing v6 (VPN-mode sharing) the tun table
-                // has no v6 default and the tun has no v6 address 閳?add them so marked client
+                // has no v6 default and the tun has no v6 address 闁?add them so marked client
                 // v6 has somewhere to go. In Root mode the device-capture block already did.
                 if (!captureDeviceTraffic) {
                     appendLine("ip -6 addr add ${AppConfig.ROOT_TUN_ADDR_V6} dev $TUN 2>/dev/null || true")
