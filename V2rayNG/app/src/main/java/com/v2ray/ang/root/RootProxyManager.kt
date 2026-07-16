@@ -107,33 +107,18 @@ object RootProxyManager {
      * which previously caused false HEV_DEAD and intermittent start failures.
      */
     fun isHevAlive(context: Context): Boolean {
-        return try {
-            val pf = pidFile(context)
-            if (!pf.exists()) return false
-            val pid = pf.readText().trim().toIntOrNull() ?: return false
-            if (pid <= 1) return false
-            // kill -0: exists and signalable; works for root-started helper when run via su.
-            RootShell.exec("kill -0 $pid >/dev/null 2>&1").success
-        } catch (_: Exception) {
-            false
-        }
+        return probePipeline(context).hevAlive
     }
 
     /** True when root tun interface is present. */
     fun isTunUp(): Boolean {
+        // Lightweight single check used by callers that do not need full pipeline state.
         val r = RootShell.exec("ip link show $TUN >/dev/null 2>&1")
         return r.success
     }
 
     /** True when policy routing + mangle chain from last setup still exist. */
-    fun isRulesInstalled(): Boolean {
-        val rule = RootShell.exec(
-            "ip rule show 2>/dev/null | grep -F 'lookup $TABLE' >/dev/null 2>&1"
-        )
-        if (!rule.success) return false
-        val chain = RootShell.exec("iptables -t mangle -nL $CHAIN >/dev/null 2>&1")
-        return chain.success
-    }
+    fun isRulesInstalled(): Boolean = probePipeline(null).rulesOk
 
     /** True when in-process core SOCKS accepts connections on the configured port. */
     fun isLocalSocksReady(): Boolean {
@@ -149,22 +134,70 @@ object RootProxyManager {
         }
     }
 
+    private data class PipelineProbe(
+        val hevAlive: Boolean,
+        val tunUp: Boolean,
+        val rulesOk: Boolean,
+    ) {
+        val localUp: Boolean get() = hevAlive && tunUp && rulesOk
+    }
+
+    /**
+     * One su round-trip for hev/tun/rules. Socks is checked in-process (no root needed).
+     * Batching avoids 3-4 serial su invocations every watchdog tick.
+     */
+    private fun probePipeline(context: Context?): PipelineProbe {
+        val pidCheck = if (context != null) {
+            try {
+                val pf = pidFile(context)
+                val pid = if (pf.exists()) pf.readText().trim().toIntOrNull() else null
+                if (pid != null && pid > 1) {
+                    "if kill -0 $pid >/dev/null 2>&1; then echo HEV_OK; else echo HEV_DEAD; fi; "
+                } else {
+                    "echo HEV_DEAD; "
+                }
+            } catch (_: Exception) {
+                "echo HEV_DEAD; "
+            }
+        } else {
+            "echo HEV_SKIP; "
+        }
+        val script = buildString {
+            append(pidCheck)
+            append("if ip link show $TUN >/dev/null 2>&1; then echo TUN_OK; else echo TUN_DEAD; fi; ")
+            append("if ip rule show 2>/dev/null | grep -F 'lookup $TABLE' >/dev/null 2>&1; then echo RULE_OK; else echo RULE_DEAD; fi; ")
+            append("if iptables -t mangle -nL $CHAIN >/dev/null 2>&1; then echo CHAIN_OK; else echo CHAIN_DEAD; fi")
+        }
+        val out = try {
+            RootShell.exec(script).output
+        } catch (_: Exception) {
+            ""
+        }
+        val hevAlive = when {
+            context == null -> true
+            else -> out.contains("HEV_OK")
+        }
+        val tunUp = out.contains("TUN_OK")
+        val rulesOk = out.contains("RULE_OK") && out.contains("CHAIN_OK")
+        return PipelineProbe(hevAlive = hevAlive, tunUp = tunUp, rulesOk = rulesOk)
+    }
+
     /**
      * Full local pipeline health: hev + tun + iptables/ip-rule + local SOCKS.
      * Shallower checks previously declared healthy while rules were gone or SOCKS was down.
      */
     fun isHealthy(context: Context): Boolean {
-        return isHevAlive(context) &&
-            isTunUp() &&
-            isRulesInstalled() &&
-            isLocalSocksReady()
+        val p = probePipeline(context)
+        return p.localUp && isLocalSocksReady()
     }
 
     /**
-     * Soft-restart / watchdog helper: if pipeline already healthy, skip full reinstall.
-     * Otherwise rebuild rules (teardown+setup). Concurrent callers wait for the in-flight
-     * repair instead of racing a second teardown.
-     * Returns null on success, error otherwise.
+     * Soft-restart / watchdog helper.
+     * Graduated repair:
+     * 1) fully healthy -> no-op
+     * 2) hev/tun/rules up but SOCKS temporarily down (soft-restart window) -> wait, no rebuild
+     * 3) otherwise teardown+setup
+     * Concurrent callers wait for the in-flight repair instead of racing a second teardown.
      */
     fun ensureRunning(context: Context): RootError? {
         lastError = null
@@ -172,6 +205,17 @@ object RootProxyManager {
             LogUtil.i(AppConfig.TAG, "RootProxyManager: pipeline healthy, skip rebind")
             return null
         }
+
+        val probe = probePipeline(context)
+        if (probe.localUp && !isLocalSocksReady()) {
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: local path up, waiting for SOCKS")
+            if (waitUntilSocksReady(timeoutMs = 4000L)) {
+                return null
+            }
+            // SOCKS never returned; fall through to full rebuild so hev is re-pointed cleanly.
+            LogUtil.w(AppConfig.TAG, "RootProxyManager: SOCKS still down, rebuilding pipeline")
+        }
+
         if (!repairing.compareAndSet(false, true)) {
             LogUtil.i(AppConfig.TAG, "RootProxyManager: repair already in progress, waiting")
             val deadline = System.currentTimeMillis() + 8_000L
@@ -193,7 +237,6 @@ object RootProxyManager {
         }
     }
 
-
     fun startDetailed(context: Context): RootError? {
         lastError = null
         teardown(context)
@@ -211,11 +254,12 @@ object RootProxyManager {
         }
         // hev is started in background; give it a short window before declaring dead.
         if (!waitUntilHealthy(context, timeoutMs = 4000L)) {
+            val p = probePipeline(context)
             lastError = when {
                 !isLocalSocksReady() -> RootError.SOCKS_NOT_READY
-                !isTunUp() && !isHevAlive(context) -> RootError.HEV_DEAD
-                !isTunUp() -> RootError.TUN_FAILED
-                !isRulesInstalled() -> RootError.RULES_FAILED
+                !p.tunUp && !p.hevAlive -> RootError.HEV_DEAD
+                !p.tunUp -> RootError.TUN_FAILED
+                !p.rulesOk -> RootError.RULES_FAILED
                 else -> RootError.HEV_DEAD
             }
             LogUtil.e(AppConfig.TAG, "RootProxyManager: post-setup health failed ($lastError)")
@@ -238,6 +282,19 @@ object RootProxyManager {
         return isHealthy(context)
     }
 
+    private fun waitUntilSocksReady(timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isLocalSocksReady()) return true
+            try {
+                Thread.sleep(120L)
+            } catch (_: InterruptedException) {
+                break
+            }
+        }
+        return isLocalSocksReady()
+    }
+
     private fun classifySetupFailure(output: String): RootError {
         val o = output.lowercase()
         return when {
@@ -248,6 +305,7 @@ object RootProxyManager {
             else -> RootError.RULES_FAILED
         }
     }
+
 
 
     fun start(context: Context): Boolean {

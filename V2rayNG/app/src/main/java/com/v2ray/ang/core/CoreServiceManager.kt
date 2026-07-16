@@ -201,8 +201,8 @@ object CoreServiceManager {
         val service = getService() ?: return
         try {
             if (SettingsManager.isRootMode()) {
-                // SOCKS port is stable in ROOT. Only rebuild rules if hev/tun is dead or
-                // first soft-restart after cold start still needs ensure.
+                // SOCKS port is stable in ROOT. ensureRunning waits for SOCKS after soft-restart
+                // and only rebuilds when hev/tun/rules are actually down.
                 LogUtil.i(AppConfig.TAG, "StartCore-Manager: ensuring root routing after soft-restart")
                 val err = RootProxyManager.ensureRunning(service)
                 if (err != null) {

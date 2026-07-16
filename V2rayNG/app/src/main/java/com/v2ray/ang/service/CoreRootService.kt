@@ -62,20 +62,20 @@ class CoreRootService : Service(), ServiceControl {
     private val defaultNetworkCallback by lazy {
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                if (pendingNetworkRecover.compareAndSet(true, false) ||
-                    !RootProxyManager.isHealthy(this@CoreRootService)
-                ) {
-                    LogUtil.i(AppConfig.TAG, "StartCore-Root: network available, ensuring pipeline")
-                    schedulePipelineEnsure(reason = "network-available")
+                val recover = pendingNetworkRecover.compareAndSet(true, false)
+                if (recover || !RootProxyManager.isHealthy(this@CoreRootService)) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: network available, recovering session")
+                    scheduleNetworkRecover(reason = "network-available", softRestartCore = recover)
                 }
             }
 
             override fun onLost(network: Network) {
                 pendingNetworkRecover.set(true)
-                LogUtil.i(AppConfig.TAG, "StartCore-Root: network lost, will ensure on next available")
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: network lost, will recover on next available")
             }
         }
     }
+
 
     override fun onCreate() {
         super.onCreate()
@@ -140,16 +140,35 @@ class CoreRootService : Service(), ServiceControl {
         }
     }
 
-    private fun schedulePipelineEnsure(reason: String) {
+    /**
+     * Recover after connectivity changes.
+     * - Always ensure local ROOT pipeline (hev/tun/rules/socks).
+     * - After a real onLost→onAvailable transition, also soft-restart the core so
+     *   outbound sockets re-bind like VPN's network recovery path.
+     */
+    private fun scheduleNetworkRecover(reason: String, softRestartCore: Boolean) {
         serviceScope.launch {
-            if (!CoreServiceManager.isRunning()) return@launch
+            if (!CoreServiceManager.isRunning() && !CoreServiceManager.hasLiveSession()) return@launch
             if (CoreServiceManager.isSoftRestarting()) {
-                LogUtil.i(AppConfig.TAG, "StartCore-Root: skip ensure ($reason) during soft-restart")
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: skip recover ($reason) during soft-restart")
                 return@launch
             }
-            // Small debounce so rapid network flaps do not thrash full rebuilds.
+            // Debounce rapid network flaps.
             delay(800L)
-            if (!CoreServiceManager.isRunning() || CoreServiceManager.isSoftRestarting()) return@launch
+            if (CoreServiceManager.isSoftRestarting()) return@launch
+
+            if (softRestartCore && CoreServiceManager.isRunning()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason")
+                try {
+                    CoreServiceManager.restartCoreLoop()
+                } catch (e: Exception) {
+                    LogUtil.e(AppConfig.TAG, "StartCore-Root: soft-restart after $reason failed", e)
+                }
+                // restartCoreLoop already re-ensures ROOT routing in its finally path.
+                return@launch
+            }
+
+            if (!CoreServiceManager.isRunning()) return@launch
             if (RootProxyManager.isHealthy(this@CoreRootService)) {
                 LogUtil.i(AppConfig.TAG, "StartCore-Root: pipeline healthy after $reason")
                 return@launch
@@ -161,6 +180,7 @@ class CoreRootService : Service(), ServiceControl {
             }
         }
     }
+
 
     private fun startWatchdog() {
         if (watchdogJob?.isActive == true) return

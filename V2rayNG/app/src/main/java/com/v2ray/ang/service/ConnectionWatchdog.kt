@@ -3,6 +3,7 @@ package com.v2ray.ang.service
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +90,16 @@ object ConnectionWatchdog {
                 LogUtil.w(AppConfig.TAG, "ConnectionWatchdog: Connection test failed ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES)")
 
                 if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    // ROOT: local pipeline may be the real failure; try ensure before soft-restart.
+                    if (SettingsManager.isRootMode() && !RootProxyManager.isHealthy(service)) {
+                        LogUtil.w(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline unhealthy, ensuring before soft-restart")
+                        val err = RootProxyManager.ensureRunning(service)
+                        if (err == null && RootProxyManager.isHealthy(service)) {
+                            LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline restored, skip soft-restart")
+                            consecutiveFailures = 0
+                            return
+                        }
+                    }
                     restartCore()
                     consecutiveFailures = 0
                 }
