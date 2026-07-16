@@ -451,10 +451,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
-                    // Tab re-entry sends REGISTER; a stale/racy NOT_RUNNING must not
-                    // clobber a session that is still live in CoreServiceManager.
-                    if (CoreServiceManager.hasLiveSession() || CoreServiceManager.isRunning()) {
+                    // REGISTER / soft-start races often emit NOT_RUNNING briefly. Never clear
+                    // Running while the manager still owns a live session or soft-restart.
+                    if (
+                        CoreServiceManager.hasLiveSession() ||
+                        CoreServiceManager.isRunning() ||
+                        CoreServiceManager.isSoftRestarting()
+                    ) {
                         isRunning.value = true
+                    } else if (isRunning.value == true) {
+                        // Keep last known Running until STOP_SUCCESS / START_FAILURE.
+                        // Avoids home switch flipping off while ROOT hev is still coming up.
+                        LogUtil.i(AppConfig.TAG, "MainViewModel: ignore NOT_RUNNING while UI thinks running")
                     } else {
                         isRunning.value = false
                     }
@@ -510,3 +518,4 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 }
+

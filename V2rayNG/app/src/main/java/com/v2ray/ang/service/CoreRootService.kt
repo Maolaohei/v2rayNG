@@ -185,48 +185,63 @@ class CoreRootService : Service(), ServiceControl {
     private fun startWatchdog() {
         if (watchdogJob?.isActive == true) return
         watchdogJob = serviceScope.launch {
-            var consecutiveFailures = 0
-            // First check after a warm-up window; then periodically.
-            delay(15_000L)
+            var consecutiveHardFailures = 0
+            // Warm-up: do not fail-close right after start while rules/hev settle.
+            delay(30_000L)
             while (isActive && CoreServiceManager.isRunning()) {
                 if (CoreServiceManager.isSoftRestarting()) {
-                    delay(2_000L)
+                    delay(3_000L)
                     continue
                 }
                 val backoff = RootProxyManager.repairBackoffRemainingMs()
                 if (backoff > 0L) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: repair backoff ${backoff}ms, watchdog waits")
-                    delay(backoff.coerceAtMost(20_000L))
+                    delay(backoff.coerceAtMost(30_000L))
                     continue
                 }
-                if (!RootProxyManager.isHealthy(this@CoreRootService)) {
-                    LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline unhealthy, repairing")
-                    val err = RootProxyManager.ensureRunning(this@CoreRootService)
-                    val healthy = RootProxyManager.isHealthy(this@CoreRootService)
-                    if (err == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
-                        LogUtil.i(AppConfig.TAG, "StartCore-Root: repair backed off, wait for next tick")
-                        delay(RootProxyManager.repairBackoffRemainingMs().coerceIn(1000L, 20_000L))
-                        continue
-                    }
-                    if (!healthy) {
-                        consecutiveFailures++
-                        LogUtil.e(
-                            AppConfig.TAG,
-                            "StartCore-Root: watchdog repair incomplete ($consecutiveFailures/3): $err"
-                        )
-                        if (consecutiveFailures >= 3) {
-                            failAndStop(err ?: RootProxyManager.lastError ?: RootProxyManager.RootError.UNKNOWN)
-                            return@launch
-                        }
-                        // Extra spacing after failure; ensureRunning may also apply its own backoff.
-                        delay(5_000L)
-                    } else {
-                        consecutiveFailures = 0
-                    }
-                } else {
-                    consecutiveFailures = 0
+                if (RootProxyManager.isHealthy(this@CoreRootService)) {
+                    consecutiveHardFailures = 0
+                    delay(30_000L)
+                    continue
                 }
-                delay(20_000L)
+
+                LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline unhealthy, repairing")
+                val err = RootProxyManager.ensureRunning(this@CoreRootService)
+                if (err == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: repair backed off, wait for next tick")
+                    delay(RootProxyManager.repairBackoffRemainingMs().coerceIn(2_000L, 30_000L))
+                    continue
+                }
+
+                // After ensure, re-check. Soft/transient probe failures must NOT stop the session.
+                val healthy = RootProxyManager.isHealthy(this@CoreRootService)
+                if (healthy) {
+                    consecutiveHardFailures = 0
+                    delay(30_000L)
+                    continue
+                }
+
+                // Hard fail only when hev+tun are both gone (or su denied / binary missing).
+                val hard = err == RootProxyManager.RootError.SU_DENIED ||
+                    err == RootProxyManager.RootError.HEV_MISSING ||
+                    (!RootProxyManager.isHevAlive(this@CoreRootService) && !RootProxyManager.isTunUp())
+                if (hard) {
+                    consecutiveHardFailures++
+                    LogUtil.e(
+                        AppConfig.TAG,
+                        "StartCore-Root: hard pipeline failure ($consecutiveHardFailures/5): $err"
+                    )
+                    if (consecutiveHardFailures >= 5) {
+                        failAndStop(err ?: RootProxyManager.lastError ?: RootProxyManager.RootError.UNKNOWN)
+                        return@launch
+                    }
+                    delay(10_000L)
+                } else {
+                    // Soft unhealthy (rules/socks flap): keep service, retry later.
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: soft unhealthy ($err), keep session and retry")
+                    consecutiveHardFailures = 0
+                    delay(20_000L)
+                }
             }
         }
     }

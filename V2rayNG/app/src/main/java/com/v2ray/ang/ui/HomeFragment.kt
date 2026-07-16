@@ -45,6 +45,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var broadcastStarted: Boolean = false
     private var modeToggleReady: Boolean = false
     private var switchReady: Boolean = false
+    /** True while user-initiated start/stop transition is in progress. */
+    private var uiConnecting: Boolean = false
 
     private var lastRegion: String? = null
     private var lastLatencyMs: Long? = null
@@ -98,6 +100,16 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             applyTestResultMetrics(content)
         }
         mainViewModel.isRunning.observe(viewLifecycleOwner) { isRunning ->
+            // Protect in-flight start/stop transitions from REGISTER races.
+            if (uiConnecting) {
+                // Intent is encoded in the (disabled) switch checked state:
+                // starting => checked true; stopping => checked false.
+                val wantRunning = binding.switchConnection.isChecked
+                if (isRunning == wantRunning) {
+                    applyRunningState(isLoading = false, isRunning = wantRunning)
+                }
+                return@observe
+            }
             applyRunningState(false, isRunning == true)
             if (isRunning != true) {
                 // Session-ready owns auto region/latency tests to avoid double fire with START_SUCCESS.
@@ -321,6 +333,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     private fun handleConnectionToggle(wantStart: Boolean) {
+        // Visual intent: starting keeps switch ON; stopping keeps OFF while disabled.
+        switchReady = false
+        binding.switchConnection.isChecked = wantStart
         applyRunningState(isLoading = true, isRunning = false)
         if (!wantStart) {
             CoreServiceManager.stopVService(requireContext())
@@ -431,8 +446,10 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             delay(CONNECTING_TIMEOUT_MS)
             if (!isAdded || view == null) return@launch
             // No START_SUCCESS/FAILURE arrived; recover switch so UI cannot stick forever.
-            if (!binding.switchConnection.isEnabled) {
-                val running = mainViewModel.isRunning.value == true || CoreServiceManager.isRunning()
+            if (uiConnecting || !binding.switchConnection.isEnabled) {
+                val running = mainViewModel.isRunning.value == true ||
+                    CoreServiceManager.isRunning() ||
+                    CoreServiceManager.hasLiveSession()
                 applyRunningState(isLoading = false, isRunning = running)
             }
         }
@@ -452,15 +469,19 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         if (!isAdded || view == null) return
 
         if (isLoading) {
+            uiConnecting = true
             cancelAutoConnectivityTest()
             binding.tvStatusState.text = getString(R.string.home_status_connecting)
             binding.tvSwitchCaption.text = getString(R.string.home_status_connecting)
             switchReady = false
             binding.switchConnection.isEnabled = false
+            // Keep the user's intended checked state while connecting (start=on / stop=off).
+            // Do not force unchecked here — that made the switch look "stopped mid-start".
             setTestState(getString(R.string.home_status_connecting))
             return
         }
 
+        uiConnecting = false
         clearConnectingTimeout()
 
         isServiceRunning = isRunning
@@ -521,6 +542,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     /** Collapse onHiddenChanged + onResume double fire into one REGISTER/resync. */
     private fun scheduleResyncConnectionState() {
         if (!isAdded || view == null) return
+        if (uiConnecting) return
         resyncDebounceJob?.cancel()
         resyncDebounceJob = viewLifecycleOwner.lifecycleScope.launch {
             delay(250L)
@@ -535,6 +557,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
      */
     private fun resyncConnectionState() {
         if (!isAdded || view == null) return
+        if (uiConnecting) return
         // Ask service to re-emit RUNNING / NOT_RUNNING (ViewModel guards stale NOT_RUNNING).
         mainViewModel.startListenBroadcast()
 

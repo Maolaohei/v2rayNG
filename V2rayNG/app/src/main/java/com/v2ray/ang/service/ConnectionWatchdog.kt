@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 
 object ConnectionWatchdog {
     private const val CHECK_INTERVAL_MS = 5 * 60 * 1000L
-    private const val MAX_CONSECUTIVE_FAILURES = 2
+    private const val MAX_CONSECUTIVE_FAILURES = 3
     /** After a soft-restart, ignore failures briefly so bad networks do not thrash restart loops. */
     private const val RESTART_COOLDOWN_MS = 10 * 60 * 1000L
 
@@ -129,3 +129,4 @@ object ConnectionWatchdog {
         }
     }
 }
+
