@@ -3,7 +3,6 @@ package com.v2ray.ang.service
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.SettingsManager
-import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +14,11 @@ import kotlinx.coroutines.launch
 /**
  * Periodically probes outbound delay through the live core.
  *
- * Soft-restart is a last resort for a dead local dataplane only.
+ * Ownership:
+ * - VPN / Proxy-only: may soft-restart only when the local core is actually dead.
+ * - ROOT: observe-only. Local hev/rules/SOCKS recovery belongs solely to
+ *   CoreRootService's pipeline watchdog. Acting here caused dual-watchdog thrash.
+ *
  * Remote delay failures (blocked test URL / congested node / DNS) must NOT thrash the core:
  * restarting drops every app TCP (Telegram "connecting/connected" flap).
  */
@@ -42,7 +45,11 @@ object ConnectionWatchdog {
                 delay(CHECK_INTERVAL_MS)
             }
         }
-        LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: Started with interval ${CHECK_INTERVAL_MS / 1000}s")
+        val mode = if (SettingsManager.isRootMode()) "ROOT observe-only" else "active"
+        LogUtil.i(
+            AppConfig.TAG,
+            "ConnectionWatchdog: Started with interval ${CHECK_INTERVAL_MS / 1000}s ($mode)"
+        )
     }
 
     fun stop() {
@@ -68,9 +75,8 @@ object ConnectionWatchdog {
         }
 
         try {
-            val service = CoreServiceManager.serviceControl?.getService() ?: return
-            val testUrl = SettingsManager.getDelayTestUrl()
             val controller = CoreServiceManager.coreController
+            val testUrl = SettingsManager.getDelayTestUrl()
 
             var time = -1L
             try {
@@ -89,7 +95,10 @@ object ConnectionWatchdog {
 
             if (time >= 0) {
                 if (consecutiveFailures > 0) {
-                    LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: Connection recovered after $consecutiveFailures failures")
+                    LogUtil.i(
+                        AppConfig.TAG,
+                        "ConnectionWatchdog: Connection recovered after $consecutiveFailures failures"
+                    )
                 }
                 consecutiveFailures = 0
                 return
@@ -102,67 +111,35 @@ object ConnectionWatchdog {
             )
             if (consecutiveFailures < MAX_CONSECUTIVE_FAILURES) return
 
-            // Remote delay is not a reliable proxy for "core is dead".
-            // Repair local path when needed; never soft-restart solely because a test URL failed.
+            // ROOT: pipeline dog owns ensure/rebuild/soft-restart. We only log.
+            if (SettingsManager.isRootMode()) {
+                LogUtil.i(
+                    AppConfig.TAG,
+                    "ConnectionWatchdog: ROOT observe-only after $consecutiveFailures remote failures; " +
+                        "no ensure/soft-restart (pipeline watchdog owns recovery)"
+                )
+                consecutiveFailures = 0
+                return
+            }
+
             val coreAlive = try {
                 controller.isRunning
             } catch (_: Exception) {
                 false
-            }
-            val rootMode = SettingsManager.isRootMode()
-            var pipelineHealthy = false
-            var socksReady = false
-            try {
-                socksReady = RootProxyManager.isLocalSocksReady()
-            } catch (_: Exception) {
-            }
-
-            if (rootMode) {
-                pipelineHealthy = try {
-                    RootProxyManager.isHealthy(service)
-                } catch (_: Exception) {
-                    false
-                }
-                if (!pipelineHealthy) {
-                    val backoff = RootProxyManager.repairBackoffRemainingMs()
-                    if (backoff > 0L) {
-                        LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT repair backoff ${backoff}ms, skip soft-restart")
-                        consecutiveFailures = 0
-                        return
-                    }
-                    LogUtil.w(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline unhealthy, ensuring before any restart")
-                    val ensureErr = RootProxyManager.ensureRunning(service)
-                    if (ensureErr == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
-                        LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT repair backed off, skip soft-restart")
-                        consecutiveFailures = 0
-                        return
-                    }
-                    pipelineHealthy = RootProxyManager.isHealthy(service)
-                    try {
-                        socksReady = RootProxyManager.isLocalSocksReady()
-                    } catch (_: Exception) {
-                    }
-                    if (pipelineHealthy) {
-                        LogUtil.i(AppConfig.TAG, "ConnectionWatchdog: ROOT pipeline restored, skip soft-restart")
-                        consecutiveFailures = 0
-                        return
-                    }
-                }
             }
 
             val restart = shouldSoftRestart(
                 consecutiveFailures = consecutiveFailures,
                 maxConsecutiveFailures = MAX_CONSECUTIVE_FAILURES,
                 coreRunning = coreAlive,
-                rootMode = rootMode,
-                rootPipelineHealthy = pipelineHealthy,
-                localSocksReady = socksReady,
+                rootMode = false,
+                rootPipelineHealthy = false,
+                localSocksReady = false,
             )
             if (!restart) {
                 LogUtil.i(
                     AppConfig.TAG,
-                    "ConnectionWatchdog: remote delay failed but local dataplane usable " +
-                        "(core=$coreAlive root=$rootMode healthy=$pipelineHealthy socks=$socksReady); skip soft-restart"
+                    "ConnectionWatchdog: remote delay failed but core is running; skip soft-restart"
                 )
                 consecutiveFailures = 0
                 return
@@ -188,8 +165,10 @@ object ConnectionWatchdog {
 
     /**
      * Pure decision helper for unit tests / review.
-     * Soft-restart only when consecutive remote failures hit the threshold AND the local
-     * dataplane is not healthy enough to carry traffic.
+     *
+     * ROOT: always false ? global dog must not act; pipeline watchdog owns recovery.
+     * VPN/Proxy: soft-restart only when consecutive remote failures hit the threshold AND
+     * the core is not running.
      */
     fun shouldSoftRestart(
         consecutiveFailures: Int,
@@ -200,12 +179,12 @@ object ConnectionWatchdog {
         localSocksReady: Boolean,
     ): Boolean {
         if (consecutiveFailures < maxConsecutiveFailures) return false
-        if (rootMode) {
-            if (rootPipelineHealthy && coreRunning && localSocksReady) return false
-            if (coreRunning && localSocksReady) return false
-            return !coreRunning || !localSocksReady
-        }
+        // ROOT ownership split: never soft-restart from the global delay dog.
+        if (rootMode) return false
         // VPN/Proxy: live core => remote-only failure, keep session.
         return !coreRunning
     }
+
+    /** Whether the global dog is allowed to mutate dataplane (ensure/soft-restart). */
+    fun mayActOnFailures(rootMode: Boolean): Boolean = !rootMode
 }

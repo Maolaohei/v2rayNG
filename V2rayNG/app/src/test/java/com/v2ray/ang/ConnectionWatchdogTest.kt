@@ -1,4 +1,4 @@
-﻿package com.v2ray.ang
+package com.v2ray.ang
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -92,7 +92,18 @@ class ConnectionWatchdogTest {
     }
 
     @Test
-    fun remoteDelayFail_withHealthyRoot_skipsSoftRestart() {
+    fun rootMode_neverSoftRestarts_fromGlobalDog() {
+        // Even if core/SOCKS look dead, ROOT recovery is owned by pipeline watchdog.
+        assertFalse(
+            ConnectionWatchdog.shouldSoftRestart(
+                consecutiveFailures = 3,
+                maxConsecutiveFailures = 3,
+                coreRunning = false,
+                rootMode = true,
+                rootPipelineHealthy = false,
+                localSocksReady = false,
+            )
+        )
         assertFalse(
             ConnectionWatchdog.shouldSoftRestart(
                 consecutiveFailures = 3,
@@ -103,40 +114,18 @@ class ConnectionWatchdogTest {
                 localSocksReady = true,
             )
         )
+        assertFalse(ConnectionWatchdog.mayActOnFailures(rootMode = true))
+        assertTrue(ConnectionWatchdog.mayActOnFailures(rootMode = false))
     }
 
     @Test
-    fun remoteDelayFail_rootUnhealthyButSocksUp_skipsSoftRestart() {
-        assertFalse(
-            ConnectionWatchdog.shouldSoftRestart(
-                consecutiveFailures = 3,
-                maxConsecutiveFailures = 3,
-                coreRunning = true,
-                rootMode = true,
-                rootPipelineHealthy = false,
-                localSocksReady = true,
-            )
-        )
-    }
-
-    @Test
-    fun remoteDelayFail_coreDead_triggersSoftRestart() {
+    fun remoteDelayFail_coreDead_triggersSoftRestart_onVpnOnly() {
         assertTrue(
             ConnectionWatchdog.shouldSoftRestart(
                 consecutiveFailures = 3,
                 maxConsecutiveFailures = 3,
                 coreRunning = false,
                 rootMode = false,
-                rootPipelineHealthy = false,
-                localSocksReady = false,
-            )
-        )
-        assertTrue(
-            ConnectionWatchdog.shouldSoftRestart(
-                consecutiveFailures = 3,
-                maxConsecutiveFailures = 3,
-                coreRunning = false,
-                rootMode = true,
                 rootPipelineHealthy = false,
                 localSocksReady = false,
             )
@@ -150,7 +139,7 @@ class ConnectionWatchdogTest {
                 consecutiveFailures = 2,
                 maxConsecutiveFailures = 3,
                 coreRunning = false,
-                rootMode = true,
+                rootMode = false,
                 rootPipelineHealthy = false,
                 localSocksReady = false,
             )
