@@ -599,5 +599,13 @@
     <string name="summary_pref_privilege_module_status_binder">Connectivity binder unavailable</string>
     <string name="summary_pref_privilege_module_status_unauthorized">Hook answered unauthorized. Reinstall app and re-enable module</string>
     <string name="summary_pref_privilege_module_status_loaded_inactive">Hooks loaded, active flag off. Open a target app once or reboot system</string>
+    <string name="summary_settings_entry_ui">Language, theme and list display</string>
+    <string name="summary_settings_entry_mode">Proxy / VPN run mode</string>
+    <string name="summary_settings_entry_privilege">LSPosed hide-VPN for selected apps</string>
+    <string name="summary_settings_entry_vpn">Per-app, DNS, MTU and tunnel options</string>
+    <string name="summary_settings_entry_core">Local proxy, sniffing, DNS and maintenance tools</string>
+    <string name="summary_settings_entry_mux">Mux multiplexing options</string>
+    <string name="summary_settings_entry_fragment">TLS fragment options</string>
+    <string name="summary_settings_entry_advanced">Boot, auto test and diagnostic URLs</string>
 </resources>
 

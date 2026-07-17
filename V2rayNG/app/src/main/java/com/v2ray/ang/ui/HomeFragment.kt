@@ -55,7 +55,36 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private var uiConnecting: Boolean = false
 
     private var lastRegion: String? = null
-    private var lastLatencyMs: Long? = null
+    private var lastRegionGuid: String? = null
+
+    private fun loadPersistedRegion() {
+        val guid = MmkvManager.getSelectServer()
+        val savedGuid = MmkvManager.decodeSettingsString(AppConfig.PREF_HOME_LAST_REGION_GUID)
+        val savedRegion = MmkvManager.decodeSettingsString(AppConfig.PREF_HOME_LAST_REGION)
+        if (!guid.isNullOrEmpty() && guid == savedGuid && !savedRegion.isNullOrBlank()) {
+            lastRegion = savedRegion
+            lastRegionGuid = savedGuid
+        } else {
+            lastRegion = null
+            lastRegionGuid = null
+        }
+    }
+
+    private fun persistLastRegion(region: String?, guid: String?) {
+        if (region.isNullOrBlank() || guid.isNullOrBlank()) {
+            MmkvManager.encodeSettings(AppConfig.PREF_HOME_LAST_REGION, null as String?)
+            MmkvManager.encodeSettings(AppConfig.PREF_HOME_LAST_REGION_GUID, null as String?)
+            return
+        }
+        MmkvManager.encodeSettings(AppConfig.PREF_HOME_LAST_REGION, region)
+        MmkvManager.encodeSettings(AppConfig.PREF_HOME_LAST_REGION_GUID, guid)
+    }
+
+    private fun clearPersistedRegion() {
+        lastRegion = null
+        lastRegionGuid = null
+        persistLastRegion(null, null)
+    }
     private val CONNECTING_TIMEOUT_MS = 10_000L
     private val AUTO_PING_DELAY_MS = 700L
     private var connectingTimeoutJob: Job? = null
@@ -91,6 +120,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         binding.tvTestState.setOnClickListener { handleLayoutTestClick() }
         binding.layoutCurrentNode.setOnClickListener { host.openSubscriptionTab() }
 
+        loadPersistedRegion()
         setupConnectionSwitch()
         // Migrate any sticky ROOT preference when ROOT UI is retired.
         SettingsManager.migrateRootModeIfUiHidden()
@@ -166,8 +196,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
         mainViewModel.selectionChangedAction.observe(viewLifecycleOwner) {
             // Node changed: region from previous exit IP is stale.
-            lastRegion = null
-            lastLatencyMs = null
+            clearPersistedRegion()
             refreshSelectedServerMeta()
             refreshMetricsFromCache()
         }
@@ -353,29 +382,6 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         val regionText = lastRegion?.takeIf { it.isNotBlank() }
             ?: getString(R.string.home_metric_region_unknown)
         binding.tvMetricRegion.text = regionText
-
-        val latencyFromTest = lastLatencyMs
-        val latencyFromAff = MmkvManager.getSelectServer()
-            ?.let { MmkvManager.decodeServerAffiliationInfo(it)?.testDelayMillis }
-            ?.takeIf { it != 0L }
-
-        when {
-            latencyFromTest != null && latencyFromTest >= 0L -> {
-                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_ms, latencyFromTest.toInt())
-            }
-            latencyFromTest != null && latencyFromTest < 0L -> {
-                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_fail)
-            }
-            latencyFromAff != null && latencyFromAff > 0L -> {
-                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_ms, latencyFromAff.toInt())
-            }
-            latencyFromAff != null && latencyFromAff < 0L -> {
-                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_fail)
-            }
-            else -> {
-                binding.tvMetricLatency.text = getString(R.string.home_metric_latency_unknown)
-            }
-        }
     }
 
     /**
@@ -394,7 +400,6 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             ?.firstOrNull { it.isNotBlank() }
             ?.toLongOrNull()
         if (latency != null) {
-            lastLatencyMs = latency
             internetReachable = latency >= 0L
         } else if (
             content.contains("Fail", ignoreCase = true) ||
@@ -404,7 +409,6 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             content.contains("timeout", ignoreCase = true) ||
             content.contains("瓒呮椂")
         ) {
-            lastLatencyMs = -1L
             internetReachable = false
         }
 
@@ -415,6 +419,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         val region = regionMatch?.groupValues?.getOrNull(1)?.trim()
         if (!region.isNullOrBlank() && !region.equals("unknown", ignoreCase = true)) {
             lastRegion = region.uppercase()
+            lastRegionGuid = MmkvManager.getSelectServer()
+            persistLastRegion(lastRegion, lastRegionGuid)
         }
 
         refreshMetricsFromCache()
@@ -493,8 +499,6 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         // Hard stop + fixed delay start races with async stopLoop and can leave the
         // core on the old config (or half-stopped) while home stays on "Testing...".
         if (!isAdded) return
-        lastRegion = null
-        lastLatencyMs = null
         refreshSelectedServerMeta()
         refreshMetricsFromCache()
         applyRunningState(isLoading = true, isRunning = false)
@@ -617,7 +621,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             binding.switchConnection.contentDescription = getString(R.string.tasker_start_service)
             setTestState(getString(R.string.home_tap_to_test))
             binding.tvStatusDetail.visibility = android.view.View.GONE
-            lastRegion = null
+            // Keep last known region across disconnect; clear only when node changes.
             stopTrafficUpdates()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
         }

@@ -506,4 +506,12 @@
     <string name="summary_pref_privilege_module_status_binder">無法取得 Connectivity 服務</string>
     <string name="summary_pref_privilege_module_status_unauthorized">模組拒絕了應用身分。請重裝應用並在 LSPosed 重新啟用</string>
     <string name="summary_pref_privilege_module_status_loaded_inactive">已注入但 active=false。開啟目標應用一次或重啟系統</string>
+    <string name="summary_settings_entry_ui">語言、主題與列表顯示</string>
+    <string name="summary_settings_entry_mode">僅代理 / VPN 運行模式</string>
+    <string name="summary_settings_entry_privilege">LSPosed 對選定應用隱藏 VPN</string>
+    <string name="summary_settings_entry_vpn">分應用、DNS、MTU 與隧道選項</string>
+    <string name="summary_settings_entry_core">本地代理、嗅探、DNS 與維護工具</string>
+    <string name="summary_settings_entry_mux">Mux 多路復用選項</string>
+    <string name="summary_settings_entry_fragment">TLS 分片選項</string>
+    <string name="summary_settings_entry_advanced">開機啟動、自動測試與診斷網址</string>
 </resources>

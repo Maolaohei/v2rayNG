@@ -74,6 +74,8 @@ object AppConfig {
     const val PREF_ROOT_LAN_SHARING = "pref_root_lan_sharing"
     /** LSPosed hidevpn: sanitize VPN detection for selected apps (SFA-style). */
     const val PREF_PRIVILEGE_HIDE_VPN = "pref_privilege_hide_vpn"
+    const val PREF_HOME_LAST_REGION = "pref_home_last_region"
+    const val PREF_HOME_LAST_REGION_GUID = "pref_home_last_region_guid"
     const val PREF_PRIVILEGE_HIDE_VPN_APPS = "pref_privilege_hide_vpn_apps"
     const val PREF_PRIVILEGE_IFACE_RENAME = "pref_privilege_iface_rename"
     const val PREF_PRIVILEGE_IFACE_PREFIX = "pref_privilege_iface_prefix"

@@ -132,38 +132,12 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
+                
+
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="@dimen/padding_spacing_dp8"
                     android:layout_weight="1"
-                    android:background="@drawable/bg_home_metric_card"
-                    android:orientation="vertical"
-                    android:padding="10dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/home_metric_latency"
-                        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <TextView
-                        android:id="@+id/tv_metric_latency"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/padding_spacing_dp4"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:text="@string/home_metric_placeholder"
-                        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                        android:textStyle="bold" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1.1"
                     android:background="@drawable/bg_home_metric_card"
                     android:orientation="vertical"
                     android:padding="10dp">
