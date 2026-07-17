@@ -1,6 +1,7 @@
 package com.v2ray.ang.ui
 
 import android.content.Intent
+import androidx.fragment.app.Fragment
 import android.os.Bundle
 import android.view.View
 import androidx.lifecycle.lifecycleScope
@@ -10,6 +11,7 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceScreen
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
@@ -26,10 +28,38 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class SettingsActivity : BaseActivity() {
+class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceStartScreenCallback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentViewWithToolbar(R.layout.activity_settings, showHomeAsUp = true, title = getString(R.string.title_settings))
+    }
+
+    override fun onPreferenceStartScreen(
+        caller: PreferenceFragmentCompat,
+        pref: PreferenceScreen,
+    ): Boolean {
+        val fragment = SettingsFragment().apply {
+            arguments = Bundle().apply {
+                putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, pref.key)
+            }
+        }
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragment_settings, fragment)
+            .addToBackStack(pref.key)
+            .commit()
+        supportActionBar?.title = pref.title
+        return true
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (supportFragmentManager.backStackEntryCount > 0) {
+            supportFragmentManager.popBackStack()
+            supportActionBar?.title = getString(R.string.title_settings)
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
@@ -74,12 +104,20 @@ class SettingsActivity : BaseActivity() {
         private val socksEnableUdp by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_SOCKS_ENABLE_UDP) }
         private val proxySharing by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PROXY_SHARING) }
 
-        override fun onCreatePreferences(bundle: Bundle?, s: String?) {
+        /**
+         * Prefer parent fragment callback (More tab), then Activity (standalone settings).
+         */
+        override fun getCallbackFragment(): Fragment? {
+            return parentFragment
+        }
+
+        override fun onCreatePreferences(bundle: Bundle?, rootKey: String?) {
             // Use MMKV as the storage backend for all Preferences
             // This prevents inconsistencies between SharedPreferences and MMKV
             preferenceManager.preferenceDataStore = MmkvPreferenceDataStore()
 
-            addPreferencesFromResource(R.xml.pref_settings)
+            // rootKey enables nested PreferenceScreen navigation (secondary pages).
+            setPreferencesFromResource(R.xml.pref_settings, rootKey)
 
             initPreferenceSummaries()
 
