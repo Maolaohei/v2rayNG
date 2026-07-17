@@ -299,6 +299,8 @@
     <string name="summary_root_dynamic_socks_disabled">ROOT 模式下已禁用（需要稳定的本地 SOCKS 端口）</string>
     <string name="summary_root_vpn_only_setting">仅 VPN 模式有效；当前为 ROOT 模式</string>
     <string name="home_mode_root_settings_summary">由首页控制 · ROOT</string>
+    <string name="title_pref_root_engine">ROOT 数据面引擎</string>
+    <string name="summary_pref_root_engine">hev = hev-socks5-tunnel + 本地 SOCKS（默认更稳）。xray_tun = 将 root TUN fd 交给 Bray-Core（实验，无 hev）。</string>
     <string name="title_root_lan_sharing">局域网 / 热点网络共享 (仅限 Root 用户)</string>
     <string name="summary_root_lan_sharing">允许通过 Wi-Fi 热点和 USB 共享网络连接的设备走 VPN 代理流量</string>
 
@@ -508,6 +510,11 @@
     <string-array name="mode_entries">
         <item>VPN</item>
         <item>仅代理</item>
+    </string-array>
+
+    <string-array name="root_engine_entries">
+        <item>hev-socks5-tunnel（默认）</item>
+        <item>xray-core TUN（实验）</item>
     </string-array>
 
     <string-array name="ui_mode_night">

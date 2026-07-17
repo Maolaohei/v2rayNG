@@ -228,19 +228,19 @@ object CoreServiceManager {
         val service = getService() ?: return
         try {
             if (SettingsManager.isRootMode()) {
-                // SOCKS port is stable in ROOT. ensureRunning waits for SOCKS after soft-restart
-                // and only rebuilds when hev/tun/rules are actually down.
-                LogUtil.i(AppConfig.TAG, "StartCore-Manager: ensuring root routing after soft-restart")
-                val err = RootProxyManager.ensureRunning(service)
+                // hev: ensure SOCKS+helper; xray_tun: ensure MARK rules (fd already held).
+                val plane = com.v2ray.ang.root.RootDataPlanes.current()
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: ensuring root routing after soft-restart engine=${plane.engine}")
+                val err = plane.ensure(service)
                 if (err == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: root ensure backed off after soft-restart, keep session")
                 } else if (err != null) {
                     // Soft-restart already brought core back. Killing FGS here on a transient
                     // root-rule glitch causes user-visible random disconnects.
-                    if (RootProxyManager.isRuntimeLive() || coreController.isRunning) {
+                    if (plane.isRuntimeLive() || coreController.isRunning) {
                         LogUtil.e(
                             AppConfig.TAG,
-                            "StartCore-Manager: root ensure failed after soft-restart ($err) but core/SOCKS live; keep session"
+                            "StartCore-Manager: root ensure failed after soft-restart ($err) but dataplane/core live; keep session"
                         )
                     } else {
                         LogUtil.e(AppConfig.TAG, "StartCore-Manager: root routing ensure failed: $err")
@@ -568,7 +568,21 @@ object CoreServiceManager {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: soft-restart aborted before start (user stop/gen)")
                     return@launch
                 }
-                val ok = startCoreLoop(activeVpnInterface)
+                var ok = startCoreLoop(activeVpnInterface)
+                // ROOT xray_tun soft-restart reuses RootTun fd. If the device vanished,
+                // reopen once before failing the session.
+                if (!ok && SettingsManager.isRootXrayTunEngine() && !com.v2ray.ang.root.RootTun.isOpen()) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-Manager: xray_tun fd missing during soft-restart, reopening")
+                    try {
+                        val svc = getService()
+                        if (svc != null) {
+                            com.v2ray.ang.root.RootTun.open(svc)
+                            ok = startCoreLoop(null)
+                        }
+                    } catch (e: Exception) {
+                        LogUtil.e(AppConfig.TAG, "StartCore-Manager: xray_tun reopen failed", e)
+                    }
+                }
                 startedOk = ok
                 if (!ok) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed to start core")

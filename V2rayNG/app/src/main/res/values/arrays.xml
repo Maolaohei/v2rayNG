@@ -118,6 +118,11 @@
         <item>VPN</item>
         <item>Proxy only</item>
     </string-array>
+
+    <string-array name="root_engine_value" translatable="false">
+        <item>hev</item>
+        <item>xray_tun</item>
+    </string-array>
     
     <string-array name="browser_dialer_mode_value" translatable="false">
         <item>Disable</item>

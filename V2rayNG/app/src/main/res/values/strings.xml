@@ -307,6 +307,8 @@
     <string name="summary_root_dynamic_socks_disabled">Disabled in ROOT mode (stable local SOCKS port required)</string>
     <string name="summary_root_vpn_only_setting">VPN-only setting; not used while ROOT mode is active</string>
     <string name="home_mode_root_settings_summary">Managed on Home · ROOT</string>
+    <string name="title_pref_root_engine">ROOT dataplane engine</string>
+    <string name="summary_pref_root_engine">hev = hev-socks5-tunnel + SOCKS (stable default). xray_tun = root TUN fd into Bray-Core (experimental, no hev).</string>
     <string name="title_root_lan_sharing">LAN / tethering sharing (Root Users)</string>
     <string name="summary_root_lan_sharing">Route Wi-Fi hotspot and USB-tethered devices through the VPN</string>
 
@@ -514,6 +516,11 @@
     <string-array name="mode_entries">
         <item>VPN</item>
         <item>Proxy only</item>
+    </string-array>
+
+    <string-array name="root_engine_entries">
+        <item>hev-socks5-tunnel (default)</item>
+        <item>xray-core TUN (experimental)</item>
     </string-array>
 
     <string-array name="browser_dialer_mode">
