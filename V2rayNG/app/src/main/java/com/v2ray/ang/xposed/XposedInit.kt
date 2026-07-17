@@ -4,8 +4,8 @@ import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
 /**
- * Classic Xposed/LSPosed entry for frameworks that still use IXposedHookLoadPackage.
- * Modern LSPosed 100/101 uses [XposedInitModern] / [XposedInitModern101].
+ * Classic Xposed/LSPosed entry for frameworks that still use IXposedHookLoadPackage
+ * (assets/xposed_init). Modern LSPosed uses META-INF/xposed + [XposedInitModern101].
  */
 class XposedInit : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {

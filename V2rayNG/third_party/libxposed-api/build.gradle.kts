@@ -7,7 +7,8 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 26
+        consumerProguardFiles("proguard-rules.pro")
     }
 
     buildFeatures {

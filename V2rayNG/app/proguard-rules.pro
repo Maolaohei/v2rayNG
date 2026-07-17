@@ -19,3 +19,13 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Modern LSPosed / libxposed module entry (API 101/102)
+-dontwarn io.github.libxposed.annotation.**
+-dontwarn io.github.libxposed.api.**
+-adaptresourcefilecontents META-INF/xposed/java_init.list
+-keep,allowoptimization,allowobfuscation public class * extends io.github.libxposed.api.XposedModule {
+    public <init>();
+}
+-keep class com.v2ray.ang.xposed.XposedInitModern101 { public <init>(); }
+-keep class com.v2ray.ang.xposed.XposedInit { public <init>(); }
