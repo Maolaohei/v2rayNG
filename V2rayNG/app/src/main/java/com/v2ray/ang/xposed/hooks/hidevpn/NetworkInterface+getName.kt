@@ -13,7 +13,6 @@ import java.net.NetworkInterface
 import java.net.SocketAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -42,30 +41,21 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
     private val jniHooked = AtomicBoolean(false)
 
     override fun injectHook() {
-        var jniOk = false
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 hookJniGetNameApi33Plus()
             } else {
                 hookJniGetNameLegacy()
             }
-            jniOk = true
             jniHooked.set(true)
         } catch (e: Throwable) {
             HookErrorStore.e(SOURCE, "jniGetName hook failed, will retry via loadClass: ${e.message}", e)
             hookClassLoaderForVpn()
         }
-        // Always install public getName mask as last-line presentation defense in system_server
-        // (and any process that loads this module path). Kernel rename still preferred.
+        // Presentation mask only for public NetworkInterface APIs.
+        // Kernel rename is ONLY done from jniGetName (iface creation path).
+        // Never eager-rename a live tun*: set-down/rename races break VPN dataplane.
         hookPublicGetName()
-        if (jniOk) {
-            // Rename any already-live tun* ifaces immediately (settings applied after VPN up).
-            tryRenameExistingTunInterfaces("inject")
-        }
-        // Allow settings updates to re-trigger rename of live tun*.
-        PrivilegeSettingsStore.onUpdated = {
-            tryRenameExistingTunInterfaces("settings")
-        }
     }
 
     private fun hookPublicGetName() {
@@ -82,8 +72,8 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
                             if (!isTunInterface(result)) return
                             val prefix = PrivilegeSettingsStore.interfacePrefix()
                             if (result.startsWith(prefix)) return
-                            val renamed = renameInterface(result, prefix)
-                            param.result = renamed ?: (buildInterfaceName(prefix, 0) ?: "${prefix}0")
+                            // Mask only. Do not netlink-rename here (can take tun down).
+                            param.result = buildInterfaceName(prefix, 0) ?: (prefix + "0")
                         }
                     },
                 )
@@ -150,7 +140,6 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
                                 hookJniGetNameLegacy()
                             }
                             jniHooked.set(true)
-                            tryRenameExistingTunInterfaces("loadClass")
                             HookErrorStore.i(SOURCE, "jniGetName hooked after loadClass($name)")
                         } catch (e: Throwable) {
                             HookErrorStore.w(SOURCE, "retry jniGetName after loadClass failed: ${e.message}", e)
@@ -177,42 +166,6 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
         val prefix = PrivilegeSettingsStore.interfacePrefix()
         val renamed = renameInterface(result, prefix) ?: return
         param.result = renamed
-    }
-
-    private fun tryRenameExistingTunInterfaces(reason: String) {
-        if (!PrivilegeSettingsStore.shouldRenameInterface()) return
-        val prefix = PrivilegeSettingsStore.interfacePrefix()
-        val ifaces = try {
-            Collections.list(NetworkInterface.getNetworkInterfaces())
-        } catch (_: Throwable) {
-            emptyList()
-        }
-        var count = 0
-        for (iface in ifaces) {
-            val name = iface.name ?: continue
-            if (!isTunInterface(name)) continue
-            val renamed = renameInterface(name, prefix)
-            if (renamed != null) {
-                count++
-                HookErrorStore.i(SOURCE, "eager rename($reason): $name -> $renamed")
-            } else {
-                HookErrorStore.w(SOURCE, "eager rename($reason) failed for $name")
-            }
-        }
-        if (count == 0) {
-            // Also probe common tun indices via if_nametoindex
-            for (i in 0..7) {
-                val candidate = "tun$i"
-                if (getInterfaceIndex(candidate) > 0) {
-                    val renamed = renameInterface(candidate, prefix)
-                    if (renamed != null) {
-                        count++
-                        HookErrorStore.i(SOURCE, "eager rename($reason): $candidate -> $renamed")
-                    }
-                }
-            }
-        }
-        HookErrorStore.i(SOURCE, "eager rename($reason) done count=$count prefix=$prefix")
     }
 
     private fun findVpnClass(): Class<*> {

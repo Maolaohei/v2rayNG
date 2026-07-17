@@ -468,33 +468,44 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
 
     // region Helper Methods
 
-    fun shouldHide(connectivityService: Any?, uid: Int): Boolean {
-        // connectivityService may be null for pure uid-based checks; still allow hide decisions.
+    /**
+     * Soft hide: selected target app may have TYPE_VPN fingerprint APIs scrubbed.
+     * Safe for getNetworkInfo(TYPE_VPN)/getNetworkForType(TYPE_VPN) nulling.
+     * Must NOT be used to rewrite active/default network objects.
+     */
+    fun shouldSanitize(uid: Int): Boolean {
         if (!PrivilegeSettingsStore.isEnabled()) {
-            logSkipOnce(uid, "hide_disabled", "Skip hide: uid=$uid hide settings disabled")
+            logSkipOnce(uid, "hide_disabled", "Skip sanitize: uid=$uid hide settings disabled")
             return false
         }
         if (!PrivilegeSettingsStore.isUidSelected(uid)) {
-            logSkipOnce(uid, "hide_not_selected", "Skip hide: uid=$uid not in hide list")
+            logSkipOnce(uid, "hide_not_selected", "Skip sanitize: uid=$uid not in hide list")
             return false
         }
         if (VpnAppStore.isVpnUidExcludeSelf(uid)) {
-            logSkipOnce(uid, "uid_vpn_app", "Skip hide: uid=$uid vpn app")
+            logSkipOnce(uid, "uid_vpn_app", "Skip sanitize: uid=$uid vpn app")
             return false
-        }
-        // Do NOT require hasVpnForUid here.
-        // getNetworkInfo(TYPE_VPN)/getNetworkForType(TYPE_VPN) leak even when this uid is not
-        // currently routed via VPN (per-app mode / transient states). Selected targets must
-        // always have hard VPN fingerprints sanitized while hide is enabled.
-        if (connectivityService != null) {
-            val hasVpn = runCatching { hasVpnForUid(connectivityService, uid) }.getOrDefault(false)
-            if (!hasVpn) {
-                logSkipOnce(uid, "uid_no_vpn_soft", "Hide without vpnForUid: uid=$uid (still sanitize fingerprints)")
-            }
         }
         return true
     }
 
+    /**
+     * Hard hide: rewrite active/default networks / filter VPN networks.
+     * Requires the uid to actually be on VPN; otherwise apps lose working network.
+     * Matches SFA semantics.
+     */
+    fun shouldHide(connectivityService: Any?, uid: Int): Boolean {
+        if (!shouldSanitize(uid)) return false
+        if (connectivityService == null) {
+            logSkipOnce(uid, "hide_no_service", "Skip hard hide: uid=$uid connectivityService null")
+            return false
+        }
+        val hasVpn = runCatching { hasVpnForUid(connectivityService, uid) }.getOrDefault(false)
+        if (!hasVpn) {
+            logSkipOnce(uid, "uid_no_vpn", "Skip hard hide: uid=$uid noVpnForUid")
+        }
+        return hasVpn
+    }
     fun hasVpnForUid(connectivityService: Any?, uid: Int): Boolean {
         if (connectivityService == null) return false
         if (sdkInt >= 31) {

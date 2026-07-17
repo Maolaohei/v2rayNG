@@ -23,7 +23,8 @@ class HookConnectivityManagerGetNetworkInfo(private val helper: ConnectivityServ
                     val type = param.args[0] as Int
                     if (type != ConnectivityManager.TYPE_VPN) return
                     val uid = Binder.getCallingUid()
-                    if (!helper.shouldHide(param.thisObject, uid)) return
+                    // Soft sanitize only: never rewrite general network topology here.
+                    if (!helper.shouldSanitize(uid)) return
                     param.result = null
                 }
             },
@@ -38,6 +39,7 @@ class HookConnectivityManagerGetNetworkInfo(private val helper: ConnectivityServ
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = param.args[1] as Int
+                    // Only rewrite VPN NetworkInfo when this uid is actually on VPN.
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val info = param.result as? NetworkInfo ?: return
                     if (info.type != ConnectivityManager.TYPE_VPN) return

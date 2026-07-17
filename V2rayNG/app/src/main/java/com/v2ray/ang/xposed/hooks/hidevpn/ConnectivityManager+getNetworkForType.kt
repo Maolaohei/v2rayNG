@@ -20,7 +20,8 @@ class HookConnectivityManagerGetNetworkForType(private val helper: ConnectivityS
                     val type = param.args[0] as Int
                     if (type != ConnectivityManager.TYPE_VPN) return
                     val uid = Binder.getCallingUid()
-                    if (!helper.shouldHide(param.thisObject, uid)) return
+                    // Soft sanitize: hide TYPE_VPN handle without requiring vpnForUid.
+                    if (!helper.shouldSanitize(uid)) return
                     param.result = null
                 }
             },
