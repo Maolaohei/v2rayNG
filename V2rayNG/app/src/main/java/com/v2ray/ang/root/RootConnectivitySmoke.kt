@@ -38,9 +38,17 @@ object RootConnectivitySmoke {
         lastProbeAtMs.set(now)
         val result = probe()
         if (result.ok) {
-            LogUtil.i(AppConfig.TAG, "RootSmoke: ok ${result.detail} (${result.elapsedMs}ms)")
+            LogUtil.i(
+                AppConfig.TAG,
+                "RootSmoke: ok ${result.detail} (${result.elapsedMs}ms) " +
+                    "[scope=local-socks-CONNECT only; not app-UID MARK/tun or DoH/PrivateDNS]"
+            )
         } else {
-            LogUtil.w(AppConfig.TAG, "RootSmoke: soft-fail ${result.detail} (${result.elapsedMs}ms)")
+            LogUtil.w(
+                AppConfig.TAG,
+                "RootSmoke: soft-fail ${result.detail} (${result.elapsedMs}ms) " +
+                    "[scope=local-socks only; does not tear down session]"
+            )
         }
         return result
     }

@@ -2,12 +2,19 @@ package com.v2ray.ang.util
 
 import android.util.Log
 import com.v2ray.ang.AppConfig
-import com.v2ray.ang.handler.MmkvManager
 import java.util.Locale
 
+/**
+ * App-side Android log helper.
+ *
+ * IMPORTANT: this is independent of Xray core loglevel ([AppConfig.PREF_LOGLEVEL]).
+ * Core loglevel only controls the Go/Xray runtime; using it here previously hid most
+ * ROOT/UI diagnostics (default core level is "warning", so LogUtil.i never printed).
+ */
 object LogUtil {
 
-    private const val DEFAULT_LEVEL = "warning"
+    // App diagnostics default to info so installRulesOnly / DNS / smoke lines are visible.
+    private const val DEFAULT_LEVEL = "info"
     private const val CACHE_UNSET = Int.MIN_VALUE
 
     @Volatile
@@ -21,22 +28,17 @@ object LogUtil {
             "warn", "warning" -> Log.WARN
             "error" -> Log.ERROR
             "none", "off" -> Int.MAX_VALUE
-            else -> Log.WARN
+            else -> Log.INFO
         }
     }
 
+    /**
+     * Kept for API compatibility with preference listeners.
+     * No longer bound to core loglevel; always re-applies the app-side default.
+     */
     @Suppress("unused")
     fun refreshLogLevel() {
-        cachedMinPriority = parsePriority(readConfiguredLevel())
-    }
-
-    private fun readConfiguredLevel(): String? {
-        return try {
-            MmkvManager.decodeSettingsString(AppConfig.PREF_LOGLEVEL, DEFAULT_LEVEL)
-        } catch (_: Throwable) {
-            // Unit tests / early boot: MMKV may not be ready.
-            DEFAULT_LEVEL
-        }
+        cachedMinPriority = parsePriority(DEFAULT_LEVEL)
     }
 
     private fun minPriority(): Int {
@@ -44,13 +46,12 @@ object LogUtil {
         if (cached != CACHE_UNSET) {
             return cached
         }
-
         return synchronized(this) {
             val current = cachedMinPriority
             if (current != CACHE_UNSET) {
                 current
             } else {
-                parsePriority(readConfiguredLevel()).also {
+                parsePriority(DEFAULT_LEVEL).also {
                     cachedMinPriority = it
                 }
             }

@@ -159,18 +159,29 @@ object RootProxyManager {
         val rulesOk: Boolean,
         /** False when su/probe output is missing or unusable (do not treat as hard death). */
         val reliable: Boolean = true,
+        /** True when hev is not required for system capture (ROOT xray_tun). */
+        val hevOptional: Boolean = false,
     ) {
-        val localUp: Boolean get() = hevAlive && tunUp && rulesOk
+        // xray_tun: capture = RootTun + rules. hev only matters for VPN LAN-sharing helper path.
+        val localUp: Boolean get() = if (hevOptional) tunUp && rulesOk else hevAlive && tunUp && rulesOk
         val hevTunUp: Boolean get() = hevAlive && tunUp
+        fun summary(): String {
+            val helper = when {
+                hevOptional -> "helper=xray_tun(no-hev)"
+                hevAlive -> "helper=hev-alive"
+                else -> "helper=hev-dead"
+            }
+            return "$helper tun=${if (tunUp) "up" else "down"} rules=${if (rulesOk) "ok" else "missing"} reliable=$reliable"
+        }
     }
 
     /**
-     * One su round-trip for hev/tun/rules. Socks is checked in-process (no root needed).
+     * One su round-trip for helper/tun/rules. Socks is checked in-process (no root needed).
      * Batching avoids 3-4 serial su invocations every watchdog tick.
      *
-     * hev liveness uses pid + /proc/comm (not only kill -0) and falls back to "tun up with our
-     * address" when Magisk hides root /proc briefly. Unreliable su output is flagged so callers
-     * can soft-skip instead of full teardown storms.
+     * ROOT system capture is xray_tun: hev pid is optional and must not dominate health.
+     * hev liveness is still probed for VPN LAN-sharing repair. Unreliable su output is flagged
+     * so callers can soft-skip instead of full teardown storms.
      */
     private fun probePipeline(context: Context?): PipelineProbe {
         val pid = if (context != null) {
@@ -214,26 +225,58 @@ object RootProxyManager {
         if (!reliable) {
             LogUtil.w(AppConfig.TAG, "RootProxyManager: probe unreliable (su/output incomplete)")
             // Soft defaults: do not claim death when we simply could not observe.
-            return PipelineProbe(hevAlive = true, tunUp = true, rulesOk = true, reliable = false)
+            val hevOptionalUnreliable = try {
+                SettingsManager.isRootXrayTunEngine()
+            } catch (_: Exception) {
+                false
+            }
+            return PipelineProbe(
+                hevAlive = true,
+                tunUp = true,
+                rulesOk = true,
+                reliable = false,
+                hevOptional = hevOptionalUnreliable,
+            )
         }
 
+        val hevOptional = try {
+            SettingsManager.isRootXrayTunEngine()
+        } catch (_: Exception) {
+            false
+        }
         var hevAlive = when {
+            // Rules-only checks without context do not need hev.
             context == null -> true
+            // xray_tun capture intentionally has no hev helper.
+            hevOptional -> true
             else -> out.contains("HEV_OK")
         }
         val tunUp = out.contains("TUN_OK")
         val tunAddrOk = out.contains("TUN_ADDR_OK")
-        // Fallback: pid opaque/stale but our tun is up with expected address -> prefer light repair.
-        if (context != null && !hevAlive && tunUp && tunAddrOk) {
-            LogUtil.i(AppConfig.TAG, "RootProxyManager: hev pid opaque but tun+addr up; treat as alive")
+        // Fallback only for hev path: pid opaque/stale but our tun is up with expected address.
+        if (context != null && !hevOptional && !hevAlive && tunUp && tunAddrOk) {
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: hev pid opaque but tun+addr up; treat helper as alive")
             hevAlive = true
         }
         val rulesOk = out.contains("RULE_OK") && out.contains("CHAIN_OK")
-        return PipelineProbe(hevAlive = hevAlive, tunUp = tunUp, rulesOk = rulesOk, reliable = true)
+        val probe = PipelineProbe(
+            hevAlive = hevAlive,
+            tunUp = tunUp,
+            rulesOk = rulesOk,
+            reliable = true,
+            hevOptional = hevOptional,
+        )
+        // Keep this at debug-ish rate: only log when something looks wrong, or when rules missing.
+        if (!probe.localUp) {
+            LogUtil.w(AppConfig.TAG, "RootProxyManager: probe not ready ${probe.summary()}")
+        }
+        return probe
     }
 
     /**
-     * Local pipeline health: hev + tun + iptables/ip-rule + local SOCKS.
+     * Local pipeline health for hev/LAN-sharing helper path:
+     * helper(if required) + tun + iptables/ip-rule + local SOCKS.
+     * ROOT system capture health is owned by [XrayTunRootDataPlane.isHealthy].
      *
      * @param strict true for post-setup acceptance (must observe rules via su).
      *               false for runtime (prefer not thrashing on flaky su: SOCKS up => keep session).
@@ -280,6 +323,11 @@ object RootProxyManager {
     /**
      * Cheap runtime liveness used by UI / network paths that must not run su every time.
      * True when local SOCKS accepts 閳?the control plane Xray side is up.
+     */
+    /**
+     * Cheap SOCKS control-plane liveness for hev/LAN helper paths.
+     * ROOT system capture runtime liveness is [XrayTunRootDataPlane.isRuntimeLive] (RootTun),
+     * not this SOCKS check.
      */
     fun isRuntimeLive(): Boolean = isLocalSocksReady()
     /** Remaining repair backoff in ms (0 = allowed now). */
@@ -523,6 +571,23 @@ object RootProxyManager {
     fun installRulesOnly(context: Context): RootError? {
         lastError = null
         invalidateHealthCache()
+        val perAppEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY)
+        val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS)
+        val selectedCount = if (perAppEnabled) {
+            MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)?.size ?: 0
+        } else {
+            0
+        }
+        val perAppMode = when {
+            !perAppEnabled -> "all-apps"
+            bypassApps -> "bypass-selected"
+            else -> "proxy-selected"
+        }
+        LogUtil.i(
+            AppConfig.TAG,
+            "RootProxyManager: installRulesOnly engine=xray_tun per-app mode=$perAppMode selected=$selectedCount " +
+                "(bypass=direct, proxy-selected=proxy, all-apps=app-uid-range)"
+        )
         val script = buildRulesOnlySetup(context)
         val result = RootShell.runScript(context, "setup_rules_light.sh", script)
         if (!result.success) {
@@ -536,6 +601,7 @@ object RootProxyManager {
             val p = probePipeline(context)
             if (p.rulesOk && p.tunUp) {
                 lastError = null
+                LogUtil.i(AppConfig.TAG, "RootProxyManager: installRulesOnly ok ${p.summary()} per-app=$perAppMode")
                 return null
             }
             try {
@@ -547,12 +613,14 @@ object RootProxyManager {
         val p = probePipeline(context)
         return if (p.rulesOk && p.tunUp) {
             lastError = null
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: installRulesOnly ok ${p.summary()} per-app=$perAppMode")
             null
         } else {
             lastError = when {
                 !p.tunUp -> RootError.TUN_FAILED
                 else -> RootError.RULES_FAILED
             }
+            LogUtil.e(AppConfig.TAG, "RootProxyManager: installRulesOnly failed ($lastError) ${p.summary()}")
             lastError
         }
     }

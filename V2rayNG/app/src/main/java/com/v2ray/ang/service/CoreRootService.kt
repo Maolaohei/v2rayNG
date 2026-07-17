@@ -188,7 +188,7 @@ class CoreRootService : Service(), ServiceControl {
 
     /**
      * Recover after connectivity changes.
-     * - Always ensure local ROOT pipeline (hev/tun/rules/socks).
+     * - Always ensure local ROOT pipeline (xray_tun RootTun + MARK rules).
      * - After a real onLost闂傚倷鐒﹂崜姘跺磻閸涱喗鍙忛柣姘辨姜vailable transition, also soft-restart the core so
      *   outbound sockets re-bind like VPN's network recovery path.
      */

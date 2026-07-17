@@ -44,7 +44,10 @@ class LogcatActivity : BaseActivity(), SwipeRefreshLayout.OnRefreshListener {
 
         binding.refreshLayout.setOnRefreshListener(this)
 
-        toast(getString(R.string.pull_down_to_refresh))
+        // Auto-load on open. Previously the page stayed empty until pull-to-refresh,
+        // which made logs look "missing" or "self-cleared".
+        binding.refreshLayout.isRefreshing = true
+        onRefresh()
     }
 
     private fun onLogLongClick(log: String): Boolean {
@@ -141,9 +144,11 @@ class LogcatActivity : BaseActivity(), SwipeRefreshLayout.OnRefreshListener {
 
         R.id.clear_all -> {
             lifecycleScope.launch(Dispatchers.IO) {
-                viewModel.clearLogcat()
+                // UI-only clear. Do not wipe the system logcat ring buffer.
+                viewModel.clearLogcat(wipeSystemBuffer = false)
                 withContext(Dispatchers.Main) {
                     refreshData()
+                    toast(getString(R.string.logcat_clear))
                 }
             }
             true
@@ -154,10 +159,13 @@ class LogcatActivity : BaseActivity(), SwipeRefreshLayout.OnRefreshListener {
 
     override fun onRefresh() {
         lifecycleScope.launch(Dispatchers.IO) {
-            viewModel.loadLogcat()
-            withContext(Dispatchers.Main) {
-                binding.refreshLayout.isRefreshing = false
-                refreshData()
+            try {
+                viewModel.loadLogcat()
+            } finally {
+                withContext(Dispatchers.Main) {
+                    binding.refreshLayout.isRefreshing = false
+                    refreshData()
+                }
             }
         }
     }

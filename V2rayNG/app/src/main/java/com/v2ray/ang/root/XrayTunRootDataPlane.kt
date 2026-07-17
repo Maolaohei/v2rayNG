@@ -204,7 +204,9 @@ object XrayTunRootDataPlane : RootDataPlane {
         val fd = RootTun.currentFd()
         val rules = runCatching { RootProxyManager.isRulesInstalled() }.getOrDefault(false)
         val core = runCatching { CoreServiceManager.isRunning() }.getOrDefault(false)
-        return "engine=xray_tun fd=$fd healthy=$healthy runtimeLive=$live rules=$rules core=$core lastError=$lastError failures=${consecutiveFailures.get()}"
+        return "engine=xray_tun capture=RootTun+MARK fd=$fd healthy=$healthy runtimeLive=$live " +
+            "rules=$rules core=$core lastError=$lastError failures=${consecutiveFailures.get()} " +
+            "note=health-excludes-hev-and-app-level-DoH"
     }
 
     fun lastErrorOrNull(): RootProxyManager.RootError? = lastError
