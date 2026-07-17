@@ -2,9 +2,11 @@ package com.v2ray.ang.ui
 
 import android.content.Context
 import android.content.Intent
+import android.view.LayoutInflater
 import androidx.fragment.app.Fragment
 import android.os.Bundle
 import android.view.View
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
@@ -16,6 +18,7 @@ import androidx.preference.PreferenceScreen
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
+import com.v2ray.ang.databinding.DialogPrivilegeSelfTestBinding
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
@@ -469,18 +472,18 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             progress.show()
 
             viewLifecycleOwner.lifecycleScope.launch {
-                var report: String? = null
+                var ui: PrivilegeSelfTestUi? = null
                 var errorMessage: String? = null
                 try {
-                    // Probe-before is for diagnostics only. Apply settings first so hide/rename
-                    // are active before the fingerprint scan (previous order could false-fail).
+                    // Probe-before is for diagnostics only. Apply settings first so hide
+                    // is active before the fingerprint scan (previous order could false-fail).
                     val probeBefore = withContext(Dispatchers.IO) {
                         PrivilegeSettingsClient.refresh()
                     }
                     val syncOk = withContext(Dispatchers.IO) {
                         PrivilegeSettingsClient.sync()
                     }
-                    // Brief settle after privilege settings sync (hooks / create-time rename flags).
+                    // Brief settle after privilege settings sync.
                     withContext(Dispatchers.IO) {
                         try {
                             Thread.sleep(350)
@@ -495,13 +498,13 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     }
                     if (!isAdded) return@launch
                     refreshPrivilegeSummaries()
-                    report = buildPrivilegeSelfTestReport(
+                    ui = buildPrivilegeSelfTestUi(
                         detection = detection,
                         probeBefore = probeBefore,
                         probeAfter = probeAfter,
                         syncOk = syncOk,
                     )
-                    privilegeSelfTest?.summary = report.lineSequence().firstOrNull().orEmpty()
+                    privilegeSelfTest?.summary = ui.verdict
                 } catch (e: Throwable) {
                     errorMessage = e.message ?: e.javaClass.simpleName
                 } finally {
@@ -515,30 +518,8 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 }
 
                 if (!isAdded) return@launch
-                if (report != null) {
-                    val finalReport = report
-                    val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
-                    val selfPkg = ctx.packageName
-                    val selfMissing = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false) &&
-                        !targets.contains(selfPkg)
-                    val builder = androidx.appcompat.app.AlertDialog.Builder(ctx)
-                        .setTitle(R.string.title_privilege_self_test_result)
-                        .setMessage(finalReport)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .setNeutralButton(R.string.summary_pref_privilege_self_test_copy) { _, _ ->
-                            Utils.setClipboard(ctx, finalReport)
-                            android.widget.Toast.makeText(
-                                ctx,
-                                R.string.toast_privilege_self_test_copied,
-                                android.widget.Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    if (selfMissing) {
-                        builder.setNegativeButton(R.string.action_privilege_add_self) { _, _ ->
-                            addSelfToHideTargets()
-                        }
-                    }
-                    builder.show()
+                if (ui != null) {
+                    showPrivilegeSelfTestDialog(ui)
                 } else {
                     androidx.appcompat.app.AlertDialog.Builder(ctx)
                         .setTitle(R.string.title_privilege_self_test_result)
@@ -587,12 +568,32 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             }
         }
 
-        private fun buildPrivilegeSelfTestReport(
+        private data class PrivilegeSelfTestUi(
+            val level: String, // pass | partial | fail | setup
+            val verdict: String,
+            val headline: String,
+            val javaClean: Boolean,
+            val javaHits: String,
+            val javaIfaces: String,
+            val nativeSeen: Boolean,
+            val nativeIfaces: String,
+            val nativeNote: String,
+            val moduleText: String,
+            val syncText: String,
+            val targetsText: String,
+            val vpnText: String,
+            val portsText: String,
+            val meaning: String,
+            val copyText: String,
+            val selfMissing: Boolean,
+        )
+
+        private fun buildPrivilegeSelfTestUi(
             detection: DetectionResult,
             probeBefore: PrivilegeSettingsClient.Probe,
             probeAfter: PrivilegeSettingsClient.Probe,
             syncOk: Boolean,
-        ): String {
+        ): PrivilegeSelfTestUi {
             val yes = getString(R.string.summary_pref_privilege_self_test_yes)
             val no = getString(R.string.summary_pref_privilege_self_test_no)
             val notDetected = getString(R.string.summary_pref_privilege_self_test_not_detected)
@@ -600,7 +601,6 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
             val packageName = requireContext().packageName
             val selfInList = targets.contains(packageName)
-            // Core lives in :RunSoLibV2RayDaemon; main-process CoreServiceManager is usually empty.
             val running = isCoreLikelyRunning(requireContext(), detection)
 
             fun moduleText(probe: PrivilegeSettingsClient.Probe): String = when (probe.result) {
@@ -620,30 +620,18 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     getString(R.string.summary_pref_privilege_module_status_error)
             }
 
-            // App-facing (Java/Framework) is the primary hide signal.
-            // Native tun* is informational only after iface rename was retired.
             val hardFramework = detection.frameworkDetected.filterNot { it == "MissingNotVpn" }
-            val weakFramework = detection.frameworkDetected.filter { it == "MissingNotVpn" }
-            val frameworkText = hardFramework
-                .takeIf { it.isNotEmpty() }
-                ?.joinToString(", ")
-                ?: if (weakFramework.isNotEmpty()) {
-                    weakFramework.joinToString(", ") + " (weak)"
-                } else {
-                    notDetected
-                }
             val frameworkIfaces = detection.frameworkInterfaces
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(", ")
                 ?: notDetected
-            val nativeIfaces = detection.nativeInterfaces
+            val nativeIfacesRaw = detection.nativeInterfaces
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(", ")
                 ?: notDetected
             val httpProxy = detection.httpProxy?.takeIf { it.isNotBlank() } ?: notDetected
             val javaLeaked = hardFramework.isNotEmpty()
             val nativeSeen = detection.nativeDetected
-            // HTTP proxy env is secondary/rare for modern apps; keep in raw details only.
             val moduleInjected = probeAfter.result == PrivilegeSettingsClient.ProbeResult.ACTIVE ||
                 probeAfter.result == PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE
             val moduleActive = probeAfter.result == PrivilegeSettingsClient.ProbeResult.ACTIVE
@@ -658,12 +646,6 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 bypassApps -> !perAppSet.contains(selfPkg)
                 else -> perAppSet.contains(selfPkg)
             }
-            val gateText = when {
-                !running -> getString(R.string.summary_pref_privilege_self_test_gate_core_off)
-                !selfInList -> getString(R.string.summary_pref_privilege_self_test_gate_not_listed)
-                !likelyInTunnel -> getString(R.string.summary_pref_privilege_self_test_gate_outside_tunnel)
-                else -> getString(R.string.summary_pref_privilege_self_test_gate_ok)
-            }
 
             val setupIssue = !moduleInjected ||
                 probeAfter.result == PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ||
@@ -671,6 +653,13 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 targets.isEmpty() ||
                 !running ||
                 !selfInList
+
+            val level = when {
+                setupIssue -> "setup"
+                javaLeaked -> "fail"
+                nativeSeen -> "partial"
+                else -> "pass"
+            }
 
             val verdict = when {
                 !moduleInjected ->
@@ -693,26 +682,23 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     getString(R.string.summary_pref_privilege_self_test_verdict_hook_inactive)
             }
 
-            val headline = when {
-                setupIssue ->
-                    getString(R.string.summary_pref_privilege_self_test_headline_setup)
-                javaLeaked ->
-                    getString(R.string.summary_pref_privilege_self_test_headline_fail)
-                nativeSeen ->
-                    getString(R.string.summary_pref_privilege_self_test_headline_partial)
-                else ->
-                    getString(R.string.summary_pref_privilege_self_test_headline_pass)
+            val headline = when (level) {
+                "setup" -> getString(R.string.summary_pref_privilege_self_test_headline_setup)
+                "fail" -> getString(R.string.summary_pref_privilege_self_test_headline_fail)
+                "partial" -> getString(R.string.summary_pref_privilege_self_test_headline_partial)
+                else -> getString(R.string.summary_pref_privilege_self_test_headline_pass)
             }
 
-            val meaning = when {
-                setupIssue ->
-                    getString(R.string.summary_pref_privilege_self_test_note)
-                javaLeaked ->
-                    getString(R.string.summary_pref_privilege_self_test_meaning_fail)
-                nativeSeen ->
-                    getString(R.string.summary_pref_privilege_self_test_meaning_partial)
-                else ->
-                    getString(R.string.summary_pref_privilege_self_test_meaning_ok)
+            val meaningCore = when (level) {
+                "setup" -> getString(R.string.summary_pref_privilege_self_test_note)
+                "fail" -> getString(R.string.summary_pref_privilege_self_test_meaning_fail)
+                "partial" -> getString(R.string.summary_pref_privilege_self_test_meaning_partial)
+                else -> getString(R.string.summary_pref_privilege_self_test_meaning_ok)
+            }
+            val meaning = if (level == "setup") {
+                meaningCore
+            } else {
+                meaningCore + "\n" + getString(R.string.summary_pref_privilege_self_test_note)
             }
 
             val portsStatus = PrivilegePortsManager.status(requireContext())
@@ -722,98 +708,64 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 else -> getString(R.string.summary_pref_privilege_ports_status_on, portsStatus.appliedUids)
             }
 
-            return buildString {
-                // Line 1 is also Preference summary — keep short and non-alarming.
+            val nativeNote = if (nativeSeen) {
+                getString(R.string.summary_pref_privilege_self_test_mask_off)
+            } else {
+                getString(R.string.summary_pref_privilege_self_test_native_ok)
+            }
+
+            val copyText = buildString {
                 appendLine(verdict)
                 appendLine(headline)
                 appendLine()
-
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_java))
-                if (javaLeaked) {
-                    appendLine(
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_java_title))
+                appendLine(
+                    if (javaLeaked) {
                         getString(
                             R.string.summary_pref_privilege_self_test_java_hit,
                             hardFramework.joinToString(", "),
-                        ),
-                    )
-                } else {
-                    appendLine(getString(R.string.summary_pref_privilege_self_test_java_ok))
-                }
-                if (weakFramework.isNotEmpty()) {
-                    appendLine(
-                        getString(
-                            R.string.summary_pref_privilege_self_test_weak,
-                            weakFramework.joinToString(", "),
-                        ),
-                    )
-                }
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_framework_ifaces,
-                        frameworkIfaces,
-                    ),
+                        )
+                    } else {
+                        getString(R.string.summary_pref_privilege_self_test_java_ok)
+                    },
                 )
+                appendLine(getString(R.string.summary_pref_privilege_self_test_framework_ifaces, frameworkIfaces))
                 appendLine()
-
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_native))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_native_title))
                 if (nativeSeen) {
                     appendLine(
                         getString(
                             R.string.summary_pref_privilege_self_test_native_seen,
-                            nativeIfaces,
+                            nativeIfacesRaw,
                         ),
                     )
                 } else {
                     appendLine(getString(R.string.summary_pref_privilege_self_test_native_ok))
                 }
-                appendLine(getString(R.string.summary_pref_privilege_self_test_mask_off))
                 appendLine()
-
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_conditions))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_conditions_title))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_setup_module, moduleText(probeAfter)))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_setup_sync, if (syncOk) yes else no))
                 appendLine(
                     getString(
-                        R.string.summary_pref_privilege_self_test_module_after,
-                        moduleText(probeAfter),
-                    ),
-                )
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_sync,
-                        if (syncOk) yes else no,
-                    ),
-                )
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_hide,
-                        if (hideEnabled) yes else no,
-                    ),
-                )
-                appendLine(getString(R.string.summary_pref_privilege_self_test_targets, targets.size))
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_self_in_list,
+                        R.string.summary_pref_privilege_self_test_setup_targets,
+                        targets.size,
                         if (selfInList) yes else no,
                     ),
                 )
                 appendLine(
                     getString(
-                        R.string.summary_pref_privilege_self_test_vpn,
+                        R.string.summary_pref_privilege_self_test_setup_vpn,
                         if (running) yes else no,
-                    ),
-                )
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_in_tunnel,
                         if (likelyInTunnel) yes else no,
                     ),
                 )
-                appendLine(getString(R.string.summary_pref_privilege_self_test_gate, gateText))
-                appendLine(getString(R.string.summary_pref_privilege_self_test_ports, portsText))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_setup_ports, portsText))
                 appendLine()
-
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_note_title))
+                appendLine(meaning)
+                appendLine()
                 appendLine(getString(R.string.summary_pref_privilege_self_test_section_fingerprints))
-                appendLine(getString(R.string.summary_pref_privilege_self_test_framework, frameworkText))
-                appendLine(getString(R.string.summary_pref_privilege_self_test_native_ifaces, nativeIfaces))
                 appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy_line, httpProxy))
                 appendLine(
                     getString(
@@ -821,12 +773,108 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                         moduleText(probeBefore),
                     ),
                 )
-                appendLine()
-
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_note))
-                appendLine(meaning)
-                append(getString(R.string.summary_pref_privilege_self_test_note))
             }
+
+            return PrivilegeSelfTestUi(
+                level = level,
+                verdict = verdict,
+                headline = headline,
+                javaClean = !javaLeaked,
+                javaHits = hardFramework.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: notDetected,
+                javaIfaces = frameworkIfaces,
+                nativeSeen = nativeSeen,
+                nativeIfaces = nativeIfacesRaw,
+                nativeNote = nativeNote,
+                moduleText = getString(
+                    R.string.summary_pref_privilege_self_test_setup_module,
+                    moduleText(probeAfter),
+                ),
+                syncText = getString(
+                    R.string.summary_pref_privilege_self_test_setup_sync,
+                    if (syncOk) yes else no,
+                ),
+                targetsText = getString(
+                    R.string.summary_pref_privilege_self_test_setup_targets,
+                    targets.size,
+                    if (selfInList) yes else no,
+                ),
+                vpnText = getString(
+                    R.string.summary_pref_privilege_self_test_setup_vpn,
+                    if (running) yes else no,
+                    if (likelyInTunnel) yes else no,
+                ),
+                portsText = getString(R.string.summary_pref_privilege_self_test_setup_ports, portsText),
+                meaning = meaning,
+                copyText = copyText,
+                selfMissing = hideEnabled && !selfInList,
+            )
+        }
+
+        private fun showPrivilegeSelfTestDialog(ui: PrivilegeSelfTestUi) {
+            if (!isAdded) return
+            val ctx = requireContext()
+            val binding = DialogPrivilegeSelfTestBinding.inflate(LayoutInflater.from(ctx))
+
+            val statusBg = when (ui.level) {
+                "pass" -> R.drawable.bg_privilege_status_pass
+                "fail" -> R.drawable.bg_privilege_status_fail
+                else -> R.drawable.bg_privilege_status_partial
+            }
+            binding.statusCard.setBackgroundResource(statusBg)
+            binding.tvStatusTitle.text = ui.verdict
+            binding.tvStatusHeadline.text = ui.headline
+
+            if (ui.javaClean) {
+                binding.tvJavaPill.text = getString(R.string.summary_pref_privilege_self_test_pill_clean)
+                binding.tvJavaPill.setBackgroundResource(R.drawable.bg_privilege_pill_ok)
+                binding.tvJavaPill.setTextColor(ContextCompat.getColor(ctx, R.color.color_privilege_ok_text))
+            } else {
+                binding.tvJavaPill.text = getString(R.string.summary_pref_privilege_self_test_pill_exposed)
+                binding.tvJavaPill.setBackgroundResource(R.drawable.bg_privilege_pill_fail)
+                binding.tvJavaPill.setTextColor(ContextCompat.getColor(ctx, R.color.color_privilege_fail_text))
+            }
+            binding.tvJavaHits.text = ui.javaHits
+            binding.tvJavaIfaces.text = ui.javaIfaces
+
+            if (ui.nativeSeen) {
+                binding.tvNativePill.text = getString(
+                    R.string.summary_pref_privilege_self_test_pill_native_seen,
+                    ui.nativeIfaces,
+                )
+                binding.tvNativePill.setBackgroundResource(R.drawable.bg_privilege_pill_warn)
+                binding.tvNativePill.setTextColor(ContextCompat.getColor(ctx, R.color.color_privilege_warn_text))
+            } else {
+                binding.tvNativePill.text = getString(R.string.summary_pref_privilege_self_test_pill_native_ok)
+                binding.tvNativePill.setBackgroundResource(R.drawable.bg_privilege_pill_ok)
+                binding.tvNativePill.setTextColor(ContextCompat.getColor(ctx, R.color.color_privilege_ok_text))
+            }
+            binding.tvNativeNote.text = ui.nativeNote
+
+            binding.tvSetupModule.text = ui.moduleText
+            binding.tvSetupSync.text = ui.syncText
+            binding.tvSetupTargets.text = ui.targetsText
+            binding.tvSetupVpn.text = ui.vpnText
+            binding.tvSetupPorts.text = ui.portsText
+            binding.tvMeaning.text = ui.meaning
+
+            val builder = androidx.appcompat.app.AlertDialog.Builder(ctx)
+                .setTitle(R.string.title_privilege_self_test_result)
+                .setView(binding.root)
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.summary_pref_privilege_self_test_copy) { _, _ ->
+                    Utils.setClipboard(ctx, ui.copyText)
+                    android.widget.Toast.makeText(
+                        ctx,
+                        R.string.toast_privilege_self_test_copied,
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            if (ui.selfMissing) {
+                builder.setNegativeButton(R.string.action_privilege_add_self) { _, _ ->
+                    addSelfToHideTargets()
+                }
+            }
+            builder.show()
         }
 
         private fun refreshPrivilegeSummaries() {

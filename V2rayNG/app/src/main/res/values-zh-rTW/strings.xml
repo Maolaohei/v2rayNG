@@ -598,4 +598,21 @@
     <string name="summary_pref_privilege_self_test_meaning_ok">含義：隱藏名單內的目標 App 通常看不到常見 VPN API。隱藏不改變路由。</string>
     <string name="summary_pref_privilege_self_test_meaning_partial">含義：Java API 隱藏在工作。這裡看到 tun0 不等於隱藏失敗 — 多數 App 不只靠原始網卡名判定。</string>
     <string name="summary_pref_privilege_self_test_meaning_fail">含義：目前進程仍能透過部分 API 看到 VPN。請重新同步、確認 LSPosed 作用域、重啟後再開 VPN 複測。</string>
+    <string name="summary_pref_privilege_self_test_status_label">狀態</string>
+    <string name="summary_pref_privilege_self_test_section_java_title">Java / Framework（多數 App 會查這裡）</string>
+    <string name="summary_pref_privilege_self_test_section_native_title">原生網卡（僅供參考）</string>
+    <string name="summary_pref_privilege_self_test_section_conditions_title">前置條件</string>
+    <string name="summary_pref_privilege_self_test_section_note_title">如何解讀</string>
+    <string name="summary_pref_privilege_self_test_row_result">結果</string>
+    <string name="summary_pref_privilege_self_test_row_hits">命中</string>
+    <string name="summary_pref_privilege_self_test_row_ifaces">網卡</string>
+    <string name="summary_pref_privilege_self_test_pill_clean">乾淨</string>
+    <string name="summary_pref_privilege_self_test_pill_exposed">仍暴露</string>
+    <string name="summary_pref_privilege_self_test_pill_native_ok">未見 tun/ppp/tap</string>
+    <string name="summary_pref_privilege_self_test_pill_native_seen">可見 %1$s</string>
+    <string name="summary_pref_privilege_self_test_setup_module">模組：%1$s</string>
+    <string name="summary_pref_privilege_self_test_setup_sync">設定同步：%1$s</string>
+    <string name="summary_pref_privilege_self_test_setup_targets">目標：%1$d · 本應用在名單：%2$s</string>
+    <string name="summary_pref_privilege_self_test_setup_vpn">VPN：%1$s · 隧道內：%2$s</string>
+    <string name="summary_pref_privilege_self_test_setup_ports">回環攔截：%1$s</string>
 </resources>

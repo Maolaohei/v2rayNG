@@ -51,5 +51,13 @@
     <color name="md_theme_scrim">#000000</color>
     <color name="color_home_node_selected_bg">#33f97910</color>
     <color name="color_home_status_running">#33009966</color>
+    <color name="color_privilege_ok_text">#78E0A7</color>
+    <color name="color_privilege_ok_bg">#332FBF71</color>
+    <color name="color_privilege_warn_text">#F0C453</color>
+    <color name="color_privilege_warn_bg">#33E0A100</color>
+    <color name="color_privilege_fail_text">#F19AA3</color>
+    <color name="color_privilege_fail_bg">#33E35D6A</color>
+    <color name="color_privilege_section_stroke">#33FFFFFF</color>
 </resources>
+
 

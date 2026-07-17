@@ -691,4 +691,21 @@
     <string name="summary_pref_privilege_self_test_meaning_ok">Meaning: target apps in the hide list should not see common VPN APIs. Traffic routing is unchanged.</string>
     <string name="summary_pref_privilege_self_test_meaning_partial">Meaning: hide is doing its job for Java APIs. Seeing tun0 here does NOT mean hide failed — apps rarely rely on raw iface names alone.</string>
     <string name="summary_pref_privilege_self_test_meaning_fail">Meaning: selected APIs still expose VPN to this process. Re-sync, confirm LSPosed scope, reboot, then retest with VPN on.</string>
+    <string name="summary_pref_privilege_self_test_status_label">Status</string>
+    <string name="summary_pref_privilege_self_test_section_java_title">Java / Framework (what most apps check)</string>
+    <string name="summary_pref_privilege_self_test_section_native_title">Native interface (informational)</string>
+    <string name="summary_pref_privilege_self_test_section_conditions_title">Setup</string>
+    <string name="summary_pref_privilege_self_test_section_note_title">How to read this</string>
+    <string name="summary_pref_privilege_self_test_row_result">Result</string>
+    <string name="summary_pref_privilege_self_test_row_hits">Hits</string>
+    <string name="summary_pref_privilege_self_test_row_ifaces">Interfaces</string>
+    <string name="summary_pref_privilege_self_test_pill_clean">Clean</string>
+    <string name="summary_pref_privilege_self_test_pill_exposed">Exposed</string>
+    <string name="summary_pref_privilege_self_test_pill_native_ok">No tun/ppp/tap</string>
+    <string name="summary_pref_privilege_self_test_pill_native_seen">Visible %1$s</string>
+    <string name="summary_pref_privilege_self_test_setup_module">Module: %1$s</string>
+    <string name="summary_pref_privilege_self_test_setup_sync">Settings synced: %1$s</string>
+    <string name="summary_pref_privilege_self_test_setup_targets">Targets: %1$d · this app in list: %2$s</string>
+    <string name="summary_pref_privilege_self_test_setup_vpn">VPN: %1$s · in tunnel: %2$s</string>
+    <string name="summary_pref_privilege_self_test_setup_ports">Localhost block: %1$s</string>
 </resources>
