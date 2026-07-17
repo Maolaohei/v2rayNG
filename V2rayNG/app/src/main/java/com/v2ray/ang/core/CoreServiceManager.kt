@@ -533,7 +533,10 @@ object CoreServiceManager {
      */
     private fun dupTunFdOrThrow(sourceFd: Int, label: String): Int {
         return try {
-            val dup = android.system.Os.dup(sourceFd)
+            // android.system.Os.dup(FileDescriptor) returns FileDescriptor, not Int.
+            // ParcelFileDescriptor.fromFd() already dups the source; detachFd() transfers
+            // that dup as a raw int for libv2ray while Kotlin retains the original TUN.
+            val dup = ParcelFileDescriptor.fromFd(sourceFd).detachFd()
             if (dup <= 0) {
                 error("$label TUN dup returned invalid fd=$dup from source=$sourceFd")
             }
