@@ -1,12 +1,11 @@
-package com.v2ray.ang.xposed.hooks.hidevpnapp
+﻿package com.v2ray.ang.xposed.hooks.hidevpnapp
 
 import android.content.pm.ResolveInfo
 import android.os.Binder
 import android.os.Build
 import android.os.Process
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.xposed.HookErrorStore
 import com.v2ray.ang.xposed.PrivilegeSettingsStore
@@ -52,17 +51,17 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
     }
 
     private fun hookAppsFilter33Plus(hooked: MutableList<String>) {
-        val cls = XposedHelpers.findClassIfExists("com.android.server.pm.AppsFilterImpl", classLoader)
+        val cls = XposedApi.findClassIfExists("com.android.server.pm.AppsFilterImpl", classLoader)
         if (cls == null) {
             HookErrorStore.e(SOURCE, "Class com.android.server.pm.AppsFilterImpl not found")
             return
         }
         val unhooks = try {
-            XposedBridge.hookAllMethods(
+            XposedApi.hookAllMethods(
                 cls,
                 "shouldFilterApplication",
                 object : SafeMethodHook(SOURCE) {
-                    override fun beforeHook(param: MethodHookParam) {
+                    override fun beforeHook(param: SafeMethodHook.HookParam) {
                         val callingUid = param.args[1] as Int
                         val callerPackages = getCallerPackages(callingUid) ?: return
                         val target = param.args[3]!!
@@ -75,7 +74,7 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
             )
         } catch (e: Throwable) {
             HookErrorStore.w(SOURCE, "Skip AppsFilterImpl.shouldFilterApplication: ${e.message}", e)
-            emptySet<XC_MethodHook.Unhook>()
+            emptySet<Any>()
         }
         if (unhooks.isNotEmpty()) {
             hooked.add("AppsFilterImpl.shouldFilterApplication")
@@ -83,17 +82,17 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
     }
 
     private fun hookAppsFilter30(hooked: MutableList<String>) {
-        val cls = XposedHelpers.findClassIfExists("com.android.server.pm.AppsFilter", classLoader)
+        val cls = XposedApi.findClassIfExists("com.android.server.pm.AppsFilter", classLoader)
         if (cls == null) {
             HookErrorStore.e(SOURCE, "Class com.android.server.pm.AppsFilter not found")
             return
         }
         val unhooks = try {
-            XposedBridge.hookAllMethods(
+            XposedApi.hookAllMethods(
                 cls,
                 "shouldFilterApplication",
                 object : SafeMethodHook(SOURCE) {
-                    override fun beforeHook(param: MethodHookParam) {
+                    override fun beforeHook(param: SafeMethodHook.HookParam) {
                         val callingUid = param.args[0] as Int
                         val callerPackages = getCallerPackages(callingUid) ?: return
                         val target = param.args[2]!!
@@ -106,7 +105,7 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
             )
         } catch (e: Throwable) {
             HookErrorStore.w(SOURCE, "Skip AppsFilter.shouldFilterApplication: ${e.message}", e)
-            emptySet<XC_MethodHook.Unhook>()
+            emptySet<Any>()
         }
         if (unhooks.isNotEmpty()) {
             hooked.add("AppsFilter.shouldFilterApplication")
@@ -114,17 +113,17 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
     }
 
     private fun hookArchivedPackageInternal(hooked: MutableList<String>) {
-        val cls = XposedHelpers.findClassIfExists("com.android.server.pm.PackageManagerService", classLoader)
+        val cls = XposedApi.findClassIfExists("com.android.server.pm.PackageManagerService", classLoader)
         if (cls == null) {
             HookErrorStore.e(SOURCE, "Class com.android.server.pm.PackageManagerService not found")
             return
         }
         val unhooks = try {
-            XposedBridge.hookAllMethods(
+            XposedApi.hookAllMethods(
                 cls,
                 "getArchivedPackageInternal",
                 object : SafeMethodHook(SOURCE) {
-                    override fun beforeHook(param: MethodHookParam) {
+                    override fun beforeHook(param: SafeMethodHook.HookParam) {
                         val callingUid = Binder.getCallingUid()
                         val callerPackages = getCallerPackages(callingUid) ?: return
                         val targetPackage = param.args[0]!!.toString()
@@ -136,7 +135,7 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
             )
         } catch (e: Throwable) {
             HookErrorStore.w(SOURCE, "Skip PackageManagerService.getArchivedPackageInternal: ${e.message}", e)
-            emptySet<XC_MethodHook.Unhook>()
+            emptySet<Any>()
         }
         if (unhooks.isNotEmpty()) {
             hooked.add("PackageManagerService.getArchivedPackageInternal")
@@ -144,17 +143,17 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
     }
 
     private fun hookPmsLegacy(hooked: MutableList<String>) {
-        val cls = XposedHelpers.findClassIfExists("com.android.server.pm.PackageManagerService", classLoader)
+        val cls = XposedApi.findClassIfExists("com.android.server.pm.PackageManagerService", classLoader)
         if (cls == null) {
             HookErrorStore.e(SOURCE, "Class com.android.server.pm.PackageManagerService not found")
             return
         }
         val filterHooks = try {
-            XposedBridge.hookAllMethods(
+            XposedApi.hookAllMethods(
                 cls,
                 "filterAppAccessLPr",
                 object : SafeMethodHook(SOURCE) {
-                    override fun beforeHook(param: MethodHookParam) {
+                    override fun beforeHook(param: SafeMethodHook.HookParam) {
                         val callingUid = param.args[1] as Int
                         val callerPackages = getCallerPackages(callingUid) ?: return
                         val target = param.args[0]!!
@@ -167,18 +166,18 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
             )
         } catch (e: Throwable) {
             HookErrorStore.w(SOURCE, "Skip PackageManagerService.filterAppAccessLPr: ${e.message}", e)
-            emptySet<XC_MethodHook.Unhook>()
+            emptySet<Any>()
         }
         if (filterHooks.isNotEmpty()) {
             hooked.add("PackageManagerService.filterAppAccessLPr")
         }
 
         val resolutionHooks = try {
-            XposedBridge.hookAllMethods(
+            XposedApi.hookAllMethods(
                 cls,
                 "applyPostResolutionFilter",
                 object : SafeMethodHook(SOURCE) {
-                    override fun afterHook(param: MethodHookParam) {
+                    override fun afterHook(param: SafeMethodHook.HookParam) {
                         val callingUid = param.args[3] as Int
                         val callerPackages = getCallerPackages(callingUid) ?: return
                         val rawResult = param.result ?: return
@@ -222,7 +221,7 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
             )
         } catch (e: Throwable) {
             HookErrorStore.w(SOURCE, "Skip PackageManagerService.applyPostResolutionFilter: ${e.message}", e)
-            emptySet<XC_MethodHook.Unhook>()
+            emptySet<Any>()
         }
         if (resolutionHooks.isNotEmpty()) {
             hooked.add("PackageManagerService.applyPostResolutionFilter")
@@ -283,7 +282,7 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
         }
         val fields = arrayOf("packageName", "mPackageName", "name", "mName")
         for (name in fields) {
-            val field = XposedHelpers.findFieldIfExists(arg.javaClass, name) ?: continue
+            val field = XposedApi.findFieldIfExists(arg.javaClass, name) ?: continue
             try {
                 val result = field.get(arg) as String?
                 if (!result.isNullOrEmpty()) {
@@ -297,3 +296,4 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
         return null
     }
 }
+

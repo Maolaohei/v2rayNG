@@ -3,7 +3,7 @@ package com.v2ray.ang.xposed.hooks.hidevpn
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
 import android.os.Binder
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
 
 class HookConnectivityManagerGetAllNetworkInfo(private val helper: ConnectivityServiceHookHelper) {
@@ -12,11 +12,11 @@ class HookConnectivityManagerGetAllNetworkInfo(private val helper: ConnectivityS
     }
 
     fun install() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getAllNetworkInfo",
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     @Suppress("UNCHECKED_CAST")

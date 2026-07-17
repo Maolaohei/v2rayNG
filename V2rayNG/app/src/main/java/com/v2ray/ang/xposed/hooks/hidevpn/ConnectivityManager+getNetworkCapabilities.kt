@@ -3,7 +3,7 @@ package com.v2ray.ang.xposed.hooks.hidevpn
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Binder
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.HookErrorStore
 import com.v2ray.ang.xposed.VpnSanitizer
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
@@ -69,14 +69,14 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
     }
 
     private fun hookNetworkCapabilitiesRestricted() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "networkCapabilitiesRestrictedForCallerPermissions",
             NetworkCapabilities::class.java,
             Int::class.javaPrimitiveType,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val callerUid = param.args[2] as Int
                     val nc = param.result as? NetworkCapabilities ?: return
                     if (!nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return
@@ -88,12 +88,12 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
     }
 
     private fun hookGetNetworkCapabilitiesV8() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getNetworkCapabilities",
             Network::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     sanitizeNetworkCapabilitiesResult(param)
                 }
             },
@@ -101,13 +101,13 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
     }
 
     private fun hookGetNetworkCapabilitiesV11() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getNetworkCapabilities",
             Network::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     sanitizeNetworkCapabilitiesResult(param)
                 }
             },
@@ -115,21 +115,21 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
     }
 
     private fun hookGetNetworkCapabilitiesV12() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getNetworkCapabilities",
             Network::class.java,
             String::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     sanitizeNetworkCapabilitiesResult(param)
                 }
             },
         )
     }
 
-    private fun sanitizeNetworkCapabilitiesResult(param: de.robv.android.xposed.XC_MethodHook.MethodHookParam) {
+    private fun processJniGetNameResult(param: SafeMethodHook.HookParam) {
         val uid = Binder.getCallingUid()
         if (!helper.shouldHide(param.thisObject, uid)) return
         val nc = param.result as? NetworkCapabilities ?: return
@@ -138,7 +138,7 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
     }
 
     private fun hookCreateWithLocationInfoSanitized() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "createWithLocationInfoSanitizedIfNecessaryWhenParceled",
             NetworkCapabilities::class.java,
@@ -148,7 +148,7 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
             String::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val callerUid = param.args[3] as Int
                     if (!helper.shouldHide(param.thisObject, callerUid)) return
                     val nc = param.result as? NetworkCapabilities ?: return

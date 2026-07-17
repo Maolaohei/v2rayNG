@@ -7,8 +7,7 @@ import android.net.NetworkInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.Parcel
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.HookErrorStore
 import com.v2ray.ang.xposed.PrivilegeSettingsStore
 import com.v2ray.ang.xposed.VpnAppStore
@@ -26,8 +25,8 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
 
     private val hooked = AtomicBoolean(false)
     private val initializerHooked = AtomicBoolean(false)
-    private var classLoadUnhook: XC_MethodHook.Unhook? = null
-    private var onTransactUnhook: XC_MethodHook.Unhook? = null
+    private var classLoadUnhook: Any? = null
+    private var onTransactUnhook: Any? = null
     private val serviceManagerHooked = AtomicBoolean(false)
     private var connectivityClassLoader: ClassLoader = classLoader
     private val skipLogKeys = ConcurrentHashMap<String, Boolean>()
@@ -212,11 +211,11 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                     if (initializerHooked.get()) {
                         return
                     }
-                    XposedHelpers.findAndHookConstructor(
+                    XposedApi.findAndHookConstructor(
                         cls,
                         Context::class.java,
                         object : SafeMethodHook(SOURCE) {
-                            override fun afterHook(param: MethodHookParam) {
+                            override fun afterHook(param: SafeMethodHook.HookParam) {
                                 if (hooked.get()) return
                                 val instance = param.thisObject ?: return
                                 val connectivity = findConnectivityServiceInstance(instance) ?: return
@@ -224,11 +223,11 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                             }
                         },
                     )
-                    XposedHelpers.findAndHookMethod(
+                    XposedApi.findAndHookMethod(
                         cls,
                         "onStart",
                         object : SafeMethodHook(SOURCE) {
-                            override fun afterHook(param: MethodHookParam) {
+                            override fun afterHook(param: SafeMethodHook.HookParam) {
                                 if (hooked.get()) return
                                 val instance = param.thisObject ?: return
                                 val connectivity = findConnectivityServiceInstance(instance) ?: return
@@ -255,13 +254,13 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
             return
         }
         try {
-            classLoadUnhook = XposedHelpers.findAndHookMethod(
+            classLoadUnhook = XposedApi.findAndHookMethod(
                 ClassLoader::class.java,
                 "loadClass",
                 String::class.java,
                 Boolean::class.javaPrimitiveType,
                 object : SafeMethodHook(SOURCE) {
-                    override fun afterHook(param: MethodHookParam) {
+                    override fun afterHook(param: SafeMethodHook.HookParam) {
                         val name = param.args[0] as? String ?: return
                         if (hooked.get()) {
                             classLoadUnhook?.unhook()
@@ -325,7 +324,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         }
         try {
             val serviceManager = Class.forName("android.os.ServiceManager")
-            XposedHelpers.findAndHookMethod(
+            XposedApi.findAndHookMethod(
                 serviceManager,
                 "addService",
                 String::class.java,
@@ -333,7 +332,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                 Boolean::class.javaPrimitiveType,
                 Int::class.javaPrimitiveType,
                 object : SafeMethodHook(SOURCE) {
-                    override fun afterHook(param: MethodHookParam) {
+                    override fun afterHook(param: SafeMethodHook.HookParam) {
                         if (hooked.get()) return
                         val name = param.args[0] as? String ?: return
                         if (name != Context.CONNECTIVITY_SERVICE) return
@@ -355,8 +354,8 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
     private fun hookOnTransactFallback() {
         if (onTransactUnhook != null) return
         try {
-            val stub = XposedHelpers.findClass("android.net.IConnectivityManager\$Stub", classLoader)
-            onTransactUnhook = XposedHelpers.findAndHookMethod(
+            val stub = XposedApi.findClass("android.net.IConnectivityManager\$Stub", classLoader)
+            onTransactUnhook = XposedApi.findAndHookMethod(
                 stub,
                 "onTransact",
                 Int::class.javaPrimitiveType,
@@ -364,7 +363,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                 Parcel::class.java,
                 Int::class.javaPrimitiveType,
                 object : SafeMethodHook(SOURCE) {
-                    override fun beforeHook(param: MethodHookParam) {
+                    override fun beforeHook(param: SafeMethodHook.HookParam) {
                         if (hooked.get()) {
                             onTransactUnhook?.unhook()
                             onTransactUnhook = null
@@ -391,11 +390,11 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         if (sdkInt < 31) return
         if (initializerHooked.get()) return
         try {
-            XposedHelpers.findAndHookConstructor(
+            XposedApi.findAndHookConstructor(
                 cls,
                 Context::class.java,
                 object : SafeMethodHook(SOURCE) {
-                    override fun afterHook(param: MethodHookParam) {
+                    override fun afterHook(param: SafeMethodHook.HookParam) {
                         if (hooked.get()) return
                         val instance = param.thisObject ?: return
                         val connectivity = findConnectivityServiceInstance(instance) ?: return
@@ -403,11 +402,11 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                     }
                 },
             )
-            XposedHelpers.findAndHookMethod(
+            XposedApi.findAndHookMethod(
                 cls,
                 "onStart",
                 object : SafeMethodHook(SOURCE) {
-                    override fun afterHook(param: MethodHookParam) {
+                    override fun afterHook(param: SafeMethodHook.HookParam) {
                         if (hooked.get()) return
                         val instance = param.thisObject ?: return
                         val connectivity = findConnectivityServiceInstance(instance) ?: return
@@ -424,7 +423,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
 
     private fun findConnectivityServiceInstance(instance: Any): Any? {
         try {
-            val direct = XposedHelpers.getObjectField(instance, "mConnectivity")
+            val direct = XposedApi.getObjectField(instance, "mConnectivity")
             if (direct != null) {
                 return direct
             }
@@ -496,13 +495,13 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         return if (method != null) {
             method.invoke(nai) as Network?
         } else {
-            XposedHelpers.getObjectField(nai, "network") as? Network
+            XposedApi.getObjectField(nai, "network") as? Network
         }
     }
 
     fun getUnderlyingLinkProperties(connectivityService: Any, uid: Int): LinkProperties? {
         val nai = getUnderlyingNai(connectivityService, uid) ?: return null
-        val lp = XposedHelpers.getObjectField(nai, "linkProperties") as LinkProperties? ?: return null
+        val lp = XposedApi.getObjectField(nai, "linkProperties") as LinkProperties? ?: return null
         return VpnSanitizer.cloneLinkProperties(lp)
     }
 
@@ -512,7 +511,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         if (method != null) {
             return method.invoke(connectivityService, nai, uid, false) as NetworkInfo?
         }
-        return XposedHelpers.getObjectField(nai, "networkInfo") as? NetworkInfo
+        return XposedApi.getObjectField(nai, "networkInfo") as? NetworkInfo
     }
 
     fun getUnderlyingNai(connectivityService: Any, uid: Int): Any? {
@@ -567,11 +566,11 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
             "$serverPackage.$simpleClassName"
         }
 
-        return XposedHelpers.findClass(fullClassName, connectivityClassLoader)
+        return XposedApi.findClass(fullClassName, connectivityClassLoader)
     }
 
     fun resolveNriAndNaiClasses(): Pair<Class<*>, Class<*>> {
-        val nriClass = XposedHelpers.findClass(
+        val nriClass = XposedApi.findClass(
             cls.name + '$' + "NetworkRequestInfo",
             connectivityClassLoader,
         )
@@ -581,7 +580,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
 
     fun getAsUid(nri: Any): Int {
         val fieldName = if (sdkInt >= 31) "mAsUid" else "mUid"
-        return XposedHelpers.getIntField(nri, fieldName)
+        return XposedApi.getIntField(nri, fieldName)
     }
 
     fun logSkipOnce(uid: Int, reason: String, message: String) {
@@ -593,3 +592,4 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
 
     // endregion
 }
+

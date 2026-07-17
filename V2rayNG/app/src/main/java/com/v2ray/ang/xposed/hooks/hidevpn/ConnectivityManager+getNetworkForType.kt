@@ -2,7 +2,7 @@ package com.v2ray.ang.xposed.hooks.hidevpn
 
 import android.net.ConnectivityManager
 import android.os.Binder
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
 
 class HookConnectivityManagerGetNetworkForType(private val helper: ConnectivityServiceHookHelper) {
@@ -11,12 +11,12 @@ class HookConnectivityManagerGetNetworkForType(private val helper: ConnectivityS
     }
 
     fun install() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getNetworkForType",
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val type = param.args[0] as Int
                     if (type != ConnectivityManager.TYPE_VPN) return
                     val uid = Binder.getCallingUid()

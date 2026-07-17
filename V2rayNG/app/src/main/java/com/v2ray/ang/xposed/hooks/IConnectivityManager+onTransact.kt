@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.pm.PackageInfo
 import android.os.Binder
 import android.os.Parcel
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.xposed.ipc.PackageEntry
 import com.v2ray.ang.xposed.ipc.ParceledListSlice
@@ -19,9 +19,9 @@ class HookIConnectivityManagerOnTransact(private val classLoader: ClassLoader, p
     }
 
     override fun injectHook() {
-        val stub = XposedHelpers.findClass("android.net.IConnectivityManager\$Stub", classLoader)
-        val descriptor = XposedHelpers.getStaticObjectField(stub, "DESCRIPTOR") as String
-        XposedHelpers.findAndHookMethod(
+        val stub = XposedApi.findClass("android.net.IConnectivityManager\$Stub", classLoader)
+        val descriptor = XposedApi.getStaticObjectField(stub, "DESCRIPTOR") as String
+        XposedApi.findAndHookMethod(
             stub,
             "onTransact",
             Int::class.javaPrimitiveType,
@@ -29,7 +29,7 @@ class HookIConnectivityManagerOnTransact(private val classLoader: ClassLoader, p
             Parcel::class.java,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val code = param.args[0] as Int
                     if (code != HookStatusKeys.TRANSACTION_STATUS &&
                         code != HookStatusKeys.TRANSACTION_UPDATE_PRIVILEGE_SETTINGS &&

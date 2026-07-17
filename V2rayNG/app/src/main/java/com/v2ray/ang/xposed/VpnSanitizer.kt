@@ -7,7 +7,7 @@ import android.net.ProxyInfo
 import android.os.Build
 import android.os.Parcel
 import android.os.Process
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import java.util.Locale
 
 object VpnSanitizer {
@@ -99,17 +99,17 @@ object VpnSanitizer {
 
     private fun clearUnderlyingNetworks(caps: NetworkCapabilities) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val field = XposedHelpers.findField(NetworkCapabilities::class.java, "mUnderlyingNetworks")
+            val field = XposedApi.findField(NetworkCapabilities::class.java, "mUnderlyingNetworks")
             field.set(caps, null)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val field = XposedHelpers.findFieldIfExists(NetworkCapabilities::class.java, "mUnderlyingNetworks")
+            val field = XposedApi.findFieldIfExists(NetworkCapabilities::class.java, "mUnderlyingNetworks")
             field?.set(caps, null)
         }
     }
 
     private fun clearOwnerUid(caps: NetworkCapabilities) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val field = XposedHelpers.findField(NetworkCapabilities::class.java, "mOwnerUid")
+            val field = XposedApi.findField(NetworkCapabilities::class.java, "mOwnerUid")
             field.setInt(caps, Process.INVALID_UID)
         }
     }
@@ -118,7 +118,7 @@ object VpnSanitizer {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return
         }
-        val field = XposedHelpers.findField(NetworkCapabilities::class.java, "mTransportInfo")
+        val field = XposedApi.findField(NetworkCapabilities::class.java, "mTransportInfo")
         val info = field.get(caps) ?: return
         if (info.javaClass.name.contains("VpnTransportInfo")) {
             field.set(caps, null)

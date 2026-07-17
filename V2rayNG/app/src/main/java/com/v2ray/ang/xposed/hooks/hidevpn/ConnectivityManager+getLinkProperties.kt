@@ -4,7 +4,7 @@ import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
 import android.os.Binder
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.HookErrorStore
 import com.v2ray.ang.xposed.VpnSanitizer
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
@@ -37,14 +37,14 @@ class HookConnectivityManagerGetLinkProperties(private val helper: ConnectivityS
     }
 
     private fun hookLinkPropertiesRestricted() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "linkPropertiesRestrictedForCallerPermissions",
             LinkProperties::class.java,
             Int::class.javaPrimitiveType,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val callerUid = param.args[2] as Int
                     val lp = param.result as? LinkProperties ?: return
                     if (!VpnSanitizer.hasVpnInterface(lp)) return
@@ -57,12 +57,12 @@ class HookConnectivityManagerGetLinkProperties(private val helper: ConnectivityS
     }
 
     private fun hookGetLinkProperties() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getLinkProperties",
             Network::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val lp = param.result as? LinkProperties ?: return
@@ -75,12 +75,12 @@ class HookConnectivityManagerGetLinkProperties(private val helper: ConnectivityS
     }
 
     private fun hookGetLinkPropertiesForType() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getLinkPropertiesForType",
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val networkType = param.args[0] as Int

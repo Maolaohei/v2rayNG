@@ -2,10 +2,12 @@ package com.v2ray.ang.xposed
 
 import android.content.Context
 import com.v2ray.ang.xposed.hooks.HookIConnectivityManagerOnTransact
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.hooks.hidevpn.ConnectivityServiceHookHelper
 import com.v2ray.ang.xposed.hooks.hidevpn.HookNetworkCapabilitiesWriteToParcel
 import com.v2ray.ang.xposed.hooks.hidevpn.HookNetworkInterfaceGetName
 import com.v2ray.ang.xposed.hooks.hidevpnapp.HookPackageManagerGetInstalledPackages
+import io.github.libxposed.api.XposedInterface
 
 object HookInstaller {
 
@@ -18,14 +20,18 @@ object HookInstaller {
     private val currentActivityThreadMethod by lazy { activityThreadClass.getMethod("currentActivityThread") }
     private val getSystemContextMethod by lazy { activityThreadClass.getMethod("getSystemContext") }
 
-    fun install(classLoader: ClassLoader) {
+    fun install(classLoader: ClassLoader, modern: XposedInterface? = null) {
+        if (modern != null) {
+            XposedApi.attachModern(modern)
+            HookErrorStore.i(TAG, "modern libxposed interface attached api=${runCatching { modern.apiVersion }.getOrDefault(-1)}")
+        }
         if (installed) {
-            HookErrorStore.i(TAG, "install skipped: already installed")
+            HookErrorStore.i(TAG, "install skipped: already installed modern=${XposedApi.isModern()}")
             return
         }
         installed = true
         val systemContext = resolveSystemContext()
-        HookErrorStore.i(TAG, "handleSystemServerLoaded")
+        HookErrorStore.i(TAG, "handleSystemServerLoaded modern=${XposedApi.isModern()}")
         val hooks = arrayOf(
             ConnectivityServiceHookHelper(classLoader),
             HookIConnectivityManagerOnTransact(classLoader, systemContext),

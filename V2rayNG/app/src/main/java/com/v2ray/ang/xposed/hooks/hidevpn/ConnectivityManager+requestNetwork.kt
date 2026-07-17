@@ -3,7 +3,7 @@ package com.v2ray.ang.xposed.hooks.hidevpn
 import android.net.NetworkCapabilities
 import android.os.Binder
 import android.os.Bundle
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.HookErrorStore
 import com.v2ray.ang.xposed.VpnHideContext
 import com.v2ray.ang.xposed.VpnSanitizer
@@ -129,7 +129,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     // region requestNetwork versions
 
     private fun hookRequestNetworkV8() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "requestNetwork",
             NetworkCapabilities::class.java,
@@ -138,7 +138,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             android.os.IBinder::class.java,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -149,7 +149,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookRequestNetworkV11() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "requestNetwork",
             NetworkCapabilities::class.java,
@@ -159,7 +159,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             Int::class.javaPrimitiveType,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -170,7 +170,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookRequestNetworkV12() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "requestNetwork",
             Int::class.javaPrimitiveType,
@@ -184,7 +184,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[1] as? NetworkCapabilities ?: return
@@ -195,7 +195,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookRequestNetworkV16() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "requestNetwork",
             Int::class.javaPrimitiveType,
@@ -210,7 +210,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[1] as? NetworkCapabilities ?: return
@@ -225,14 +225,14 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     // region listenForNetwork versions
 
     private fun hookListenForNetworkV8() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "listenForNetwork",
             NetworkCapabilities::class.java,
             android.os.Messenger::class.java,
             android.os.IBinder::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -243,7 +243,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookListenForNetworkV11() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "listenForNetwork",
             NetworkCapabilities::class.java,
@@ -251,7 +251,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             android.os.IBinder::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -262,7 +262,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookListenForNetworkV12() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "listenForNetwork",
             NetworkCapabilities::class.java,
@@ -272,7 +272,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -283,7 +283,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookListenForNetworkV16() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "listenForNetwork",
             NetworkCapabilities::class.java,
@@ -294,7 +294,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -309,13 +309,13 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     // region pendingRequestForNetwork versions
 
     private fun hookPendingRequestForNetworkV8() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "pendingRequestForNetwork",
             NetworkCapabilities::class.java,
             android.app.PendingIntent::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -326,14 +326,14 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookPendingRequestForNetworkV11() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "pendingRequestForNetwork",
             NetworkCapabilities::class.java,
             android.app.PendingIntent::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -344,7 +344,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookPendingRequestForNetworkV12() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "pendingRequestForNetwork",
             NetworkCapabilities::class.java,
@@ -352,7 +352,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -367,13 +367,13 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     // region pendingListenForNetwork versions
 
     private fun hookPendingListenForNetworkV8() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "pendingListenForNetwork",
             NetworkCapabilities::class.java,
             android.app.PendingIntent::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -384,14 +384,14 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookPendingListenForNetworkV11() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "pendingListenForNetwork",
             NetworkCapabilities::class.java,
             android.app.PendingIntent::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -402,7 +402,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookPendingListenForNetworkV12() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "pendingListenForNetwork",
             NetworkCapabilities::class.java,
@@ -410,7 +410,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
@@ -425,12 +425,12 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     // region default capabilities
 
     private fun hookCreateDefaultNetworkCapabilities() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "createDefaultNetworkCapabilitiesForUid",
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = param.args[0] as? Int ?: return
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.result as? NetworkCapabilities ?: return
@@ -441,7 +441,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
     }
 
     private fun hookCopyDefaultNetworkCapabilities() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "copyDefaultNetworkCapabilitiesForUid",
             NetworkCapabilities::class.java,
@@ -449,7 +449,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             Int::class.javaPrimitiveType,
             String::class.java,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val requestorUid = param.args[2] as? Int ?: return
                     if (!VpnSanitizer.shouldHide(requestorUid)) return
                     val nc = param.result as? NetworkCapabilities ?: return
@@ -487,7 +487,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
 
     private fun hookCallCallbackForRequestWithAgent() {
         val (nriClass, naiClass) = helper.resolveNriAndNaiClasses()
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "callCallbackForRequest",
             nriClass,
@@ -495,7 +495,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             Int::class.javaPrimitiveType,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val nri = param.args[0] ?: return
                     val uid = helper.getAsUid(nri)
                     if (!VpnSanitizer.shouldHide(uid)) return
@@ -509,7 +509,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
                     VpnHideContext.setTargetUid(uid)
                 }
 
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     VpnHideContext.clear()
                 }
             },
@@ -518,7 +518,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
 
     private fun hookCallCallbackForRequestWithBundle() {
         val (nriClass, _) = helper.resolveNriAndNaiClasses()
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "callCallbackForRequest",
             nriClass,
@@ -526,14 +526,14 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             Bundle::class.java,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val nri = param.args[0] ?: return
                     val uid = helper.getAsUid(nri)
                     if (!VpnSanitizer.shouldHide(uid)) return
                     VpnHideContext.setTargetUid(uid)
                 }
 
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     VpnHideContext.clear()
                 }
             },
@@ -542,14 +542,14 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
 
     private fun hookSendPendingIntentForRequest() {
         val (nriClass, naiClass) = helper.resolveNriAndNaiClasses()
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "sendPendingIntentForRequest",
             nriClass,
             naiClass,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun beforeHook(param: MethodHookParam) {
+                override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val nri = param.args[0] ?: return
                     val uid = helper.getAsUid(nri)
                     if (!VpnSanitizer.shouldHide(uid)) return
@@ -563,7 +563,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
                     VpnHideContext.setTargetUid(uid)
                 }
 
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     VpnHideContext.clear()
                 }
             },

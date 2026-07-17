@@ -525,7 +525,11 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
             val packageName = requireContext().packageName
             val selfInList = targets.contains(packageName)
-            val running = CoreServiceManager.isRunning() || CoreServiceManager.serviceControl != null
+            val running = CoreServiceManager.isRunning() ||
+                CoreServiceManager.hasLiveSession() ||
+                CoreServiceManager.serviceControl != null ||
+                detection.nativeDetected ||
+                detection.frameworkDetected.any { it == "NetworkInfo" || it == "NetworkForType" || it == "NetworkCapabilities" || it == "LinkProperties" || it == "ActiveNetworkInfo" }
 
             fun moduleText(probe: PrivilegeSettingsClient.Probe): String = when (probe.result) {
                 PrivilegeSettingsClient.ProbeResult.ACTIVE -> {
@@ -648,6 +652,13 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     ),
                 )
                 appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy, httpProxy))
+                val renameEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
+                val renamePrefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX)
+                    ?.takeIf { it.isNotBlank() } ?: "wlan"
+                appendLine("Rename: " + (if (renameEnabled) yes else no) + ", prefix=" + renamePrefix)
+                if (renameEnabled && detection.nativeInterfaces.any { it.startsWith("tun") || it.startsWith("ppp") || it.startsWith("tap") }) {
+                    appendLine("Rename note: still seeing tun/ppp/tap; re-toggle VPN once so system_server can rename iface")
+                }
                 appendLine()
                 append(getString(R.string.summary_pref_privilege_self_test_note))
             }
@@ -807,3 +818,4 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         Utils.openUri(this, AppConfig.APP_WIKI_MODE)
     }
 }
+

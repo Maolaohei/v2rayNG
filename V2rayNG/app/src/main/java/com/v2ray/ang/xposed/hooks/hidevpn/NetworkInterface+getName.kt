@@ -3,7 +3,7 @@ package com.v2ray.ang.xposed.hooks.hidevpn
 import android.system.Os
 import android.system.OsConstants
 import android.system.StructTimeval
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.HookErrorStore
 import com.v2ray.ang.xposed.PrivilegeSettingsStore
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
@@ -43,18 +43,53 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
         } else {
             hookJniGetNameLegacy()
         }
+        hookPublicGetName()
+    }
+
+    private fun hookPublicGetName() {
+        val cls = java.net.NetworkInterface::class.java
+        for (methodName in listOf("getName", "getDisplayName")) {
+            try {
+                XposedApi.findAndHookMethod(
+                    cls,
+                    methodName,
+                    object : SafeMethodHook("$SOURCE.$methodName") {
+                        override fun afterHook(param: SafeMethodHook.HookParam) {
+                            val result = param.result as? String ?: return
+                            if (!PrivilegeSettingsStore.shouldRenameInterface()) return
+                            if (!isTunInterface(result)) return
+                            // Public API path: do not force kernel rename here (may already be renamed).
+                            // If still tun*, return masked name for selected callers only? Keep global rename via jniGetName.
+                            val prefix = PrivilegeSettingsStore.interfacePrefix()
+                            if (result.startsWith(prefix)) return
+                            // Best-effort: attempt rename once, then return renamed/masked value.
+                            val renamed = renameInterface(result, prefix)
+                            if (renamed != null) {
+                                param.result = renamed
+                            } else {
+                                // Fall back to presentation mask so detection does not see tun0.
+                                param.result = buildInterfaceName(prefix, 0) ?: "${prefix}0"
+                            }
+                        }
+                    },
+                )
+                HookErrorStore.i(SOURCE, "Hooked NetworkInterface.$methodName")
+            } catch (e: Throwable) {
+                HookErrorStore.w(SOURCE, "Hook NetworkInterface.$methodName failed: ${e.message}", e)
+            }
+        }
     }
 
     private fun hookJniGetNameApi33Plus() {
         val vpnClass = findVpnClass()
-        val depsClass = XposedHelpers.findClass("${vpnClass.name}\$Dependencies", classLoader)
-        XposedHelpers.findAndHookMethod(
+        val depsClass = XposedApi.findClass("${vpnClass.name}\$Dependencies", classLoader)
+        XposedApi.findAndHookMethod(
             depsClass,
             "jniGetName",
             vpnClass,
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     processJniGetNameResult(param)
                 }
             },
@@ -64,12 +99,12 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
 
     private fun hookJniGetNameLegacy() {
         val cls = findVpnClass()
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             cls,
             "jniGetName",
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     processJniGetNameResult(param)
                 }
             },
@@ -77,7 +112,7 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
         HookErrorStore.i(SOURCE, "Hooked ${cls.name}.jniGetName (legacy)")
     }
 
-    private fun processJniGetNameResult(param: de.robv.android.xposed.XC_MethodHook.MethodHookParam) {
+    private fun processJniGetNameResult(param: SafeMethodHook.HookParam) {
         val result = param.result
         if (result !is String) {
             if (result != null) {
@@ -92,7 +127,7 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
         param.result = renamed
     }
 
-    private fun findVpnClass(): Class<*> = XposedHelpers.findClass("com.android.server.connectivity.Vpn", classLoader)
+    private fun findVpnClass(): Class<*> = XposedApi.findClass("com.android.server.connectivity.Vpn", classLoader)
 
     private fun isTunInterface(name: String): Boolean = name.startsWith("tun")
 
@@ -297,3 +332,5 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
         return NetlinkAck(errno, msgSeq, msgPid)
     }
 }
+
+

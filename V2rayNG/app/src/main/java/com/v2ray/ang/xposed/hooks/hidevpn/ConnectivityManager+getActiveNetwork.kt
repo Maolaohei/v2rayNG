@@ -1,7 +1,7 @@
 package com.v2ray.ang.xposed.hooks.hidevpn
 
 import android.os.Binder
-import de.robv.android.xposed.XposedHelpers
+import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
 
 class HookConnectivityManagerGetActiveNetwork(private val helper: ConnectivityServiceHookHelper) {
@@ -10,11 +10,11 @@ class HookConnectivityManagerGetActiveNetwork(private val helper: ConnectivitySe
     }
 
     fun install() {
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getActiveNetwork",
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val replacement = helper.getUnderlyingNetwork(param.thisObject, uid) ?: return
@@ -23,13 +23,13 @@ class HookConnectivityManagerGetActiveNetwork(private val helper: ConnectivitySe
             },
         )
 
-        XposedHelpers.findAndHookMethod(
+        XposedApi.findAndHookMethod(
             helper.cls,
             "getActiveNetworkForUid",
             Int::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
-                override fun afterHook(param: MethodHookParam) {
+                override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = param.args[0] as Int
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val replacement = helper.getUnderlyingNetwork(param.thisObject, uid) ?: return
