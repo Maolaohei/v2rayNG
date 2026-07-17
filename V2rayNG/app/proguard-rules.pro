@@ -29,3 +29,8 @@
 }
 -keep class com.v2ray.ang.xposed.XposedInitModern101 { public <init>(); }
 -keep class com.v2ray.ang.xposed.XposedInit { public <init>(); }
+
+# Keep hidevpn hook plumbing (modern + classic adapters + reflective fields)
+-keep class com.v2ray.ang.xposed.** { *; }
+-keepclassmembers class com.v2ray.ang.xposed.** { *; }
+-dontwarn de.robv.android.xposed.**

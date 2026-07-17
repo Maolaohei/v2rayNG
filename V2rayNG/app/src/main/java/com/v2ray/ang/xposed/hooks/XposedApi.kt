@@ -1,17 +1,21 @@
 package com.v2ray.ang.xposed.hooks
 
-import de.robv.android.xposed.XposedBridge
+import com.v2ray.ang.xposed.HookErrorStore
 import io.github.libxposed.api.XposedInterface
-import java.lang.reflect.Constructor
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Runtime facade that prefers modern libxposed [XposedInterface] hooks, and only falls back
- * to legacy de.robv APIs for classic assets/xposed_init entry.
+ * Runtime facade for hidevpn hooks.
+ *
+ * Modern path (targetApi 102): only [XposedInterface], never calls de.robv APIs.
+ * Classic path (assets/xposed_init): uses [ClassicSafeMethodHookAdapter] + XposedBridge
+ * only when [modern] is null.
  */
 object XposedApi {
+    private const val TAG = "XposedApi"
+
     @Volatile
     var modern: XposedInterface? = null
         private set
@@ -69,14 +73,22 @@ object XposedApi {
         val callback = args.last() as? SafeMethodHook
             ?: throw IllegalArgumentException("callback must be SafeMethodHook")
         val paramTypes = args.dropLast(1).map { toClass(it) }.toTypedArray()
-        val method = clazz.getDeclaredMethod(methodName, *paramTypes).apply { isAccessible = true }
+        val method = findDeclaredMethodInHierarchy(clazz, methodName, paramTypes)
+            ?: throw NoSuchMethodException(
+                "${clazz.name}.$methodName" +
+                    paramTypes.joinToString(prefix = "(", postfix = ")") { it.name },
+            )
+        method.isAccessible = true
         return hookExecutable(method, callback)
     }
 
     fun hookAllMethods(clazz: Class<*>, methodName: String, callback: SafeMethodHook): Set<Any> {
-        val matched = (clazz.declaredMethods + clazz.methods)
-            .filter { it.name == methodName }
-            .distinctBy { methodKey(it) }
+        val matched = LinkedHashSet<Method>()
+        var c: Class<*>? = clazz
+        while (c != null && c != Any::class.java) {
+            c.declaredMethods.filterTo(matched) { it.name == methodName }
+            c = c.superclass
+        }
         if (matched.isEmpty()) return emptySet()
         return matched.mapTo(LinkedHashSet()) { method ->
             method.isAccessible = true
@@ -94,21 +106,34 @@ object XposedApi {
             ?: throw IllegalArgumentException("method must be Executable")
         val modernXp = modern
         if (modernXp != null) {
-            return when (executable) {
-                is Method -> modernXp.getInvoker(executable).setType(XposedInterface.Invoker.Type.ORIGIN).invoke(thisObject, *(args ?: emptyArray()))
-                is Constructor<*> -> {
-                    // Constructors rarely need original invoke in our code paths.
-                    executable.isAccessible = true
-                    executable.newInstance(*(args ?: emptyArray()))
-                }
-                else -> throw IllegalArgumentException("Unsupported executable")
+            if (executable !is Method) {
+                throw IllegalArgumentException("modern invokeOriginal only supports Method")
             }
+            val invoker = modernXp.getInvoker(executable)
+            invoker.setType(XposedInterface.Invoker.Type.ORIGIN)
+            return invoker.invoke(thisObject, *(args ?: emptyArray()))
         }
-        return XposedBridge.invokeOriginalMethod(executable, thisObject, args)
+        return classicInvokeOriginal(executable, thisObject, args)
     }
 
-    private fun methodKey(method: Method): String {
-        return method.name + method.parameterTypes.joinToString(prefix = "(", postfix = ")") { it.name } + method.returnType.name
+    private fun findDeclaredMethodInHierarchy(
+        clazz: Class<*>,
+        name: String,
+        paramTypes: Array<Class<*>>,
+    ): Method? {
+        var c: Class<*>? = clazz
+        while (c != null) {
+            try {
+                return c.getDeclaredMethod(name, *paramTypes)
+            } catch (_: NoSuchMethodException) {
+                c = c.superclass
+            }
+        }
+        return try {
+            clazz.getMethod(name, *paramTypes)
+        } catch (_: NoSuchMethodException) {
+            null
+        }
     }
 
     private fun hookExecutable(executable: Executable, callback: SafeMethodHook): Any {
@@ -120,9 +145,37 @@ object XposedApi {
             handles.add(handle)
             return handle
         }
-        val unhook = XposedBridge.hookMethod(executable, callback)
+        val unhook = classicHookMethod(executable, callback)
         handles.add(unhook)
         return unhook
+    }
+
+    private fun classicHookMethod(executable: Executable, callback: SafeMethodHook): Any {
+        // Keep de.robv symbols out of the modern call path by resolving only here.
+        val bridge = Class.forName("de.robv.android.xposed.XposedBridge")
+        val hookMethod = bridge.getMethod(
+            "hookMethod",
+            java.lang.reflect.Member::class.java,
+            Class.forName("de.robv.android.xposed.XC_MethodHook"),
+        )
+        val adapter = ClassicSafeMethodHookAdapter(callback)
+        return hookMethod.invoke(null, executable, adapter)
+            ?: error("XposedBridge.hookMethod returned null")
+    }
+
+    private fun classicInvokeOriginal(
+        executable: Executable,
+        thisObject: Any?,
+        args: Array<Any?>?,
+    ): Any? {
+        val bridge = Class.forName("de.robv.android.xposed.XposedBridge")
+        val invokeOriginal = bridge.getMethod(
+            "invokeOriginalMethod",
+            java.lang.reflect.Member::class.java,
+            Any::class.java,
+            Array<Any>::class.java,
+        )
+        return invokeOriginal.invoke(null, executable, thisObject, args)
     }
 
     private fun toClass(type: Any?): Class<*> {

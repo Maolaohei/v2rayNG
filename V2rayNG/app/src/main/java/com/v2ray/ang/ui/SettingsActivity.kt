@@ -1,5 +1,6 @@
 package com.v2ray.ang.ui
 
+import android.content.Context
 import android.content.Intent
 import androidx.fragment.app.Fragment
 import android.os.Bundle
@@ -512,6 +513,39 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             }
         }
 
+        private fun isCoreLikelyRunning(context: Context, detection: DetectionResult): Boolean {
+            if (CoreServiceManager.isRunning() ||
+                CoreServiceManager.hasLiveSession() ||
+                CoreServiceManager.serviceControl != null
+            ) {
+                return true
+            }
+            if (detection.nativeDetected) return true
+            if (detection.frameworkDetected.any {
+                    it == "NetworkInfo" ||
+                        it == "NetworkForType" ||
+                        it == "NetworkCapabilities" ||
+                        it == "LinkProperties" ||
+                        it == "ActiveNetworkInfo"
+                }
+            ) {
+                return true
+            }
+            // Daemon process probe (main process cannot see in-process coreController state).
+            return try {
+                val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                val procs = am?.runningAppProcesses.orEmpty()
+                val pkg = context.packageName
+                procs.any { proc ->
+                    val name = proc.processName ?: return@any false
+                    name == "$pkg:RunSoLibV2RayDaemon" ||
+                        name.endsWith(":RunSoLibV2RayDaemon")
+                }
+            } catch (_: Throwable) {
+                false
+            }
+        }
+
         private fun buildPrivilegeSelfTestReport(
             detection: DetectionResult,
             probeBefore: PrivilegeSettingsClient.Probe,
@@ -525,11 +559,8 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
             val packageName = requireContext().packageName
             val selfInList = targets.contains(packageName)
-            val running = CoreServiceManager.isRunning() ||
-                CoreServiceManager.hasLiveSession() ||
-                CoreServiceManager.serviceControl != null ||
-                detection.nativeDetected ||
-                detection.frameworkDetected.any { it == "NetworkInfo" || it == "NetworkForType" || it == "NetworkCapabilities" || it == "LinkProperties" || it == "ActiveNetworkInfo" }
+            // Core lives in :RunSoLibV2RayDaemon; main-process CoreServiceManager is usually empty.
+            val running = isCoreLikelyRunning(requireContext(), detection)
 
             fun moduleText(probe: PrivilegeSettingsClient.Probe): String = when (probe.result) {
                 PrivilegeSettingsClient.ProbeResult.ACTIVE -> {
@@ -656,8 +687,23 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 val renamePrefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX)
                     ?.takeIf { it.isNotBlank() } ?: "wlan"
                 appendLine("Rename: " + (if (renameEnabled) yes else no) + ", prefix=" + renamePrefix)
-                if (renameEnabled && detection.nativeInterfaces.any { it.startsWith("tun") || it.startsWith("ppp") || it.startsWith("tap") }) {
-                    appendLine("Rename note: still seeing tun/ppp/tap; re-toggle VPN once so system_server can rename iface")
+                if (renameEnabled) {
+                    val stillLegacy = detection.nativeInterfaces.any {
+                        it.startsWith("tun") || it.startsWith("ppp") || it.startsWith("tap")
+                    }
+                    val renamedSeen = detection.nativeInterfaces.any { it.startsWith(renamePrefix) } ||
+                        detection.frameworkInterfaces.any { it.startsWith(renamePrefix) }
+                    when {
+                        stillLegacy -> appendLine(
+                            "Rename note: still seeing tun/ppp/tap. Reboot after module enable, then re-toggle VPN so system_server renames the iface on jniGetName.",
+                        )
+                        renamedSeen -> appendLine(
+                            "Rename note: prefix `$renamePrefix` observed; kernel rename path looks active.",
+                        )
+                        else -> appendLine(
+                            "Rename note: no tun/ppp/tap seen. If you just changed prefix, re-toggle VPN once.",
+                        )
+                    }
                 }
                 appendLine()
                 append(getString(R.string.summary_pref_privilege_self_test_note))

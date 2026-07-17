@@ -1,11 +1,11 @@
-﻿package com.v2ray.ang.xposed
+package com.v2ray.ang.xposed
 
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
 /**
  * Classic Xposed/LSPosed entry for frameworks that still use IXposedHookLoadPackage
- * (assets/xposed_init). Uses legacy hook path because no XposedInterface is available.
+ * (assets/xposed_init). This path may use legacy APIs; modern META-INF entry does not.
  */
 class XposedInit : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {

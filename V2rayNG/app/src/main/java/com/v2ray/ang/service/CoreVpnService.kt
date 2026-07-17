@@ -28,6 +28,7 @@ import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.MyContextWrapper
 import com.v2ray.ang.util.Utils
+import com.v2ray.ang.xposed.PrivilegeSettingsClient
 
 @SuppressLint("VpnServicePolicy")
 class CoreVpnService : VpnService(), ServiceControl {
@@ -192,6 +193,9 @@ class CoreVpnService : VpnService(), ServiceControl {
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Interface not initialized")
             return
         }
+        // Push hidevpn/rename settings into system_server before traffic/iface probes race.
+        runCatching { PrivilegeSettingsClient.sync() }
+            .onFailure { LogUtil.w(AppConfig.TAG, "StartCore-VPN: privilege sync failed: ${it.message}") }
         if (!CoreServiceManager.startCoreLoop(mInterface)) {
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to start core loop")
             stopAllService()

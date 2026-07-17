@@ -19,6 +19,10 @@ object PrivilegeSettingsStore {
 
     @Volatile
     private var interfacePrefix = "en"
+
+    @Volatile
+    private var loadedFromDisk = false
+
     private val uidCache = ConcurrentHashMap<Int, Boolean>()
 
     private val appGlobalsClass by lazy { Class.forName("android.app.AppGlobals") }
@@ -30,6 +34,7 @@ object PrivilegeSettingsStore {
         packageSet = packages
         this.interfaceRenameEnabled = interfaceRenameEnabled
         this.interfacePrefix = normalizePrefix(interfacePrefix)
+        loadedFromDisk = true
         uidCache.clear()
         HookErrorStore.i(
             "PrivilegeSettingsStore",
@@ -38,13 +43,23 @@ object PrivilegeSettingsStore {
         writeSettingsFile()
     }
 
-    fun isEnabled(): Boolean = enabled
+    fun isEnabled(): Boolean {
+        ensureLoaded()
+        return enabled
+    }
 
-    fun shouldRenameInterface(): Boolean = interfaceRenameEnabled
+    fun shouldRenameInterface(): Boolean {
+        ensureLoaded()
+        return interfaceRenameEnabled
+    }
 
-    fun interfacePrefix(): String = interfacePrefix
+    fun interfacePrefix(): String {
+        ensureLoaded()
+        return interfacePrefix
+    }
 
     fun isUidSelected(uid: Int): Boolean {
+        ensureLoaded()
         val cached = uidCache[uid]
         if (cached != null) {
             return cached
@@ -55,10 +70,19 @@ object PrivilegeSettingsStore {
     }
 
     fun shouldHideUid(uid: Int): Boolean {
-        if (!enabled) {
+        if (!isEnabled()) {
             return false
         }
         return isUidSelected(uid)
+    }
+
+    private fun ensureLoaded() {
+        if (loadedFromDisk) return
+        synchronized(this) {
+            if (loadedFromDisk) return
+            loadSettingsFile()
+            loadedFromDisk = true
+        }
     }
 
     private fun normalizePrefix(prefix: String): String {
@@ -74,6 +98,53 @@ object PrivilegeSettingsStore {
             }
         }
         return if (filtered.isEmpty()) "en" else filtered
+    }
+
+    private fun settingsFile(): File = File(File(SETTINGS_DIR), SETTINGS_FILE)
+
+    private fun loadSettingsFile() {
+        try {
+            val file = settingsFile()
+            if (!file.exists()) {
+                HookErrorStore.i("PrivilegeSettingsStore", "no persisted privilege settings yet")
+                return
+            }
+            var en = false
+            var rename = false
+            var prefix = "en"
+            var packages = emptySet<String>()
+            file.readLines().forEach { raw ->
+                val line = raw.trim()
+                if (line.isEmpty() || line.startsWith("#")) return@forEach
+                val idx = line.indexOf('=')
+                if (idx <= 0) return@forEach
+                val key = line.substring(0, idx).trim()
+                val value = line.substring(idx + 1).trim()
+                when (key) {
+                    "enabled" -> en = value == "1" || value.equals("true", ignoreCase = true)
+                    "rename" -> rename = value == "1" || value.equals("true", ignoreCase = true)
+                    "prefix" -> prefix = normalizePrefix(value)
+                    "packages" -> {
+                        packages = if (value.isEmpty()) {
+                            emptySet()
+                        } else {
+                            value.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                        }
+                    }
+                }
+            }
+            enabled = en
+            interfaceRenameEnabled = rename
+            interfacePrefix = prefix
+            packageSet = packages
+            uidCache.clear()
+            HookErrorStore.i(
+                "PrivilegeSettingsStore",
+                "loaded privilege settings: enabled=$enabled size=${packageSet.size} rename=$interfaceRenameEnabled prefix=$interfacePrefix",
+            )
+        } catch (e: Throwable) {
+            HookErrorStore.e("PrivilegeSettingsStore", "Failed to load privilege settings file", e)
+        }
     }
 
     private fun writeSettingsFile() {
