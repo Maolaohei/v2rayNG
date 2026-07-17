@@ -42,7 +42,7 @@ object RootProxyManager {
     private const val MARK = AppConfig.ROOT_MARK_ROUTE
     private const val BYPASS_PRIORITY = AppConfig.ROOT_BYPASS_RULE_PRIORITY
     // Android app UIDs start at 10000. Magic_V2Ray only marks app range (+ a few system uids)
-    // instead of every system uid 閳?fewer OEM side-effects under all-apps capture.
+    // instead of every system uid 闁?fewer OEM side-effects under all-apps capture.
     private const val APP_UID_RANGE = "10000-2147483647"
     // Xray FakeDNS default pool. MUST be proxied (never LAN-bypassed).
     private const val FAKE_IP_CIDR = "198.18.0.0/15"
@@ -279,7 +279,7 @@ object RootProxyManager {
 
     /**
      * Cheap runtime liveness used by UI / network paths that must not run su every time.
-     * True when local SOCKS accepts 鈥?the control plane Xray side is up.
+     * True when local SOCKS accepts 閳?the control plane Xray side is up.
      */
     fun isRuntimeLive(): Boolean = isLocalSocksReady()
     /** Remaining repair backoff in ms (0 = allowed now). */
@@ -427,7 +427,7 @@ object RootProxyManager {
                 return null
             }
 
-            // Never full-teardown while SOCKS + hev/tun still look usable 鈥?that is the main
+            // Never full-teardown while SOCKS + hev/tun still look usable 閳?that is the main
             // cause of random multi-second blackholes. Prefer light rules / soft-skip.
             probe = probePipeline(context)
             val socksUp = isLocalSocksReady()
@@ -780,8 +780,12 @@ object RootProxyManager {
                 appendLine("ip -6 route replace default dev $TUN table $TABLE 2>/dev/null || true")
                 appendLine("ip -6 rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
                 appendLine("ip -6 rule add fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
+                // Prefer policy routing over RA/default native routes for marked packets.
+                appendLine("echo 0 > /proc/sys/net/ipv6/conf/$TUN/accept_ra 2>/dev/null || true")
+                appendLine("echo 0 > /proc/sys/net/ipv6/conf/all/accept_ra 2>/dev/null || true")
                 append(buildMangleMarking("\$IP6T", appUid, perAppEnabled, bypassApps, selectedUids))
             } else {
+                // Fail closed for native v6 so dual-stack apps cannot bypass the proxy.
                 append(buildV6Blackhole(appUid, perAppEnabled, bypassApps, selectedUids))
             }
         }
@@ -842,7 +846,7 @@ object RootProxyManager {
         if (perAppEnabled && !bypassApps && selectedUids.isEmpty()) {
             LogUtil.w(
                 AppConfig.TAG,
-                "RootProxyManager: per-app allow-list is empty 閳?no app traffic will be marked into TUN"
+                "RootProxyManager: per-app allow-list is empty 闁?no app traffic will be marked into TUN"
             )
         }
 
@@ -1242,4 +1246,5 @@ object RootProxyManager {
         }
     }
 }
+
 

@@ -665,25 +665,16 @@ object CoreConfigManager {
     }
 
     /**
-     * In the root mode the whole device's traffic (incl. raw DNS) is funneled
-     * into the core's SOCKS inbound, exactly like the VPN+hev path. Hijack port-53 to the
-     * core's DNS module so queries are resolved via the configured resolver through the
-     * proxy instead of leaking to (or being mis-resolved by) the local network resolver.
-     * Independent of the local-DNS toggle, which is not exposed for root mode.
+     * ROOT xray_tun funnels device traffic (incl. raw DNS) into the core TUN inbound.
+     * Hijack port-53 to dns-out so queries resolve via the configured remote DNS through
+     * the proxy instead of leaking to the local network resolver.
+     *
+     * Always attach to "tun" (capture path). Also attach to "socks" when local SOCKS is
+     * present for tools / optional helpers. Independent of the VPN local-DNS UI toggle.
      */
     private fun configureRootModeDns(v2rayConfig: V2rayConfig) {
         if (!SettingsManager.isRootMode()) return
 
-        if (v2rayConfig.routing.rules.none { it.outboundTag == "dns-out" && it.port == "53" }) {
-            v2rayConfig.routing.rules.add(
-                0,
-                V2rayConfig.RoutingBean.RulesBean(
-                    inboundTag = arrayListOf("socks"),
-                    outboundTag = "dns-out",
-                    port = "53",
-                )
-            )
-        }
         if (v2rayConfig.outbounds.none { it.protocol == "dns" && it.tag == "dns-out" }) {
             v2rayConfig.outbounds.add(
                 V2rayConfig.OutboundBean(
@@ -695,6 +686,32 @@ object CoreConfigManager {
                 )
             )
         }
+
+        val inboundTags = ArrayList<String>()
+        // Preferred capture path for xray_tun ROOT.
+        if (v2rayConfig.inbounds.any { it.tag == "tun" || it.protocol == "tun" }) {
+            inboundTags.add("tun")
+        }
+        // Local SOCKS remains useful for in-app tools; keep DNS hijack consistent there too.
+        if (v2rayConfig.inbounds.any { it.protocol == "socks" || it.tag == "socks" }) {
+            inboundTags.add("socks")
+        }
+        if (inboundTags.isEmpty()) {
+            inboundTags.add("tun")
+        }
+
+        // Replace any legacy socks-only port-53 rule with a single comprehensive rule.
+        v2rayConfig.routing.rules.removeAll {
+            it.outboundTag == "dns-out" && it.port == "53"
+        }
+        v2rayConfig.routing.rules.add(
+            0,
+            V2rayConfig.RoutingBean.RulesBean(
+                inboundTag = inboundTags,
+                outboundTag = "dns-out",
+                port = "53",
+            )
+        )
     }
 
     /**

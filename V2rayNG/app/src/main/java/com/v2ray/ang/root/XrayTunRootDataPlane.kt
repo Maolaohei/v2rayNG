@@ -84,6 +84,8 @@ object XrayTunRootDataPlane : RootDataPlane {
                 return rulesErr
             }
 
+            // One-shot soft connectivity smoke (local SOCKS path). Never fail-close cold start.
+            runCatching { RootConnectivitySmoke.maybeProbeAfterStart(force = true) }
             LogUtil.i(AppConfig.TAG, "RootDataPlane: xray_tun started ok ${snapshot(context)}")
             null
         } catch (e: Exception) {

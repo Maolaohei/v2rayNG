@@ -15,6 +15,7 @@ import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.TrafficStatsManager
+import com.v2ray.ang.root.RootConnectivitySmoke
 import com.v2ray.ang.root.RootDataPlanes
 import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.util.LogUtil
@@ -118,6 +119,7 @@ class CoreRootService : Service(), ServiceControl {
             setupJob = serviceScope.launch {
                 if (plane.isHealthy(this@CoreRootService)) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: re-entry while healthy, skip rebuild engine=${plane.engine}")
+                    runCatching { RootConnectivitySmoke.maybeProbeAfterStart(force = false) }
                     startWatchdog()
                     return@launch
                 }
