@@ -3,6 +3,7 @@ package com.v2ray.ang.xposed.hooks
 import com.v2ray.ang.xposed.HookErrorStore
 import io.github.libxposed.api.XposedInterface
 import java.lang.reflect.Member
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Framework-neutral before/after hook.
@@ -10,11 +11,9 @@ import java.lang.reflect.Member
  * Do NOT extend de.robv.android.xposed.XC_MethodHook (forbidden for targetApi 102).
  */
 abstract class SafeMethodHook(private val source: String) {
-    @Volatile
-    private var disabled = false
+    private val failCount = AtomicInteger(0)
 
     fun interceptModern(chain: XposedInterface.Chain): Any? {
-        if (disabled) return chain.proceed()
         val param = ModernParam(chain)
         try {
             beforeHook(param)
@@ -32,36 +31,37 @@ abstract class SafeMethodHook(private val source: String) {
                     param.returnEarly = false
                 }
             }
-            afterHook(param)
+            try {
+                afterHook(param)
+            } catch (e: Throwable) {
+                val n = failCount.incrementAndGet()
+                HookErrorStore.e(source, "afterHook error #$n (kept original/proceed result)", e)
+                // Never permanently disable: one bad call must not kill hide forever.
+            }
             param.throwable?.let { throw it }
             return param.result
         } catch (e: Throwable) {
-            disabled = true
-            HookErrorStore.e(source, "Hook disabled due to unrecoverable error", e)
+            val n = failCount.incrementAndGet()
+            HookErrorStore.e(source, "intercept error #$n, fall through to original", e)
             return chain.proceed()
         }
     }
 
-    /**
-     * Classic XC_MethodHook adapter entrypoints. Invoked only by reflection-based classic bridge.
-     */
     fun classicBefore(raw: Any) {
-        if (disabled) return
         try {
             beforeHook(ClassicReflectParam(raw))
         } catch (e: Throwable) {
-            disabled = true
-            HookErrorStore.e(source, "Hook disabled due to unrecoverable error", e)
+            val n = failCount.incrementAndGet()
+            HookErrorStore.e(source, "classic beforeHook error #$n", e)
         }
     }
 
     fun classicAfter(raw: Any) {
-        if (disabled) return
         try {
             afterHook(ClassicReflectParam(raw))
         } catch (e: Throwable) {
-            disabled = true
-            HookErrorStore.e(source, "Hook disabled due to unrecoverable error", e)
+            val n = failCount.incrementAndGet()
+            HookErrorStore.e(source, "classic afterHook error #$n", e)
         }
     }
 
@@ -85,7 +85,6 @@ abstract class SafeMethodHook(private val source: String) {
         override var result: Any?
             get() = resultValue
             set(value) {
-                // Match XC_MethodHook.setResult: assigning result short-circuits the original call.
                 resultValue = value
                 throwableValue = null
                 returnEarly = true
@@ -103,8 +102,6 @@ abstract class SafeMethodHook(private val source: String) {
         private val mutableArgs: Array<Any?> = chain.args.toTypedArray()
         var argsOverride: Array<Any?>? = null
             private set
-        // Expose a mutable snapshot. Any read/write of args marks override so
-        // param.args[i] = x works the same as setArg (legacy XC_MethodHook style).
         override val args: Array<Any?>
             get() {
                 argsOverride = mutableArgs
@@ -116,9 +113,6 @@ abstract class SafeMethodHook(private val source: String) {
         }
     }
 
-    /**
-     * Reflective wrapper around XC_MethodHook.MethodHookParam without compile-time de.robv types.
-     */
     private class ClassicReflectParam(private val raw: Any) : HookParam {
         private val cls = raw.javaClass
 
@@ -154,7 +148,6 @@ abstract class SafeMethodHook(private val source: String) {
             get() = runCatching { cls.getField("returnEarly").getBoolean(raw) }.getOrDefault(false)
             set(value) {
                 if (value) {
-                    // Prefer setResult semantics when available.
                     result = result
                 } else {
                     runCatching { cls.getField("returnEarly").setBoolean(raw, false) }

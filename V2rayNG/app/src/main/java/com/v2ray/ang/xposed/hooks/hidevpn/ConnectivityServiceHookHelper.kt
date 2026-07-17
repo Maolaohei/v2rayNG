@@ -70,21 +70,39 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
             "Installing ConnectivityService hooks ($source) cls=${cls.name} loader=${connectivityClassLoader.javaClass.name}",
         )
 
-        // Install all individual hooks
-        HookConnectivityManagerGetActiveNetwork(this).install()
-        HookConnectivityManagerGetActiveNetworkInfo(this).install()
-        HookConnectivityManagerGetNetworkInfo(this).install()
-        HookConnectivityManagerGetAllNetworkInfo(this).install()
-        HookConnectivityManagerGetAllNetworks(this).install()
-        HookConnectivityManagerGetNetworkForType(this).install()
-        HookConnectivityManagerGetNetworkCapabilities(this).install()
-        HookConnectivityManagerGetLinkProperties(this).install()
-        HookConnectivityManagerRequestNetwork(this).install()
-        HookConnectivityManagerGetDefaultProxy(this).install()
-        HookConnectivityManagerConnectivityAction(this).install()
-        HookConnectivityManagerProxyChangeAction(this).install()
-
-        HookErrorStore.i(SOURCE, "Hooked ConnectivityService ($source) cls=${cls.name}")
+        // Install hooks independently so one missing signature cannot kill the whole set.
+        val installers = listOf(
+            "GetActiveNetwork" to { HookConnectivityManagerGetActiveNetwork(this).install() },
+            "GetActiveNetworkInfo" to { HookConnectivityManagerGetActiveNetworkInfo(this).install() },
+            "GetNetworkInfo" to { HookConnectivityManagerGetNetworkInfo(this).install() },
+            "GetAllNetworkInfo" to { HookConnectivityManagerGetAllNetworkInfo(this).install() },
+            "GetAllNetworks" to { HookConnectivityManagerGetAllNetworks(this).install() },
+            "GetNetworkForType" to { HookConnectivityManagerGetNetworkForType(this).install() },
+            "GetNetworkCapabilities" to { HookConnectivityManagerGetNetworkCapabilities(this).install() },
+            "GetLinkProperties" to { HookConnectivityManagerGetLinkProperties(this).install() },
+            "RequestNetwork" to { HookConnectivityManagerRequestNetwork(this).install() },
+            "GetDefaultProxy" to { HookConnectivityManagerGetDefaultProxy(this).install() },
+            "ConnectivityAction" to { HookConnectivityManagerConnectivityAction(this).install() },
+            "ProxyChangeAction" to { HookConnectivityManagerProxyChangeAction(this).install() },
+        )
+        val ok = ArrayList<String>()
+        val failed = ArrayList<String>()
+        for ((name, block) in installers) {
+            try {
+                block()
+                ok += name
+            } catch (e: Throwable) {
+                failed += name
+                HookErrorStore.e(SOURCE, "install sub-hook failed: $name", e)
+            }
+        }
+        HookErrorStore.i(
+            SOURCE,
+            "Hooked ConnectivityService ($source) cls=${cls.name} ok=$ok failed=$failed",
+        )
+        if (ok.none { it == "GetNetworkInfo" || it == "GetNetworkForType" || it == "GetNetworkCapabilities" }) {
+            throw IllegalStateException("critical connectivity sanitize hooks missing: failed=$failed")
+        }
     }
 
     private fun initMethodCache() {

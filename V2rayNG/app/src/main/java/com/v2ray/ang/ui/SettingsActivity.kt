@@ -448,15 +448,23 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 var report: String? = null
                 var errorMessage: String? = null
                 try {
-                    // Probe first so the report can distinguish "module state before sync".
+                    // Probe-before is for diagnostics only. Apply settings first so hide/rename
+                    // are active before the fingerprint scan (previous order could false-fail).
                     val probeBefore = withContext(Dispatchers.IO) {
                         PrivilegeSettingsClient.refresh()
                     }
-                    val detection = withContext(Dispatchers.IO) {
-                        VpnDetectionTest.runDetection(ctx)
-                    }
                     val syncOk = withContext(Dispatchers.IO) {
                         PrivilegeSettingsClient.sync()
+                    }
+                    // Give system_server a brief window for eager tun rename after settings update.
+                    withContext(Dispatchers.IO) {
+                        try {
+                            Thread.sleep(350)
+                        } catch (_: Throwable) {
+                        }
+                    }
+                    val detection = withContext(Dispatchers.IO) {
+                        VpnDetectionTest.runDetection(ctx)
                     }
                     val probeAfter = withContext(Dispatchers.IO) {
                         PrivilegeSettingsClient.refresh()
