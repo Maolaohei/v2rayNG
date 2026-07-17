@@ -53,8 +53,8 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
             hookClassLoaderForVpn()
         }
         // Presentation mask only for public NetworkInterface APIs.
-        // Kernel rename is ONLY done from jniGetName (iface creation path).
-        // Never eager-rename a live tun*: set-down/rename races break VPN dataplane.
+        // Kernel/netlink rename is disabled: it breaks VPN stop and other proxy apps.
+        // jniGetName is still hooked so we can log-skip if rename is toggled on.
         hookPublicGetName()
     }
 
@@ -154,6 +154,10 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
     }
 
     private fun processJniGetNameResult(param: SafeMethodHook.HookParam) {
+        // Intentionally no-op for kernel rename.
+        // Netlink rename of live VPN ifaces breaks dataplane and VpnService stop
+        // (stuck OFF, other proxy apps offline). Keep the real tun* name for system_server.
+        // Presentation masking stays in NetworkInterface.getName/getDisplayName only.
         val result = param.result
         if (result !is String) {
             if (result != null) {
@@ -161,13 +165,13 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
             }
             return
         }
-        if (!PrivilegeSettingsStore.shouldRenameInterface()) return
-        if (!isTunInterface(result)) return
-        val prefix = PrivilegeSettingsStore.interfacePrefix()
-        val renamed = renameInterface(result, prefix) ?: return
-        param.result = renamed
+        if (PrivilegeSettingsStore.shouldRenameInterface() && isTunInterface(result)) {
+            HookErrorStore.d(
+                SOURCE,
+                "skip kernel rename for $result (mask-only policy; real iface name preserved)",
+            )
+        }
     }
-
     private fun findVpnClass(): Class<*> {
         val names = listOf(
             "com.android.server.connectivity.Vpn",

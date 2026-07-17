@@ -478,7 +478,7 @@
     <string name="toast_privilege_sync_ok">隱藏設定已同步到 system_server</string>
     <string name="toast_privilege_module_active">LSPosed hidevpn 模組已啟用</string>
     <string name="privilege_empty_target_warning">已開啟對應用隱藏 VPN，但尚未選擇目標應用。請勾選需要抗 VPN 偵測的應用。</string>
-    <string name="summary_pref_privilege_iface_prefix">開啟重新命名時使用的前綴（預設 wlan）</string>
+    <string name="summary_pref_privilege_iface_prefix">僅用於展示偽裝的前綴（預設 wlan）。真實 tun* 名保持不變</string>
     <string name="title_pref_privilege_hide_vpn">對選定應用隱藏 VPN</string>
     <string name="title_privilege_hide_vpn_apps">隱藏 VPN 目標應用</string>
     <string name="summary_pref_privilege_module_status">檢查 system_server 中 hidevpn hook 是否生效</string>
@@ -486,13 +486,13 @@
     <string name="toast_privilege_module_inactive">模組未啟用。請在 LSPosed 啟用，作用域選 system，然後重啟</string>
     <string name="summary_pref_privilege_module_status_inactive">模組未啟用。請在 LSPosed 啟用，作用域選 system，然後重啟</string>
     <string name="title_pref_privilege_module_status">模組狀態</string>
-    <string name="summary_pref_privilege_iface_rename">偽裝 NetworkInterface 回傳的 tun/ppp 名稱</string>
-    <string name="title_pref_privilege_iface_rename">重新命名 VPN 網卡</string>
+    <string name="summary_pref_privilege_iface_rename">僅偽裝應用讀到的網卡名，不改核心真實介面。核心重新命名會導致關閉 VPN 卡住、其他代理應用斷網</string>
+    <string name="title_pref_privilege_iface_rename">偽裝 VPN 網卡名</string>
     <string name="summary_pref_privilege_module_status_active_on">模組已啟用 · 隱藏已開啟</string>
     <string name="summary_pref_privilege_module_status_active_off">模組已啟用 · 隱藏未開啟</string>
     <string name="summary_pref_privilege_hide_vpn">透過 LSPosed/system_server hook 抹除 TRANSPORT_VPN 等特徵。需要 LSPosed、啟用模組，且作用域包含 system(android)。一般 VPN 仍會運行。</string>
     <string name="summary_pref_privilege_iface_prefix_value">目前前綴：%1$s</string>
-    <string name="title_pref_privilege_iface_prefix">網卡名前綴</string>
+    <string name="title_pref_privilege_iface_prefix">偽裝網卡名前綴</string>
     <string name="summary_pref_privilege_manage_apps">需要抗 VPN 偵測的應用列表</string>
     <string name="toast_privilege_module_unauthorized">模組拒絕應用身分。請重裝並重新啟用模組</string>
     <string name="summary_pref_privilege_module_status_active_off_ver">模組已啟用 (v%1$d) · 隱藏未開啟</string>

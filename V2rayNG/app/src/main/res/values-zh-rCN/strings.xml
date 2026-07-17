@@ -557,10 +557,10 @@
     <string name="summary_pref_privilege_hide_vpn">通过 LSPosed/system_server hook 抹除 TRANSPORT_VPN 等特征。需要 LSPosed、启用模块，且作用域包含 system(android)。普通 VPN 仍会运行。</string>
     <string name="title_pref_privilege_manage_apps">目标应用</string>
     <string name="summary_pref_privilege_manage_apps">需要抗 VPN 检测的应用列表</string>
-    <string name="title_pref_privilege_iface_rename">重命名 VPN 网卡</string>
-    <string name="summary_pref_privilege_iface_rename">伪装 NetworkInterface 返回的 tun/ppp 名称</string>
-    <string name="title_pref_privilege_iface_prefix">网卡名前缀</string>
-    <string name="summary_pref_privilege_iface_prefix">开启重命名时使用的前缀（默认 wlan）</string>
+    <string name="title_pref_privilege_iface_rename">伪装 VPN 网卡名</string>
+    <string name="summary_pref_privilege_iface_rename">仅伪装应用读到的网卡名，不改内核真实接口。内核重命名会导致关 VPN 卡住、其他代理应用断网</string>
+    <string name="title_pref_privilege_iface_prefix">伪装网卡名前缀</string>
+    <string name="summary_pref_privilege_iface_prefix">仅用于展示伪装的前缀（默认 wlan）。真实 tun* 名保持不变</string>
     <string name="title_pref_privilege_module_status">模块状态</string>
     <string name="summary_pref_privilege_module_status">检查 system_server 中 hidevpn hook 是否生效</string>
     <string name="toast_privilege_module_active">LSPosed hidevpn 模块已激活</string>

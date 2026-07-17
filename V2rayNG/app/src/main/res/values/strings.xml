@@ -570,10 +570,10 @@
     <string name="summary_pref_privilege_hide_vpn">LSPosed/system_server hooks sanitize TRANSPORT_VPN and related APIs for selected packages. Requires LSPosed, module enabled, scope includes system (android). Normal VPN still runs.</string>
     <string name="title_pref_privilege_manage_apps">Target apps</string>
     <string name="summary_pref_privilege_manage_apps">Apps that should not see VPN (anti-detection list)</string>
-    <string name="title_pref_privilege_iface_rename">Rename VPN interfaces</string>
-    <string name="summary_pref_privilege_iface_rename">Mask tun/ppp interface names returned by NetworkInterface APIs</string>
-    <string name="title_pref_privilege_iface_prefix">Interface rename prefix</string>
-    <string name="summary_pref_privilege_iface_prefix">Prefix used when interface rename is enabled (default wlan)</string>
+    <string name="title_pref_privilege_iface_rename">Mask VPN interface names</string>
+    <string name="summary_pref_privilege_iface_rename">Presentation-only mask for NetworkInterface names. Does not rename the real kernel interface (kernel rename breaks VPN stop and other apps)</string>
+    <string name="title_pref_privilege_iface_prefix">Masked interface prefix</string>
+    <string name="summary_pref_privilege_iface_prefix">Prefix used for presentation masking only (default wlan). Real tun* name is kept</string>
     <string name="title_pref_privilege_module_status">Module status</string>
     <string name="summary_pref_privilege_module_status">Check whether LSPosed hidevpn hooks are active in system_server</string>
     <string name="toast_privilege_module_active">LSPosed hidevpn module active</string>

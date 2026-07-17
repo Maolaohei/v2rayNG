@@ -456,7 +456,7 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     val syncOk = withContext(Dispatchers.IO) {
                         PrivilegeSettingsClient.sync()
                     }
-                    // Give system_server a brief window for eager tun rename after settings update.
+                    // Brief settle after privilege settings sync (mask-only; no kernel rename).
                     withContext(Dispatchers.IO) {
                         try {
                             Thread.sleep(350)
@@ -699,17 +699,17 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     val stillLegacy = detection.nativeInterfaces.any {
                         it.startsWith("tun") || it.startsWith("ppp") || it.startsWith("tap")
                     }
-                    val renamedSeen = detection.nativeInterfaces.any { it.startsWith(renamePrefix) } ||
+                    val maskedSeen = detection.nativeInterfaces.any { it.startsWith(renamePrefix) } ||
                         detection.frameworkInterfaces.any { it.startsWith(renamePrefix) }
                     when {
-                        stillLegacy -> appendLine(
-                            "Rename note: still seeing tun/ppp/tap. Reboot after module enable, then re-toggle VPN so system_server renames the iface on jniGetName.",
+                        stillLegacy && !maskedSeen -> appendLine(
+                            "Rename note: mask-only mode. Seeing real tun/ppp/tap is expected if this process is not fully masked; kernel iface stays tun*.",
                         )
-                        renamedSeen -> appendLine(
-                            "Rename note: prefix `$renamePrefix` observed; kernel rename path looks active.",
+                        maskedSeen -> appendLine(
+                            "Rename note: presentation mask active (prefix `$renamePrefix`). Kernel iface is intentionally NOT renamed.",
                         )
                         else -> appendLine(
-                            "Rename note: no tun/ppp/tap seen. If you just changed prefix, re-toggle VPN once.",
+                            "Rename note: no tun/ppp/tap seen. Kernel rename is disabled; only presentation mask is used.",
                         )
                     }
                 }
