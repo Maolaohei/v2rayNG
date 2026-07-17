@@ -351,14 +351,6 @@
             android:summary="%s"
             android:title="@string/title_mode" />
 
-        <ListPreference
-            android:defaultValue="hev"
-            android:entries="@array/root_engine_entries"
-            android:entryValues="@array/root_engine_value"
-            android:key="pref_root_engine"
-            android:summary="%s"
-            android:title="@string/title_pref_root_engine" />
-
 
         <CheckBoxPreference
             android:defaultValue="false"

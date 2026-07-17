@@ -72,9 +72,9 @@ object AppConfig {
     const val PREF_MODE = "pref_mode"
     const val PREF_ROOT_MODE_ENABLE = "pref_root_mode_enabled"
     const val PREF_ROOT_LAN_SHARING = "pref_root_lan_sharing"
-    /** ROOT dataplane engine: "hev" (default) or "xray_tun" (experimental). */
+    /** Legacy ROOT engine pref key (always treated as xray_tun; hev values migrate). */
     const val PREF_ROOT_ENGINE = "pref_root_engine"
-    const val ROOT_ENGINE_HEV = "hev"
+    const val ROOT_ENGINE_HEV = "hev" // legacy only; not used by ROOT runtime
     const val ROOT_ENGINE_XRAY_TUN = "xray_tun"
     const val PREF_IS_BOOTED = "pref_is_booted"
     const val PREF_CHECK_UPDATE_PRE_RELEASE = "pref_check_update_pre_release"

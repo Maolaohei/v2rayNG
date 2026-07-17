@@ -54,7 +54,6 @@ class SettingsActivity : BaseActivity() {
 
         private val mode by lazy { findPreference<ListPreference>(AppConfig.PREF_MODE) }
         private val lanSharing by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_ROOT_LAN_SHARING) }
-        private val rootEngine by lazy { findPreference<ListPreference>(AppConfig.PREF_ROOT_ENGINE) }
 
         private val hevTunLogLevel by lazy { findPreference<ListPreference>(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL) }
         private val hevTunRwTimeout by lazy { findPreference<EditTextPreference>(AppConfig.PREF_HEV_TUNNEL_RW_TIMEOUT) }
@@ -132,30 +131,6 @@ class SettingsActivity : BaseActivity() {
             }
 
             mode?.dialogLayoutResource = R.layout.preference_with_help_link
-
-            rootEngine?.setOnPreferenceChangeListener { pref, newValue ->
-                val valueStr = newValue.toString()
-                (pref as? ListPreference)?.let { lp ->
-                    val idx = lp.findIndexOfValue(valueStr)
-                    lp.summary = if (idx >= 0) lp.entries[idx] else valueStr
-                }
-                // Engine switch changes capture path; hard-restart when ROOT session is live.
-                if (SettingsManager.isRootMode()) {
-                    val live =
-                        CoreServiceManager.serviceControl != null ||
-                            CoreServiceManager.isRunning()
-                    if (live) {
-                        val home = (activity as? MainActivity)?.homeFragmentForModeRestart()
-                        if (home != null && home.isAdded) {
-                            home.hardRestartForCurrentMode()
-                        } else {
-                            SettingsChangeManager.makeRestartService()
-                            CoreServiceManager.stopVService(requireContext())
-                        }
-                    }
-                }
-                true
-            }
 
             useHevTun?.setOnPreferenceChangeListener { _, newValue ->
                 updateHevTunSettings(newValue as Boolean)
@@ -267,14 +242,6 @@ class SettingsActivity : BaseActivity() {
             val vpn = value == VPN && !root
             // Hide conflicting dual-source: settings mode is Proxy/VPN only while ROOT is home-owned.
             mode?.isEnabled = !root
-            rootEngine?.isEnabled = root && com.v2ray.ang.root.RootTunFeature.canUseXrayTun()
-            rootEngine?.isVisible = true
-            if (root) {
-                rootEngine?.summary = rootEngine?.entry
-                    ?: SettingsManager.configuredRootEngine().prefValue
-            } else {
-                rootEngine?.summary = getString(R.string.summary_pref_root_engine)
-            }
             mode?.summary = if (root) {
                 getString(R.string.home_mode_root_settings_summary)
             } else {

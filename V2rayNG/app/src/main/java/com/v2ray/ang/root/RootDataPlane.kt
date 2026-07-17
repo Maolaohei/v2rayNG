@@ -1,11 +1,10 @@
 package com.v2ray.ang.root
 
 import android.content.Context
-import com.v2ray.ang.handler.SettingsManager
 
 /**
  * Single owner for ROOT system traffic capture after core is up.
- * CoreRootService should talk to [RootDataPlanes.current], not hev/xray details.
+ * CoreRootService should talk to [RootDataPlanes.current], not engine details.
  */
 interface RootDataPlane {
     val engine: RootEngine
@@ -24,23 +23,14 @@ interface RootDataPlane {
     fun isRuntimeLive(): Boolean
 
     fun snapshot(context: Context): String
+
+    /** Remaining repair backoff; 0 means repair allowed. */
+    fun repairBackoffRemainingMs(): Long = 0L
 }
 
 object RootDataPlanes {
-    /**
-     * Effective engine: configured xray_tun only when feature-ready; otherwise hev.
-     */
-    fun effectiveEngine(): RootEngine {
-        if (!SettingsManager.isRootMode()) return RootEngine.HEV
-        val configured = SettingsManager.configuredRootEngine()
-        if (configured == RootEngine.XRAY_TUN && RootTunFeature.canUseXrayTun()) {
-            return RootEngine.XRAY_TUN
-        }
-        return RootEngine.HEV
-    }
+    /** ROOT always uses xray_tun. Non-ROOT callers should not use this. */
+    fun effectiveEngine(): RootEngine = RootEngine.XRAY_TUN
 
-    fun current(): RootDataPlane = when (effectiveEngine()) {
-        RootEngine.XRAY_TUN -> XrayTunRootDataPlane
-        RootEngine.HEV -> HevRootDataPlane
-    }
+    fun current(): RootDataPlane = XrayTunRootDataPlane
 }

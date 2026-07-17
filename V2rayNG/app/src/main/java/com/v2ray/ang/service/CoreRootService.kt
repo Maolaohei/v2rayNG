@@ -29,18 +29,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Root-mode service: starts the Xray core with a local SOCKS inbound only (no VpnService
- * TUN fd). System-wide traffic is routed by iptables instead (see [RootProxyManager]).
+ * Root-mode service: opens a root TUN fd, starts Bray-Core with that fd, then installs
+ * MARK/iptables rules (see [XrayTunRootDataPlane] / [RootProxyManager.installRulesOnly]).
  *
- * Core starts first, then root routing is installed only after local SOCKS accepts
- * connections. A lightweight watchdog keeps hev/tun/rules/socks alive while the service
- * runs and fail-closes after repeated repair failures. Network changes also trigger a
- * lightweight pipeline ensure (VPN-equivalent recovery without VpnService).
+ * No hev-socks5-tunnel hairpin for device capture. A lightweight pipeline watchdog keeps
+ * tun/rules alive and fail-closes after repeated hard failures. Network changes trigger
+ * a graduated ensure (VPN-equivalent recovery without VpnService).
  */
 class CoreRootService : Service(), ServiceControl {
 
@@ -115,23 +112,12 @@ class CoreRootService : Service(), ServiceControl {
         // Re-entry that always called startDetailed() previously caused 1-3s blackholes and
         // "sometimes works" intermittency under memory pressure / task-manager thrash.
         val plane = RootDataPlanes.current()
-        val xrayTun = plane.engine == com.v2ray.ang.root.RootEngine.XRAY_TUN
         val alreadyLive = CoreServiceManager.isRunning() || CoreServiceManager.hasLiveSession()
         if (alreadyLive) {
             setupJob?.cancel()
             setupJob = serviceScope.launch {
                 if (plane.isHealthy(this@CoreRootService)) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: re-entry while healthy, skip rebuild engine=${plane.engine}")
-                    startWatchdog()
-                    return@launch
-                }
-                // hev needs local SOCKS; xray_tun system path does not depend on SOCKS hairpin.
-                if (!xrayTun && !waitLocalSocksReady()) {
-                    LogUtil.w(AppConfig.TAG, "StartCore-Root: re-entry SOCKS not ready yet, ensure later")
-                    val err = plane.ensure(this@CoreRootService)
-                    if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
-                        LogUtil.e(AppConfig.TAG, "StartCore-Root: re-entry ensure failed: $err")
-                    }
                     startWatchdog()
                     return@launch
                 }
@@ -155,24 +141,10 @@ class CoreRootService : Service(), ServiceControl {
             return START_STICKY
         }
 
-        // Cold start:
-        // - hev: start core (SOCKS only) first, then hev+rules
-        // - xray_tun: open fd + startLoop(fd) + rules inside plane.start (needs fd before core)
-        if (!xrayTun) {
-            if (!CoreServiceManager.startCoreLoop(null)) {
-                LogUtil.e(AppConfig.TAG, "StartCore-Root: core failed to start (still running or service race)")
-                failAndStop(RootProxyManager.RootError.UNKNOWN)
-                return START_NOT_STICKY
-            }
-        }
-
+        // Cold start: open TUN fd + startLoop(fd) + MARK rules inside plane.start.
+        // No hev / no SOCKS-hairpin gate for ROOT capture.
         setupJob?.cancel()
         setupJob = serviceScope.launch {
-            if (!xrayTun && !waitLocalSocksReady()) {
-                LogUtil.e(AppConfig.TAG, "StartCore-Root: local SOCKS not ready")
-                failAndStop(RootProxyManager.RootError.SOCKS_NOT_READY)
-                return@launch
-            }
             LogUtil.i(AppConfig.TAG, "StartCore-Root: dataplane engine=${plane.engine}")
             val err = plane.start(this@CoreRootService)
             if (err != null) {
@@ -215,7 +187,7 @@ class CoreRootService : Service(), ServiceControl {
     /**
      * Recover after connectivity changes.
      * - Always ensure local ROOT pipeline (hev/tun/rules/socks).
-     * - After a real onLost闂備焦鍓氶崑鍛叏閻氱潪vailable transition, also soft-restart the core so
+     * - After a real onLost闂傚倷鐒﹂崜姘跺磻閸涱喗鍙忛柣姘辨姜vailable transition, also soft-restart the core so
      *   outbound sockets re-bind like VPN's network recovery path.
      */
     private fun scheduleNetworkRecover(reason: String, softRestartCore: Boolean) {
@@ -292,20 +264,20 @@ class CoreRootService : Service(), ServiceControl {
         if (watchdogJob?.isActive == true) return
         watchdogJob = serviceScope.launch {
             var consecutiveHardFailures = 0
-            // Warm-up: do not fail-close right after start while rules/hev settle.
+            // Warm-up: do not fail-close right after start while rules/tun settle.
             delay(30_000L)
             while (isActive && CoreServiceManager.isRunning()) {
                 if (CoreServiceManager.isSoftRestarting()) {
                     delay(3_000L)
                     continue
                 }
-                val backoff = RootProxyManager.repairBackoffRemainingMs()
+                val plane = RootDataPlanes.current()
+                val backoff = plane.repairBackoffRemainingMs()
                 if (backoff > 0L) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: repair backoff ${backoff}ms, watchdog waits")
                     delay(backoff.coerceAtMost(30_000L))
                     continue
                 }
-                val plane = RootDataPlanes.current()
                 if (plane.isHealthy(this@CoreRootService)) {
                     consecutiveHardFailures = 0
                     delay(45_000L)
@@ -313,10 +285,14 @@ class CoreRootService : Service(), ServiceControl {
                 }
 
                 LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline unhealthy, repairing engine=${plane.engine}")
-                val err = plane.ensure(this@CoreRootService)
+                var err = plane.ensure(this@CoreRootService)
+                if (err == RootProxyManager.RootError.TUN_FAILED) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: TUN missing, full dataplane rebuild")
+                    err = plane.start(this@CoreRootService)
+                }
                 if (err == RootProxyManager.RootError.REPAIR_BACKED_OFF) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: repair backed off, wait for next tick")
-                    delay(RootProxyManager.repairBackoffRemainingMs().coerceIn(2_000L, 30_000L))
+                    delay(plane.repairBackoffRemainingMs().coerceIn(2_000L, 30_000L))
                     continue
                 }
 
@@ -328,9 +304,8 @@ class CoreRootService : Service(), ServiceControl {
                     continue
                 }
 
-                // Hard fail: su denied / hev binary missing / TUN gone for current engine.
+                // Hard fail: su denied / TUN gone.
                 val hard = err == RootProxyManager.RootError.SU_DENIED ||
-                    err == RootProxyManager.RootError.HEV_MISSING ||
                     err == RootProxyManager.RootError.TUN_FAILED ||
                     !plane.isRuntimeLive()
                 if (hard) {
@@ -345,33 +320,13 @@ class CoreRootService : Service(), ServiceControl {
                     }
                     delay(10_000L)
                 } else {
-                    // Soft unhealthy (rules/socks flap): keep service, retry later.
+                    // Soft unhealthy (rules flap): keep service, retry later.
                     LogUtil.w(AppConfig.TAG, "StartCore-Root: soft unhealthy ($err), keep session and retry")
                     consecutiveHardFailures = 0
                     delay(30_000L)
                 }
             }
         }
-    }
-
-
-
-    private suspend fun waitLocalSocksReady(timeoutMs: Long = 6000L): Boolean {
-        val port = SettingsManager.getSocksPort()
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            if (!CoreServiceManager.isRunning()) return false
-            try {
-                Socket().use { s ->
-                    s.connect(InetSocketAddress(AppConfig.LOOPBACK, port), 250)
-                    return true
-                }
-            } catch (_: Exception) {
-                // retry
-            }
-            delay(120L)
-        }
-        return false
     }
 
     private fun failAndStop(error: RootProxyManager.RootError) {
@@ -434,4 +389,5 @@ class CoreRootService : Service(), ServiceControl {
         super.attachBaseContext(context)
     }
 }
+
 

@@ -228,7 +228,7 @@ object CoreServiceManager {
         val service = getService() ?: return
         try {
             if (SettingsManager.isRootMode()) {
-                // hev: ensure SOCKS+helper; xray_tun: ensure MARK rules (fd already held).
+                // xray_tun: ensure MARK rules (fd already held across soft-restart).
                 val plane = com.v2ray.ang.root.RootDataPlanes.current()
                 LogUtil.i(AppConfig.TAG, "StartCore-Manager: ensuring root routing after soft-restart engine=${plane.engine}")
                 val err = plane.ensure(service)
@@ -653,7 +653,7 @@ object CoreServiceManager {
 
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting core loop for ${config.remarks}")
         // Soft-restart may refresh dynamic SOCKS for VPN/Proxy helpers.
-        // ROOT freezes SOCKS port so hev/iptables need not rebind on every node switch.
+        // ROOT freezes SOCKS port (local tools / LAN sharing) while xray_tun owns capture.
         if (softRestarting.get() && SettingsManager.usesDynamicSocksPort()) {
             SettingsManager.refreshRuntimeSocksPort()
         }
