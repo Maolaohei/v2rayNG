@@ -292,6 +292,11 @@
     <string name="title_pref_hev_tunnel_loglevel">Hev Tun Log Level</string>
     <string name="title_pref_hev_tunnel_rw_timeout">Hev Tun read/write timeout (seconds) (tcp,udp default 300,60)</string>
     <string name="title_mode_settings">Mode Settings</string>
+    <string name="title_privilege_settings">Privilege enhancement</string>
+    <string name="title_pref_hide_vpn">Hide system VPN icon (Root)</string>
+    <string name="summary_pref_hide_vpn">Root transparent proxy without Android VpnService status-bar icon. Requires su. Less stable than normal VPN; use only when you need to hide the VPN key.</string>
+    <string name="title_vpn_advanced">VPN advanced</string>
+    <string name="home_mode_hide_vpn_hint">VPN icon hidden (Root). Toggle off in More → Privilege enhancement.</string>
     <string name="title_root_mode_enabled">Root mode enabled (Root Users)</string>
     <string name="summary_root_mode_enabled">Enable low-level transparent proxying via root privileges. This mode bypasses the standard Android system VPN to directly take over all underlying network traffic. Once enabled, the original regular mode, per-app routing, and related VPN settings will become completely invalid.</string>
     <string name="toast_root_required">Root access is required for this feature</string>
@@ -306,8 +311,8 @@
     <string name="toast_root_repair_backed_off">ROOT tunnel is recovering; retry shortly</string>
     <string name="summary_root_dynamic_socks_disabled">Disabled in ROOT mode (stable local SOCKS port required)</string>
     <string name="summary_root_vpn_only_setting">VPN-only setting; not used while ROOT mode is active</string>
-    <string name="home_mode_root_settings_summary">Managed on Home · ROOT</string>
-        <string name="title_root_lan_sharing">LAN / tethering sharing (Root Users)</string>
+    <string name="home_mode_root_settings_summary">Managed in Privilege enhancement (hide VPN icon)</string>
+        <string name="title_root_lan_sharing">LAN / tethering sharing (Root Users)</string>`n    <string name="title_pref_root_lan_sharing">@string/title_root_lan_sharing</string>
     <string name="summary_root_lan_sharing">Route Wi-Fi hotspot and USB-tethered devices through the VPN</string>
 
     <string name="title_logcat">Logcat</string>
@@ -560,5 +565,20 @@
         <item>WebDAV</item>
     </string-array>
 
+    <string name="xposed_description">VPN detection hardening (LSPosed) for v2rayNG</string>
+    <string name="title_pref_privilege_hide_vpn">Hide VPN from selected apps</string>
+    <string name="summary_pref_privilege_hide_vpn">LSPosed/system_server hooks sanitize TRANSPORT_VPN and related APIs for selected packages. Requires LSPosed, module enabled, scope includes system (android). Normal VPN still runs.</string>
+    <string name="title_pref_privilege_manage_apps">Target apps</string>
+    <string name="summary_pref_privilege_manage_apps">Apps that should not see VPN (anti-detection list)</string>
+    <string name="title_pref_privilege_iface_rename">Rename VPN interfaces</string>
+    <string name="summary_pref_privilege_iface_rename">Mask tun/ppp interface names returned by NetworkInterface APIs</string>
+    <string name="title_pref_privilege_iface_prefix">Interface rename prefix</string>
+    <string name="summary_pref_privilege_iface_prefix">Prefix used when interface rename is enabled (default wlan)</string>
+    <string name="title_pref_privilege_module_status">Module status</string>
+    <string name="summary_pref_privilege_module_status">Check whether LSPosed hidevpn hooks are active in system_server</string>
+    <string name="toast_privilege_module_active">LSPosed hidevpn module active</string>
+    <string name="toast_privilege_module_inactive">Module inactive. Enable in LSPosed, scope=system, then reboot</string>
+    <string name="toast_privilege_sync_ok">Hide-VPN settings synced to system_server</string>
+    <string name="toast_privilege_sync_fail">Sync failed (module inactive or transaction rejected)</string>
 </resources>
 

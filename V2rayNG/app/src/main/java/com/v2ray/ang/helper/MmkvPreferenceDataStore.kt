@@ -103,7 +103,9 @@ class MmkvPreferenceDataStore : PreferenceDataStore() {
             AppConfig.PREF_VPN_INTERFACE_ADDRESS_CONFIG_INDEX,
             AppConfig.PREF_VPN_DNS,
             AppConfig.PREF_IPV6_ENABLED,
-            AppConfig.PREF_APPEND_HTTP_PROXY -> true
+            AppConfig.PREF_APPEND_HTTP_PROXY,
+            AppConfig.PREF_ROOT_MODE_ENABLE,
+            AppConfig.PREF_ROOT_LAN_SHARING -> true
             else -> false
         }
     }

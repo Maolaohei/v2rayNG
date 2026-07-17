@@ -8,11 +8,12 @@ import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
+import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import com.v2ray.ang.AppConfig
-import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
+import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
@@ -20,8 +21,9 @@ import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.helper.MmkvPreferenceDataStore
 import com.v2ray.ang.root.RootManager
 import com.v2ray.ang.util.Utils
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +56,10 @@ class SettingsActivity : BaseActivity() {
 
         private val mode by lazy { findPreference<ListPreference>(AppConfig.PREF_MODE) }
         private val lanSharing by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_ROOT_LAN_SHARING) }
+        private val privilegeCategory by lazy { findPreference<PreferenceCategory>("pref_category_privilege") }
+        private val privilegeHideVpn by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_HIDE_VPN) }
+        private val privilegeIfaceRename by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_IFACE_RENAME) }
+        private val privilegeIfacePrefix by lazy { findPreference<EditTextPreference>(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX) }
 
         private val hevTunLogLevel by lazy { findPreference<ListPreference>(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL) }
         private val hevTunRwTimeout by lazy { findPreference<EditTextPreference>(AppConfig.PREF_HEV_TUNNEL_RW_TIMEOUT) }
@@ -122,27 +128,12 @@ class SettingsActivity : BaseActivity() {
                     val idx = lp.findIndexOfValue(valueStr)
                     lp.summary = if (idx >= 0) lp.entries[idx] else valueStr
                 }
-                // Settings only switches Proxy/VPN; ROOT is chosen on the home screen.
-                // Always clear root flag so settings cannot leave the app stuck in ROOT.
+                // Proxy/VPN only. SFA-style hidevpn is independent LSPosed hardening.
                 val next = if (valueStr == VPN) AppConfig.VPN else AppConfig.MODE_PROXY_ONLY
                 val changed = SettingsManager.setRunMode(next)
                 updateMode(valueStr)
                 if (changed) {
-                    // Service class may change (especially leaving ROOT). Soft-restart is not enough.
-                    val live =
-                        CoreServiceManager.serviceControl != null ||
-                            CoreServiceManager.isRunning()
-                    if (live) {
-                        // Prefer immediate hard-restart: Settings is often embedded in MainActivity
-                        // (More tab), so waiting for onResume would leave the proxy stopped.
-                        val home = (activity as? MainActivity)?.homeFragmentForModeRestart()
-                        if (home != null && home.isAdded) {
-                            home.hardRestartForCurrentMode()
-                        } else {
-                            SettingsChangeManager.makeRestartService()
-                            CoreServiceManager.stopVService(requireContext())
-                        }
-                    }
+                    hardRestartIfLive()
                 }
                 true
             }
@@ -225,6 +216,7 @@ class SettingsActivity : BaseActivity() {
 
             preferenceScreen?.let { traverse(it) }
             setupToolEntryClicks()
+            setupPrivilegePrefs()
         }
 
         private suspend fun checkAndRequestRoot(): Boolean {
@@ -240,8 +232,9 @@ class SettingsActivity : BaseActivity() {
             super.onStart()
             updateHevTunSettings(MmkvManager.decodeSettingsBool(AppConfig.PREF_USE_HEV_TUNNEL, false))
 
-            // Initialize mode-dependent UI states (ROOT UI currently retired).
+            // Initialize mode-dependent UI states.
             SettingsManager.migrateRootModeIfUiHidden()
+            privilegeCategory?.isVisible = true
             lanSharing?.isVisible = AppConfig.ROOT_MODE_UI_ENABLED
             updateMode(MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, VPN))
 
@@ -259,18 +252,20 @@ class SettingsActivity : BaseActivity() {
 
         private fun updateMode(value: String?) {
             SettingsManager.migrateRootModeIfUiHidden()
-            // Root is selected on the home screen; if active, VPN-only prefs stay disabled.
+            // ROOT (if re-enabled) still disables VPN-only prefs; hidevpn is separate LSPosed path.
             val root = AppConfig.ROOT_MODE_UI_ENABLED && SettingsManager.isRootMode()
             val vpn = value == VPN && !root
-            // Settings mode is Proxy/VPN only. ROOT UI is currently retired.
+            privilegeCategory?.isVisible = true
+            // Settings mode is Proxy/VPN only while hide-VPN is off.
             mode?.isEnabled = !root
             mode?.summary = if (root) {
                 getString(R.string.home_mode_root_settings_summary)
             } else {
                 mode?.entry ?: value
             }
-            // ROOT-only extras are hidden while ROOT UI is disabled.
+            // ROOT-only extras.
             lanSharing?.isVisible = AppConfig.ROOT_MODE_UI_ENABLED
+            lanSharing?.isEnabled = root
             localDns?.isEnabled = vpn
             fakeDns?.isEnabled = vpn
             appendHttpProxy?.isEnabled = vpn
@@ -306,6 +301,64 @@ class SettingsActivity : BaseActivity() {
             }
         }
 
+
+        
+        private fun setupPrivilegePrefs() {
+            privilegeHideVpn?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                // Persist happens via PreferenceDataStore; force sync after change.
+                view?.post {
+                    val ok = com.v2ray.ang.xposed.PrivilegeSettingsClient.sync()
+                    context?.let {
+                        if (ok) {
+                            android.widget.Toast.makeText(it, R.string.toast_privilege_sync_ok, android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(it, R.string.toast_privilege_sync_fail, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                true
+            }
+            privilegeIfaceRename?.setOnPreferenceChangeListener { _, _ ->
+                view?.post { com.v2ray.ang.xposed.PrivilegeSettingsClient.sync() }
+                true
+            }
+            privilegeIfacePrefix?.setOnPreferenceChangeListener { _, _ ->
+                view?.post { com.v2ray.ang.xposed.PrivilegeSettingsClient.sync() }
+                true
+            }
+            findPreference<Preference>("pref_entry_privilege_manage_apps")?.setOnPreferenceClickListener {
+                // Reuse PerApp picker UI surface for now: write hidevpn package set.
+                startActivity(android.content.Intent(requireContext(), PerAppProxyActivity::class.java).apply {
+                    putExtra("extra_privilege_hide_vpn_picker", true)
+                })
+                true
+            }
+            findPreference<Preference>("pref_entry_privilege_module_status")?.setOnPreferenceClickListener {
+                val active = com.v2ray.ang.xposed.PrivilegeSettingsClient.isModuleActive()
+                val msg = if (active) R.string.toast_privilege_module_active else R.string.toast_privilege_module_inactive
+                android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_LONG).show()
+                // refresh sync attempt
+                com.v2ray.ang.xposed.PrivilegeSettingsClient.sync()
+                true
+            }
+            // Initial sync when settings opens.
+            com.v2ray.ang.xposed.PrivilegeSettingsClient.sync()
+        }
+        private fun hardRestartIfLive() {
+            val live =
+                CoreServiceManager.serviceControl != null ||
+                    CoreServiceManager.isRunning()
+            if (!live) return
+            val home = (activity as? MainActivity)?.homeFragmentForModeRestart()
+            if (home != null && home.isAdded) {
+                home.hardRestartForCurrentMode()
+            } else {
+                SettingsChangeManager.makeHardRestartService()
+                CoreServiceManager.stopAllModeServices(requireContext())
+                CoreServiceManager.startVService(requireContext())
+            }
+        }
 
         private fun setupToolEntryClicks() {
             fun bind(key: String, activityClass: Class<*>) {

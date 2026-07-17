@@ -72,6 +72,11 @@ object AppConfig {
     const val PREF_MODE = "pref_mode"
     const val PREF_ROOT_MODE_ENABLE = "pref_root_mode_enabled"
     const val PREF_ROOT_LAN_SHARING = "pref_root_lan_sharing"
+    /** LSPosed hidevpn: sanitize VPN detection for selected apps (SFA-style). */
+    const val PREF_PRIVILEGE_HIDE_VPN = "pref_privilege_hide_vpn"
+    const val PREF_PRIVILEGE_HIDE_VPN_APPS = "pref_privilege_hide_vpn_apps"
+    const val PREF_PRIVILEGE_IFACE_RENAME = "pref_privilege_iface_rename"
+    const val PREF_PRIVILEGE_IFACE_PREFIX = "pref_privilege_iface_prefix"
     /** Legacy ROOT engine pref key (always treated as xray_tun; hev values migrate). */
     const val PREF_ROOT_ENGINE = "pref_root_engine"
     const val ROOT_ENGINE_HEV = "hev" // legacy only; not used by ROOT runtime
@@ -206,8 +211,16 @@ object AppConfig {
     const val VPN = "VPN"
     const val MODE_PROXY_ONLY = "Proxy only"
     const val MODE_ROOT = "ROOT"
-    /** When false, hide ROOT entry points and force VPN/Proxy-only runtime path. */
+    /**
+     * Master switch for ROOT/VPN-hide feature availability.
+     * When false, force VPN/Proxy-only and hide all privilege UI.
+     */
     const val ROOT_MODE_UI_ENABLED = false
+    /**
+     * When false, home keeps only Proxy/VPN chips. ROOT (VPN-hide) is controlled
+     * from Settings > Privilege enhancement (SFA-style privileged TUN without VpnService icon).
+     */
+    const val ROOT_MODE_HOME_BUTTON_ENABLED = false
     const val VPN_MTU = 1500
 
     /** Root (system-wide) mode runtime constants. */

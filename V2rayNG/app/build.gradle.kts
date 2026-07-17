@@ -199,6 +199,8 @@ dependencies {
     implementation(libs.multidex)
 
     // Testing Libraries
+    compileOnly("de.robv.android.xposed:api:82")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

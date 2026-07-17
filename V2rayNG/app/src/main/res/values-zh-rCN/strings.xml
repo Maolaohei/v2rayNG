@@ -285,6 +285,11 @@
     <string name="title_pref_hev_tunnel_loglevel">HevTun 日志级别</string>
     <string name="title_pref_hev_tunnel_rw_timeout">HevTun 读写超时(秒) (tcp,udp 默认 300,60)</string>
     <string name="title_mode_settings">模式设置</string>
+    <string name="title_privilege_settings">特权增强</string>
+    <string name="title_pref_hide_vpn">隐藏系统 VPN 图标 (Root)</string>
+    <string name="summary_pref_hide_vpn">使用 Root 透明代理，不创建 Android VpnService，状态栏无 VPN 钥匙图标。需要 su。稳定性通常不如普通 VPN，仅在需要隐藏 VPN 图标时使用。</string>
+    <string name="title_vpn_advanced">VPN 高级</string>
+    <string name="home_mode_hide_vpn_hint">已隐藏 VPN 图标 (Root)。可在 更多 > 特权增强 中关闭。</string>
     <string name="title_root_mode_enabled">启用 Root 模式 (仅限 Root 用户)</string>
     <string name="summary_root_mode_enabled">通过 Root 权限启用底层透明代理。此模式将不再通过 Android 常规系统 VPN 建立连接，而是直接接管系统底层所有网络流量。开启后，原有的常规模式、应用分流及相关 VPN 设置将直接失效。</string>
     <string name="toast_root_required">此功能需要 Root 权限</string>
@@ -298,7 +303,7 @@
     <string name="toast_root_hev_dead">ROOT 失败：隧道进程退出，请重试或改用 VPN</string>
     <string name="summary_root_dynamic_socks_disabled">ROOT 模式下已禁用（需要稳定的本地 SOCKS 端口）</string>
     <string name="summary_root_vpn_only_setting">仅 VPN 模式有效；当前为 ROOT 模式</string>
-    <string name="home_mode_root_settings_summary">由首页控制 · ROOT</string>
+    <string name="home_mode_root_settings_summary">由「特权增强 / 隐藏 VPN 图标」控制</string>
         <string name="title_root_lan_sharing">局域网 / 热点网络共享 (仅限 Root 用户)</string>
     <string name="summary_root_lan_sharing">允许通过 Wi-Fi 热点和 USB 共享网络连接的设备走 VPN 代理流量</string>
 
@@ -547,4 +552,19 @@
         <item>WebDAV</item>
     </string-array>
 
+    <string name="xposed_description">v2rayNG 的 VPN 检测加固（LSPosed）</string>
+    <string name="title_pref_privilege_hide_vpn">对选定应用隐藏 VPN</string>
+    <string name="summary_pref_privilege_hide_vpn">通过 LSPosed/system_server hook 抹除 TRANSPORT_VPN 等特征。需要 LSPosed、启用模块，且作用域包含 system(android)。普通 VPN 仍会运行。</string>
+    <string name="title_pref_privilege_manage_apps">目标应用</string>
+    <string name="summary_pref_privilege_manage_apps">需要抗 VPN 检测的应用列表</string>
+    <string name="title_pref_privilege_iface_rename">重命名 VPN 网卡</string>
+    <string name="summary_pref_privilege_iface_rename">伪装 NetworkInterface 返回的 tun/ppp 名称</string>
+    <string name="title_pref_privilege_iface_prefix">网卡名前缀</string>
+    <string name="summary_pref_privilege_iface_prefix">开启重命名时使用的前缀（默认 wlan）</string>
+    <string name="title_pref_privilege_module_status">模块状态</string>
+    <string name="summary_pref_privilege_module_status">检查 system_server 中 hidevpn hook 是否生效</string>
+    <string name="toast_privilege_module_active">LSPosed hidevpn 模块已激活</string>
+    <string name="toast_privilege_module_inactive">模块未激活。请在 LSPosed 启用，作用域选 system，然后重启</string>
+    <string name="toast_privilege_sync_ok">隐藏设置已同步到 system_server</string>
+    <string name="toast_privilege_sync_fail">同步失败（模块未激活或事务被拒绝）</string>
 </resources>

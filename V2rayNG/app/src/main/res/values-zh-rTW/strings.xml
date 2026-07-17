@@ -284,6 +284,11 @@
     <string name="title_pref_hev_tunnel_loglevel">HevTun 日誌級別</string>
     <string name="title_pref_hev_tunnel_rw_timeout">HevTun 讀寫逾時(秒) (tcp,udp 預設 300,60)</string>
     <string name="title_mode_settings">模式設定</string>
+    <string name="title_privilege_settings">特權增強</string>
+    <string name="title_pref_hide_vpn">隱藏系統 VPN 圖示 (Root)</string>
+    <string name="summary_pref_hide_vpn">使用 Root 透明代理，不建立 Android VpnService，狀態列無 VPN 鑰匙圖示。需要 su。穩定性通常不如普通 VPN，僅在需要隱藏 VPN 圖示時使用。</string>
+    <string name="title_vpn_advanced">VPN 進階</string>
+    <string name="home_mode_hide_vpn_hint">已隱藏 VPN 圖示 (Root)。可在 更多 → 特權增強 中關閉。</string>
     <string name="title_root_mode_enabled">啟用 Root 模式 (僅限 Root 使用者)</string>
     <string name="summary_root_mode_enabled">透過 Root 權限啟用底層透明代理。此模式將不再透過 Android 常規系統 VPN 建立連線，而是直接接管系統底層所有網路流量。開啟後，原有的常规模式、應用分流及相關 VPN 設定將直接失效。</string>
     <string name="toast_root_required">此功能需要 Root 權限</string>
