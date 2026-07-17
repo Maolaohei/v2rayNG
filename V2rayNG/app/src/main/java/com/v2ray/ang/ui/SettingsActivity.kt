@@ -94,8 +94,6 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         private val privilegeCategory by lazy { findPreference<PreferenceCategory>("pref_category_privilege") }
         private val privilegeHideVpn by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_HIDE_VPN) }
         private val privilegeHideSelfPackage by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_HIDE_SELF_PACKAGE) }
-        private val privilegeIfaceRename by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_IFACE_RENAME) }
-        private val privilegeIfacePrefix by lazy { findPreference<EditTextPreference>(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX) }
         private val privilegePorts by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_PORTS) }
 
         private val hevTunLogLevel by lazy { findPreference<ListPreference>(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL) }
@@ -394,25 +392,6 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 }
                 true
             }
-            privilegeIfaceRename?.setOnPreferenceChangeListener { _, newValue ->
-                view?.post {
-                    // Persist already done by PreferenceDataStore; ensure sync before recreate.
-                    PrivilegeSettingsClient.sync()
-                    refreshPrivilegeSummaries()
-                    // Create-time rename only applies when system_server names a new iface.
-                    // Re-toggle VPN so jniGetName runs again with the new flag/prefix.
-                    hardRestartIfLive()
-                }
-                true
-            }
-            privilegeIfacePrefix?.setOnPreferenceChangeListener { _, _ ->
-                view?.post {
-                    PrivilegeSettingsClient.sync()
-                    refreshPrivilegeSummaries()
-                    hardRestartIfLive()
-                }
-                true
-            }
             privilegePorts?.setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
                 view?.post {
@@ -468,6 +447,10 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 true
             }
             // Initial sync + summary when settings opens.
+            // Retire iface rename: clear sticky pref so old installs cannot re-enable it.
+            if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)) {
+                MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
+            }
             PrivilegeSettingsClient.sync()
             refreshPrivilegeSummaries()
         }
@@ -637,7 +620,8 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     getString(R.string.summary_pref_privilege_module_status_error)
             }
 
-            // Hard VPN fingerprints only. MissingNotVpn is weak and should not dominate verdict.
+            // App-facing (Java/Framework) is the primary hide signal.
+            // Native tun* is informational only after iface rename was retired.
             val hardFramework = detection.frameworkDetected.filterNot { it == "MissingNotVpn" }
             val weakFramework = detection.frameworkDetected.filter { it == "MissingNotVpn" }
             val frameworkText = hardFramework
@@ -652,19 +636,41 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(", ")
                 ?: notDetected
-            val nativeText = if (detection.nativeDetected) yes else notDetected
             val nativeIfaces = detection.nativeInterfaces
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(", ")
                 ?: notDetected
             val httpProxy = detection.httpProxy?.takeIf { it.isNotBlank() } ?: notDetected
-
-            val hardLeaked = hardFramework.isNotEmpty() ||
-                detection.nativeDetected ||
-                !detection.httpProxy.isNullOrBlank()
+            val javaLeaked = hardFramework.isNotEmpty()
+            val nativeSeen = detection.nativeDetected
+            // HTTP proxy env is secondary/rare for modern apps; keep in raw details only.
             val moduleInjected = probeAfter.result == PrivilegeSettingsClient.ProbeResult.ACTIVE ||
                 probeAfter.result == PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE
             val moduleActive = probeAfter.result == PrivilegeSettingsClient.ProbeResult.ACTIVE
+
+            val selfPkg = requireContext().packageName
+            val perAppOn = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == true
+            val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS) == true
+            val perAppSet = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET).orEmpty()
+            val likelyInTunnel = when {
+                !running -> false
+                !perAppOn || perAppSet.isEmpty() -> true
+                bypassApps -> !perAppSet.contains(selfPkg)
+                else -> perAppSet.contains(selfPkg)
+            }
+            val gateText = when {
+                !running -> getString(R.string.summary_pref_privilege_self_test_gate_core_off)
+                !selfInList -> getString(R.string.summary_pref_privilege_self_test_gate_not_listed)
+                !likelyInTunnel -> getString(R.string.summary_pref_privilege_self_test_gate_outside_tunnel)
+                else -> getString(R.string.summary_pref_privilege_self_test_gate_ok)
+            }
+
+            val setupIssue = !moduleInjected ||
+                probeAfter.result == PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ||
+                !hideEnabled ||
+                targets.isEmpty() ||
+                !running ||
+                !selfInList
 
             val verdict = when {
                 !moduleInjected ->
@@ -677,25 +683,93 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     getString(R.string.summary_pref_privilege_self_test_verdict_vpn_off)
                 !selfInList ->
                     getString(R.string.summary_pref_privilege_self_test_verdict_self_not_targeted)
-                hardLeaked ->
+                javaLeaked ->
                     getString(R.string.summary_pref_privilege_self_test_verdict_leaked)
+                nativeSeen ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_partial_native)
                 moduleActive ->
                     getString(R.string.summary_pref_privilege_self_test_verdict_clean)
                 else ->
                     getString(R.string.summary_pref_privilege_self_test_verdict_hook_inactive)
             }
 
+            val headline = when {
+                setupIssue ->
+                    getString(R.string.summary_pref_privilege_self_test_headline_setup)
+                javaLeaked ->
+                    getString(R.string.summary_pref_privilege_self_test_headline_fail)
+                nativeSeen ->
+                    getString(R.string.summary_pref_privilege_self_test_headline_partial)
+                else ->
+                    getString(R.string.summary_pref_privilege_self_test_headline_pass)
+            }
+
+            val meaning = when {
+                setupIssue ->
+                    getString(R.string.summary_pref_privilege_self_test_note)
+                javaLeaked ->
+                    getString(R.string.summary_pref_privilege_self_test_meaning_fail)
+                nativeSeen ->
+                    getString(R.string.summary_pref_privilege_self_test_meaning_partial)
+                else ->
+                    getString(R.string.summary_pref_privilege_self_test_meaning_ok)
+            }
+
+            val portsStatus = PrivilegePortsManager.status(requireContext())
+            val portsText = when {
+                !portsStatus.enabledPref -> getString(R.string.summary_pref_privilege_ports_status_off)
+                !portsStatus.root -> getString(R.string.summary_pref_privilege_ports_status_no_root)
+                else -> getString(R.string.summary_pref_privilege_ports_status_on, portsStatus.appliedUids)
+            }
+
             return buildString {
+                // Line 1 is also Preference summary — keep short and non-alarming.
                 appendLine(verdict)
+                appendLine(headline)
+                appendLine()
+
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_java))
+                if (javaLeaked) {
+                    appendLine(
+                        getString(
+                            R.string.summary_pref_privilege_self_test_java_hit,
+                            hardFramework.joinToString(", "),
+                        ),
+                    )
+                } else {
+                    appendLine(getString(R.string.summary_pref_privilege_self_test_java_ok))
+                }
+                if (weakFramework.isNotEmpty()) {
+                    appendLine(
+                        getString(
+                            R.string.summary_pref_privilege_self_test_weak,
+                            weakFramework.joinToString(", "),
+                        ),
+                    )
+                }
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_framework_ifaces,
+                        frameworkIfaces,
+                    ),
+                )
+                appendLine()
+
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_native))
+                if (nativeSeen) {
+                    appendLine(
+                        getString(
+                            R.string.summary_pref_privilege_self_test_native_seen,
+                            nativeIfaces,
+                        ),
+                    )
+                } else {
+                    appendLine(getString(R.string.summary_pref_privilege_self_test_native_ok))
+                }
+                appendLine(getString(R.string.summary_pref_privilege_self_test_mask_off))
                 appendLine()
 
                 appendLine(getString(R.string.summary_pref_privilege_self_test_section_conditions))
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_module_before,
-                        moduleText(probeBefore),
-                    ),
-                )
                 appendLine(
                     getString(
                         R.string.summary_pref_privilege_self_test_module_after,
@@ -727,121 +801,30 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                         if (running) yes else no,
                     ),
                 )
-                val selfPkg = requireContext().packageName
-                val perAppOn = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == true
-                val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS) == true
-                val perAppSet = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET).orEmpty()
-                val likelyInTunnel = when {
-                    !running -> false
-                    !perAppOn || perAppSet.isEmpty() -> true
-                    bypassApps -> !perAppSet.contains(selfPkg)
-                    else -> perAppSet.contains(selfPkg)
-                }
                 appendLine(
                     getString(
                         R.string.summary_pref_privilege_self_test_in_tunnel,
                         if (likelyInTunnel) yes else no,
                     ),
                 )
-                val gateText = when {
-                    !running -> getString(R.string.summary_pref_privilege_self_test_gate_core_off)
-                    !selfInList -> getString(R.string.summary_pref_privilege_self_test_gate_not_listed)
-                    !likelyInTunnel -> getString(R.string.summary_pref_privilege_self_test_gate_outside_tunnel)
-                    else -> getString(R.string.summary_pref_privilege_self_test_gate_ok)
-                }
                 appendLine(getString(R.string.summary_pref_privilege_self_test_gate, gateText))
-                appendLine()
-
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_hard))
-                val hardParts = mutableListOf<String>()
-                if (hardFramework.isNotEmpty()) hardParts += hardFramework.joinToString(", ")
-                if (detection.nativeDetected) {
-                    hardParts += "Native(" + (detection.nativeInterfaces.takeIf { it.isNotEmpty() }?.joinToString(",") ?: "yes") + ")"
-                }
-                if (!detection.httpProxy.isNullOrBlank()) hardParts += "HTTP " + detection.httpProxy
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_hard,
-                        hardParts.takeIf { it.isNotEmpty() }?.joinToString(" | ")
-                            ?: getString(R.string.summary_pref_privilege_self_test_no_hard),
-                    ),
-                )
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_weak))
-                val weakParts = mutableListOf<String>()
-                if (weakFramework.isNotEmpty()) weakParts += weakFramework.joinToString(", ")
-                if (detection.frameworkInterfaces.isNotEmpty() && hardFramework.isEmpty() && !detection.nativeDetected) {
-                    weakParts += "ifaces=" + detection.frameworkInterfaces.joinToString(",")
-                }
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_weak,
-                        weakParts.takeIf { it.isNotEmpty() }?.joinToString(" | ")
-                            ?: getString(R.string.summary_pref_privilege_self_test_no_weak),
-                    ),
-                )
-                appendLine()
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_fingerprints))
-                appendLine(getString(R.string.summary_pref_privilege_self_test_framework, frameworkText))
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_framework_ifaces,
-                        frameworkIfaces,
-                    ),
-                )
-                appendLine(getString(R.string.summary_pref_privilege_self_test_native, nativeText))
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_native_ifaces,
-                        nativeIfaces,
-                    ),
-                )
-                appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy, httpProxy))
-                val portsStatus = PrivilegePortsManager.status(requireContext())
-                val portsText = when {
-                    !portsStatus.enabledPref -> getString(R.string.summary_pref_privilege_ports_status_off)
-                    !portsStatus.root -> getString(R.string.summary_pref_privilege_ports_status_no_root)
-                    else -> getString(R.string.summary_pref_privilege_ports_status_on, portsStatus.appliedUids)
-                }
                 appendLine(getString(R.string.summary_pref_privilege_self_test_ports, portsText))
                 appendLine()
 
-                appendLine(getString(R.string.summary_pref_privilege_self_test_section_mask))
-                val renameEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
-                val renamePrefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX)
-                    ?.takeIf { it.isNotBlank() } ?: "wlan"
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_fingerprints))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_framework, frameworkText))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_native_ifaces, nativeIfaces))
+                appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy_line, httpProxy))
                 appendLine(
                     getString(
-                        R.string.summary_pref_privilege_self_test_mask,
-                        if (renameEnabled) yes else no,
-                        renamePrefix,
+                        R.string.summary_pref_privilege_self_test_module_before,
+                        moduleText(probeBefore),
                     ),
                 )
-                if (renameEnabled) {
-                    val stillLegacy = detection.nativeInterfaces.any {
-                        it.startsWith("tun") || it.startsWith("ppp") || it.startsWith("tap")
-                    }
-                    val maskedSeen = detection.nativeInterfaces.any { it.startsWith(renamePrefix) } ||
-                        detection.frameworkInterfaces.any { it.startsWith(renamePrefix) }
-                    when {
-                        stillLegacy && !maskedSeen -> appendLine(
-                            getString(R.string.summary_pref_privilege_self_test_mask_note_legacy),
-                        )
-                        maskedSeen -> appendLine(
-                            getString(
-                                R.string.summary_pref_privilege_self_test_mask_note_active,
-                                renamePrefix,
-                            ),
-                        )
-                        else -> appendLine(
-                            getString(R.string.summary_pref_privilege_self_test_mask_note_clean),
-                        )
-                    }
-                } else {
-                    appendLine(getString(R.string.summary_pref_privilege_self_test_mask_off))
-                }
                 appendLine()
 
                 appendLine(getString(R.string.summary_pref_privilege_self_test_section_note))
+                appendLine(meaning)
                 append(getString(R.string.summary_pref_privilege_self_test_note))
             }
         }
@@ -878,12 +861,6 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 PrivilegeSettingsClient.ProbeResult.ERROR ->
                     getString(R.string.summary_pref_privilege_module_status_error)
             }
-
-            val rename = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
-            val prefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX)
-                ?.takeIf { it.isNotBlank() } ?: "wlan"
-            privilegeIfacePrefix?.isEnabled = rename
-            privilegeIfacePrefix?.summary = getString(R.string.summary_pref_privilege_iface_prefix_value, prefix)
 
             val portsEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_PORTS, false)
             // Prefer cached root only on UI thread; avoid blocking su probe here.

@@ -132,10 +132,9 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
     }
 
     private fun processJniGetNameResult(param: SafeMethodHook.HookParam) {
-        // SFA-style create-time rename only:
-        // Vpn.jniGetName runs when system_server first names the iface. Netlink-renaming
-        // here keeps a single truth for system_server (no getName mask, no eager live rename).
-        // Do NOT reintroduce public NetworkInterface.getName/getDisplayName masking.
+        // Create-time iface rename is intentionally retired: real netlink rename
+        // had device-specific compatibility issues. Keep jniGetName hooked only
+        // for diagnostics; never rename. Per-app hide stays in Connectivity hooks.
         val result = param.result
         if (result !is String) {
             if (result != null) {
@@ -143,11 +142,7 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
             }
             return
         }
-        if (!PrivilegeSettingsStore.shouldRenameInterface()) return
-        if (!isTunInterface(result)) return
-        val prefix = PrivilegeSettingsStore.interfacePrefix()
-        val renamed = renameInterface(result, prefix) ?: return
-        param.result = renamed
+        // no-op
     }
 
     private fun findVpnClass(): Class<*> {

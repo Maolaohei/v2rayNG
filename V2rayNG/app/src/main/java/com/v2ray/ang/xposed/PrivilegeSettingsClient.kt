@@ -71,10 +71,13 @@ object PrivilegeSettingsClient {
         val packages = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)
             ?.toList()
             .orEmpty()
-        val rename = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
+        // Create-time iface rename is retired (compatibility issues). Always push rename=false.
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)) {
+            MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
+        }
         val prefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX, "wlan") ?: "wlan"
         val hideSelf = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_SELF_PACKAGE, false)
-        return sync(enabled, packages, rename, prefix, hideSelf)
+        return sync(enabled, packages, renameEnabled = false, prefix = prefix, hideSelfPackage = hideSelf)
     }
 
     fun sync(
