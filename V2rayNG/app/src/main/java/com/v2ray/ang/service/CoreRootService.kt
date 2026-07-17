@@ -217,41 +217,41 @@ class CoreRootService : Service(), ServiceControl {
                 LogUtil.w(AppConfig.TAG, "StartCore-Root: bypass rebind after $reason failed", e)
             }
 
-            // 2) Ensure hev/tun/rules/socks without full rebuild when possible.
-            if (CoreServiceManager.isRunning() && !RootDataPlanes.current().isHealthy(this@CoreRootService)) {
+            // 2) One graduated ensure only (rules/TUN). No second dog from UI.
+            val plane = RootDataPlanes.current()
+            if (CoreServiceManager.isRunning() && !plane.isHealthy(this@CoreRootService)) {
                 LogUtil.w(AppConfig.TAG, "StartCore-Root: ensuring pipeline after $reason")
-                val err = RootDataPlanes.current().ensure(this@CoreRootService)
-                if (err != null) {
+                val err = plane.ensure(this@CoreRootService)
+                if (err == RootProxyManager.RootError.TUN_FAILED) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-Root: TUN missing after $reason, full rebuild once")
+                    plane.start(this@CoreRootService)
+                } else if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Root: ensure after $reason failed: $err")
                 }
-            } else if (RootDataPlanes.current().isHealthy(this@CoreRootService)) {
+            } else if (plane.isHealthy(this@CoreRootService)) {
                 LogUtil.i(AppConfig.TAG, "StartCore-Root: pipeline healthy after $reason")
             }
 
-            // 3) Soft-restart core only after a real lost->available flap when the LOCAL
-            // dataplane is dead (core down or SOCKS not accepting). Remote path issues
-            // and temporary probe noise must not drop app TCP (Telegram flap).
-            if (softRestartCore && CoreServiceManager.isRunning()) {
-                val stillUnhealthy = !RootDataPlanes.current().isHealthy(this@CoreRootService)
-                val socksReady = RootProxyManager.isLocalSocksReady()
+            // 3) Soft-restart only on real lost->available when core itself is dead.
+            // Rules/TUN issues are handled by ensure/rebuild above; do not thrash core for them.
+            if (softRestartCore) {
                 val coreAlive = try { CoreServiceManager.coreController.isRunning } catch (_: Exception) { false }
-                if (stillUnhealthy && !(coreAlive && socksReady)) {
+                val sessionLive = CoreServiceManager.hasLiveSession()
+                if (!coreAlive && sessionLive) {
                     val now = System.currentTimeMillis()
                     if (lastSoftRestartAtMs > 0L && now - lastSoftRestartAtMs < 60_000L) {
                         LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart cooldown after $reason, skip")
                     } else {
                         lastSoftRestartAtMs = now
-                        LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason (local dataplane dead)")
+                        LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-restart core after $reason (core dead, session live)")
                         try {
                             CoreServiceManager.restartCoreLoop()
                         } catch (e: Exception) {
                             LogUtil.e(AppConfig.TAG, "StartCore-Root: soft-restart after $reason failed", e)
                         }
                     }
-                } else if (stillUnhealthy) {
-                    LogUtil.w(AppConfig.TAG, "StartCore-Root: pipeline soft-unhealthy after $reason but SOCKS up; skip soft-restart")
                 } else {
-                    LogUtil.i(AppConfig.TAG, "StartCore-Root: skip soft-restart after $reason (healthy)")
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: skip soft-restart after $reason (coreAlive=$coreAlive sessionLive=$sessionLive)")
                 }
             }
             try {

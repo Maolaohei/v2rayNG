@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  *
  * Ownership:
  * - VPN / Proxy-only: may soft-restart only when the local core is actually dead.
- * - ROOT: observe-only. Local hev/rules/SOCKS recovery belongs solely to
+ * - ROOT: observe-only. TUN/rules recovery belongs solely to
  *   CoreRootService's pipeline watchdog. Acting here caused dual-watchdog thrash.
  *
  * Remote delay failures (blocked test URL / congested node / DNS) must NOT thrash the core:
@@ -116,7 +116,7 @@ object ConnectionWatchdog {
                 LogUtil.i(
                     AppConfig.TAG,
                     "ConnectionWatchdog: ROOT observe-only after $consecutiveFailures remote failures; " +
-                        "no ensure/soft-restart (pipeline watchdog owns recovery)"
+                        "no ensure/soft-restart (CoreRootService owns recovery)"
                 )
                 consecutiveFailures = 0
                 return

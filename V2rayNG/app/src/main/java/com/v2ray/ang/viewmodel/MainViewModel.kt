@@ -455,20 +455,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
-                    // REGISTER races + multi-process: main-process CoreServiceManager often
-                    // cannot observe the :RunSoLibV2RayDaemon session. Never clear Running
-                    // unless we get an explicit STOP_SUCCESS / START_FAILURE.
-                    if (
-                        CoreServiceManager.hasLiveSession() ||
-                        CoreServiceManager.isRunning() ||
-                        CoreServiceManager.isSoftRestarting()
-                    ) {
+                    // Multi-process REGISTER races are common. Never flash Stopped while:
+                    // - soft-restart is in flight, or
+                    // - a live session/core is still observed.
+                    val stickyLive =
+                        CoreServiceManager.isSoftRestarting() ||
+                            CoreServiceManager.isRunning() ||
+                            CoreServiceManager.hasLiveSession()
+                    if (stickyLive) {
                         isRunning.value = true
                     } else if (isRunning.value == true) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore NOT_RUNNING while UI thinks running")
-                        // keep isRunning=true
+                        // keep isRunning=true; Home confirm-stop owns deferred clear
                     } else {
-                        // Only set false when we were not already Running.
                         isRunning.value = false
                     }
                 }

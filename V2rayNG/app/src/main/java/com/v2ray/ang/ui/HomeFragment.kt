@@ -17,7 +17,6 @@ import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toTrafficString
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.root.RootManager
-import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SubscriptionUpdater
@@ -34,6 +33,11 @@ import kotlinx.coroutines.delay
 /**
  * Slim home: system switch, connectivity test, region/latency/24h traffic,
  * mode (Proxy only / VPN / ROOT), current node summary.
+ *
+ * Phase 4 session ownership:
+ * - UI owns only display state (Connecting / Running / Stopped) + user intents.
+ * - Service owns start/stop/soft-restart/pipeline ensure. Home never heals ROOT.
+ * - Tab hide/show only re-REGISTER + sticky resync; no Off->On->Off thrash repairs.
  */
 class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     override fun inflateBinding(inflater: android.view.LayoutInflater, container: android.view.ViewGroup?) =
@@ -782,22 +786,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                 mainViewModel.isRunning.value = true
             }
             applyRunningState(isLoading = false, isRunning = true)
-            // Quiet re-REGISTER: ViewModel ignores NOT_RUNNING while sticky Running.
+            // Quiet re-REGISTER only. Phase 4: UI never repairs ROOT/VPN dataplane.
+            // Service pipeline watchdog + network recover own ensure/rebuild.
             mainViewModel.startListenBroadcast()
-            // ROOT: never full-heal on every tab resume - that caused random blackholes.
-            // Only touch pipeline when local SOCKS is actually down.
-            if (SettingsManager.isRootMode() && !RootProxyManager.isRuntimeLive()) {
-                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        val err = RootProxyManager.ensureRunning(requireContext().applicationContext)
-                        if (err != null && err != RootProxyManager.RootError.REPAIR_BACKED_OFF) {
-                            LogUtil.w(AppConfig.TAG, "Home: root ensure on resume failed: $err")
-                        }
-                    } catch (e: Exception) {
-                        LogUtil.w(AppConfig.TAG, "Home: root ensure on resume exception", e)
-                    }
-                }
-            }
             return
         }
 

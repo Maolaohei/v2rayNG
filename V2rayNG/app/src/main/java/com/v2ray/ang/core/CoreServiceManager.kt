@@ -586,17 +586,31 @@ object CoreServiceManager {
                 startedOk = ok
                 if (!ok) {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed to start core")
-                    // Full converge: tear down service so UI/notification cannot desync.
+                    // Phase 4: if ROOT dataplane/session still looks live, keep FGS and avoid
+                    // Off->On->Off thrash. Only full-stop when there is no live session left.
                     if (!userStopRequested.get()) {
+                        val keep =
+                            SettingsManager.isRootMode() &&
+                                (hasLiveSession() ||
+                                    com.v2ray.ang.root.RootTun.isOpen() ||
+                                    com.v2ray.ang.root.RootDataPlanes.current().isRuntimeLive())
                         val svcControl = serviceControl
                         val svc = svcControl?.getService()
-                        if (svc != null) {
-                            MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, "Soft-restart failed")
-                        }
-                        TrafficStatsManager.stopServiceTracking()
-                        NotificationManager.cancelNotification()
-                        try { svcControl?.stopService() } catch (e: Exception) {
-                            LogUtil.e(AppConfig.TAG, "StartCore-Manager: stopService after soft-restart failure", e)
+                        if (keep) {
+                            LogUtil.w(AppConfig.TAG, "StartCore-Manager: soft-restart failed but ROOT still live; keep session")
+                            if (svc != null) {
+                                // Soft signal only; do not mark session dead.
+                                MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_RUNNING, "")
+                            }
+                        } else {
+                            if (svc != null) {
+                                MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, "Soft-restart failed")
+                            }
+                            TrafficStatsManager.stopServiceTracking()
+                            NotificationManager.cancelNotification()
+                            try { svcControl?.stopService() } catch (e: Exception) {
+                                LogUtil.e(AppConfig.TAG, "StartCore-Manager: stopService after soft-restart failure", e)
+                            }
                         }
                     }
                 } else {
