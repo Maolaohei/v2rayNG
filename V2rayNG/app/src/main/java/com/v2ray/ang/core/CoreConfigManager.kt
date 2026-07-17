@@ -715,7 +715,7 @@ object CoreConfigManager {
         LogUtil.i(
             AppConfig.TAG,
             "CoreConfig: ROOT DNS hijack port=53 via dns-out inbounds=${inboundTags.joinToString()} " +
-                "(covers classic DNS only; Private DNS/DoT 853 and Chrome DoH/443 are NOT hijacked here)"
+                "(port 53 -> dns-out; DoT/853 fail-closed in iptables; Chrome DoH/443 still app HTTPS)"
         )
     }
 

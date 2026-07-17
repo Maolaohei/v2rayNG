@@ -40,6 +40,8 @@ object RootProxyManager {
     private const val APP_UID_RULE_PREF = 900
     private const val FWMARK = AppConfig.ROOT_FWMARK
     private const val MARK = AppConfig.ROOT_MARK_ROUTE
+    // Keep in sync with iptables --set-xmark $MARK/0xffff
+    private const val MARK_MASK = "0xffff"
     private const val BYPASS_PRIORITY = AppConfig.ROOT_BYPASS_RULE_PRIORITY
     // Android app UIDs start at 10000. Magic_V2Ray only marks app range (+ a few system uids)
     // instead of every system uid 闁?fewer OEM side-effects under all-apps capture.
@@ -138,6 +140,28 @@ object RootProxyManager {
 
     /** True when policy routing + mangle chain from last setup still exist. */
     fun isRulesInstalled(): Boolean = probePipeline(null).rulesOk
+
+    /** Cheap post-install diagnostics for "ROOT on but apps still direct". */
+    private fun logCaptureSelfCheck(context: Context) {
+        try {
+            val script = buildString {
+                append("echo CAP_BEGIN; ")
+                append("ip rule show 2>/dev/null | head -n 40; ")
+                append("echo CAP_MANGLE; ")
+                append("IPT=iptables; command -v iptables-legacy >/dev/null 2>&1 && IPT=iptables-legacy; ")
+                append("\$IPT -t mangle -nL $CHAIN -v 2>/dev/null | head -n 30; ")
+                append("echo CAP_DOT; ")
+                append("\$IPT -nL ${CHAIN}_DOT 2>/dev/null | head -n 20; ")
+                append("echo CAP_TUN; ip -o -4 addr show dev $TUN 2>/dev/null; ")
+                append("echo CAP_END")
+            }
+            val out = RootShell.exec(script, timeoutSeconds = 6).output.trim()
+            LogUtil.i(AppConfig.TAG, "RootProxyManager: capture self-check\n$out")
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "RootProxyManager: capture self-check failed: ${e.message}")
+        }
+    }
+
 
     /** True when in-process core SOCKS accepts connections on the configured port. */
     fun isLocalSocksReady(): Boolean {
@@ -602,6 +626,7 @@ object RootProxyManager {
             if (p.rulesOk && p.tunUp) {
                 lastError = null
                 LogUtil.i(AppConfig.TAG, "RootProxyManager: installRulesOnly ok ${p.summary()} per-app=$perAppMode")
+                logCaptureSelfCheck(context)
                 return null
             }
             try {
@@ -614,6 +639,7 @@ object RootProxyManager {
         return if (p.rulesOk && p.tunUp) {
             lastError = null
             LogUtil.i(AppConfig.TAG, "RootProxyManager: installRulesOnly ok ${p.summary()} per-app=$perAppMode")
+            logCaptureSelfCheck(context)
             null
         } else {
             lastError = when {
@@ -788,12 +814,14 @@ object RootProxyManager {
     /** Shell snippet: hev SO_MARK (FWMARK) always prefers main table over TUN policy. */
     private fun buildBypassMarkRules(): String = buildString {
         // IPv4 + IPv6. Priority lower-number = higher precedence than TUN MARK rule.
+        appendLine("ip rule del fwmark $FWMARK/$MARK_MASK table main priority $BYPASS_PRIORITY 2>/dev/null || true")
         appendLine("ip rule del fwmark $FWMARK table main priority $BYPASS_PRIORITY 2>/dev/null || true")
         appendLine("ip rule del pref $BYPASS_PRIORITY 2>/dev/null || true")
-        appendLine("ip rule add fwmark $FWMARK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip rule add fwmark $FWMARK/$MARK_MASK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip -6 rule del fwmark $FWMARK/$MARK_MASK table main priority $BYPASS_PRIORITY 2>/dev/null || true")
         appendLine("ip -6 rule del fwmark $FWMARK table main priority $BYPASS_PRIORITY 2>/dev/null || true")
         appendLine("ip -6 rule del pref $BYPASS_PRIORITY 2>/dev/null || true")
-        appendLine("ip -6 rule add fwmark $FWMARK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
+        appendLine("ip -6 rule add fwmark $FWMARK/$MARK_MASK lookup main priority $BYPASS_PRIORITY 2>/dev/null || true")
         // Keep rp_filter relaxed on TUN (Magic locks this).
         appendLine("echo 0 > /proc/sys/net/ipv4/conf/$TUN/rp_filter 2>/dev/null || true")
         appendLine("echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true")
@@ -840,24 +868,30 @@ object RootProxyManager {
             appendLine("ip route replace default dev $TUN table $TABLE")
             appendLine("ip route replace $FAKE_IP_CIDR dev $TUN table $TABLE 2>/dev/null || true")
             appendLine("ip route replace $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
+            appendLine("ip rule del fwmark $MARK/$MARK_MASK table $TABLE priority $PRIORITY 2>/dev/null || true")
             appendLine("ip rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
-            appendLine("ip rule add fwmark $MARK table $TABLE priority $PRIORITY")
+            appendLine("ip rule del pref $PRIORITY 2>/dev/null || true")
+            appendLine("ip rule add fwmark $MARK/$MARK_MASK lookup $TABLE priority $PRIORITY")
             // Magic dual-mark: hev SO_MARK(FWMARK) must prefer main over TUN table.
             append(buildBypassMarkRules())
             // Anti-loop harden: core/app UID always prefers main table even if marked.
             appendLine("ip rule del pref $APP_UID_RULE_PREF 2>/dev/null || true")
             appendLine("ip rule add uidrange $appUid-$appUid lookup main priority $APP_UID_RULE_PREF 2>/dev/null || true")
             append(buildMangleMarking("\$IPT", appUid, perAppEnabled, bypassApps, selectedUids))
+            append(buildDotFailClosed("\$IPT", appUid, perAppEnabled, bypassApps, selectedUids))
             appendLine("set +e")
             if (ipv6) {
                 appendLine("ip -6 addr add ${AppConfig.ROOT_TUN_ADDR_V6} dev $TUN 2>/dev/null || true")
                 appendLine("ip -6 route replace default dev $TUN table $TABLE 2>/dev/null || true")
+                appendLine("ip -6 rule del fwmark $MARK/$MARK_MASK table $TABLE priority $PRIORITY 2>/dev/null || true")
                 appendLine("ip -6 rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
-                appendLine("ip -6 rule add fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
+                appendLine("ip -6 rule del pref $PRIORITY 2>/dev/null || true")
+                appendLine("ip -6 rule add fwmark $MARK/$MARK_MASK lookup $TABLE priority $PRIORITY 2>/dev/null || true")
                 // Prefer policy routing over RA/default native routes for marked packets.
                 appendLine("echo 0 > /proc/sys/net/ipv6/conf/$TUN/accept_ra 2>/dev/null || true")
                 appendLine("echo 0 > /proc/sys/net/ipv6/conf/all/accept_ra 2>/dev/null || true")
                 append(buildMangleMarking("\$IP6T", appUid, perAppEnabled, bypassApps, selectedUids))
+                append(buildDotFailClosed("\$IP6T", appUid, perAppEnabled, bypassApps, selectedUids))
             } else {
                 // Fail closed for native v6 so dual-stack apps cannot bypass the proxy.
                 append(buildV6Blackhole(appUid, perAppEnabled, bypassApps, selectedUids))
@@ -962,8 +996,10 @@ object RootProxyManager {
             appendLine("ip route replace default dev $TUN table $TABLE")
             appendLine("ip route replace $FAKE_IP_CIDR dev $TUN table $TABLE 2>/dev/null || true")
             appendLine("ip route replace $FAKE_IP_CIDR dev $TUN 2>/dev/null || true")
+            appendLine("ip rule del fwmark $MARK/$MARK_MASK table $TABLE priority $PRIORITY 2>/dev/null || true")
             appendLine("ip rule del fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
-            appendLine("ip rule add fwmark $MARK table $TABLE priority $PRIORITY")
+            appendLine("ip rule del pref $PRIORITY 2>/dev/null || true")
+            appendLine("ip rule add fwmark $MARK/$MARK_MASK lookup $TABLE priority $PRIORITY")
             // Magic dual-mark: hev SO_MARK(FWMARK) must prefer main over TUN table.
             append(buildBypassMarkRules())
             // Anti-loop harden: core/app UID always prefers main table even if marked.
@@ -972,6 +1008,7 @@ object RootProxyManager {
             // mark the device's own packets into the tun (Root mode only)
             if (captureDeviceTraffic) {
                 append(buildMangleMarking("\$IPT", appUid, perAppEnabled, bypassApps, selectedUids))
+            append(buildDotFailClosed("\$IPT", appUid, perAppEnabled, bypassApps, selectedUids))
             }
             // optionally route hotspot / USB-tethered clients through the tun too
             if (lanShare) {
@@ -986,6 +1023,7 @@ object RootProxyManager {
                     appendLine("ip -6 route replace default dev $TUN table $TABLE 2>/dev/null || true")
                     appendLine("ip -6 rule add fwmark $MARK table $TABLE priority $PRIORITY 2>/dev/null || true")
                     append(buildMangleMarking("\$IP6T", appUid, perAppEnabled, bypassApps, selectedUids))
+                append(buildDotFailClosed("\$IP6T", appUid, perAppEnabled, bypassApps, selectedUids))
                 } else {
                     // v6 disabled: blackhole native v6 egress for the captured apps so they
                     // fall back to v4-through-proxy, matching what a v4-only VpnService does.
@@ -1053,6 +1091,44 @@ object RootProxyManager {
      * - bypass mode: the selected apps go fully direct, everything else is captured;
      * - proxy mode: only the selected apps are captured.
      */
+
+    /**
+     * Fail-closed Private DNS (DoT / TCP+UDP 853) for captured apps.
+     * Without this, Android Private DNS bypasses our port-53 MARK path and ROOT looks dead.
+     * REJECT (not DROP) so resolvers fall back to classic DNS on port 53.
+     */
+    private fun buildDotFailClosed(
+        cmd: String,
+        appUid: Int,
+        perAppEnabled: Boolean,
+        bypassApps: Boolean,
+        selectedUids: List<String>,
+    ): String {
+        val allowMode = perAppEnabled && !bypassApps
+        val bypassSelected = perAppEnabled && bypassApps && selectedUids.isNotEmpty()
+        val chain = "${CHAIN}_DOT"
+        return buildString {
+            appendLine("$cmd -N $chain 2>/dev/null || true")
+            appendLine("$cmd -F $chain")
+            appendLine("$cmd -A $chain -m owner --uid-owner $appUid -j RETURN")
+            appendLine("$cmd -A $chain -o lo -j RETURN")
+            if (bypassSelected) {
+                selectedUids.forEach { appendLine("$cmd -A $chain -m owner --uid-owner $it -j RETURN") }
+            }
+            if (allowMode) {
+                selectedUids.forEach {
+                    appendLine("$cmd -A $chain -m owner --uid-owner $it -p tcp --dport 853 -j REJECT --reject-with tcp-reset")
+                    appendLine("$cmd -A $chain -m owner --uid-owner $it -p udp --dport 853 -j REJECT")
+                }
+            } else {
+                appendLine("$cmd -A $chain -m owner --uid-owner $APP_UID_RANGE -p tcp --dport 853 -j REJECT --reject-with tcp-reset")
+                appendLine("$cmd -A $chain -m owner --uid-owner $APP_UID_RANGE -p udp --dport 853 -j REJECT")
+            }
+            appendLine("$cmd -D OUTPUT -j $chain 2>/dev/null || true")
+            appendLine("$cmd -A OUTPUT -j $chain")
+        }
+    }
+
     private fun buildMangleMarking(
         cmd: String,
         appUid: Int,
@@ -1089,6 +1165,7 @@ object RootProxyManager {
             // The MARK survives a later RETURN, so the marked query still routes into the tun.
             appendLine("$cmd -t mangle -A $CHAIN -p udp --dport 53 -j MARK --set-xmark $MARK/0xffff")
             appendLine("$cmd -t mangle -A $CHAIN -p tcp --dport 53 -j MARK --set-xmark $MARK/0xffff")
+
             // FakeDNS pool must always go through TUN/proxy. Never treat it as "private LAN".
             if (cmd == "iptables") {
                 appendLine("$cmd -t mangle -A $CHAIN -d $FAKE_IP_CIDR -j MARK --set-xmark $MARK/0xffff")
@@ -1275,6 +1352,9 @@ object RootProxyManager {
                 appendLine("$cmd -t mangle -D OUTPUT -j $CHAIN 2>/dev/null || true")
                 appendLine("$cmd -t mangle -F $CHAIN 2>/dev/null || true")
                 appendLine("$cmd -t mangle -X $CHAIN 2>/dev/null || true")
+                appendLine("$cmd -D OUTPUT -j ${CHAIN}_DOT 2>/dev/null || true")
+                appendLine("$cmd -F ${CHAIN}_DOT 2>/dev/null || true")
+                appendLine("$cmd -X ${CHAIN}_DOT 2>/dev/null || true")
             }
             // IPv6 blackhole chain (only set up when v6 is disabled; harmless if absent)
             appendLine("ip6tables -t filter -D OUTPUT -j ${AppConfig.ROOT_V6_CHAIN} 2>/dev/null || true")
