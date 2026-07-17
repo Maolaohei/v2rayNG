@@ -200,6 +200,7 @@ dependencies {
 
     // Testing Libraries
     compileOnly("de.robv.android.xposed:api:82")
+    compileOnly(project(":libxposed-api"))
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

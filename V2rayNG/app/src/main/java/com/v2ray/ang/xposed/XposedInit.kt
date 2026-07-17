@@ -4,11 +4,8 @@ import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
 /**
- * LSPosed/Xposed entry for SFA-style hidevpn.
- * Scope must include system framework ("android" / "system") so ConnectivityService hooks apply.
- *
- * Note: modern LSPosed 100/101 prefers XposedModule APIs; we keep classic entry for
- * broader compatibility and fix status probing on the app side first.
+ * Classic Xposed/LSPosed entry for frameworks that still use IXposedHookLoadPackage.
+ * Modern LSPosed 100/101 uses [XposedInitModern] / [XposedInitModern101].
  */
 class XposedInit : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {

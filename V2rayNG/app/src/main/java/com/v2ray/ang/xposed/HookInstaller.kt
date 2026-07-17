@@ -11,11 +11,19 @@ object HookInstaller {
 
     private const val TAG = "XposedInit"
 
+    @Volatile
+    private var installed = false
+
     private val activityThreadClass by lazy { Class.forName("android.app.ActivityThread") }
     private val currentActivityThreadMethod by lazy { activityThreadClass.getMethod("currentActivityThread") }
     private val getSystemContextMethod by lazy { activityThreadClass.getMethod("getSystemContext") }
 
     fun install(classLoader: ClassLoader) {
+        if (installed) {
+            HookErrorStore.i(TAG, "install skipped: already installed")
+            return
+        }
+        installed = true
         val systemContext = resolveSystemContext()
         HookErrorStore.i(TAG, "handleSystemServerLoaded")
         val hooks = arrayOf(
@@ -37,6 +45,7 @@ object HookInstaller {
                 )
             }
         }
+        HookStatusStore.markHookActive()
     }
 
     private fun resolveSystemContext(): Context? = try {
