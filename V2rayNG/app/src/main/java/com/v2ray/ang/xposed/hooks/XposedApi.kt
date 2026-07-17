@@ -2,6 +2,7 @@ package com.v2ray.ang.xposed.hooks
 
 import com.v2ray.ang.xposed.HookErrorStore
 import io.github.libxposed.api.XposedInterface
+import java.lang.reflect.Constructor
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
 import java.util.concurrent.CopyOnWriteArrayList
@@ -68,6 +69,23 @@ object XposedApi {
         findField(obj.javaClass, name).set(obj, value)
     }
 
+    fun getIntField(obj: Any, name: String): Int = findField(obj.javaClass, name).getInt(obj)
+
+    fun callMethod(obj: Any?, methodName: String, vararg args: Any?): Any? {
+        requireNotNull(obj) { "callMethod thisObject is null" }
+        val method = findBestMethod(obj.javaClass, methodName, args)
+            ?: throw NoSuchMethodException("${obj.javaClass.name}.$methodName(${args.size} args)")
+        method.isAccessible = true
+        return method.invoke(obj, *args)
+    }
+
+    fun callStaticMethod(clazz: Class<*>, methodName: String, vararg args: Any?): Any? {
+        val method = findBestMethod(clazz, methodName, args)
+            ?: throw NoSuchMethodException("${clazz.name}.$methodName(${args.size} args)")
+        method.isAccessible = true
+        return method.invoke(null, *args)
+    }
+
     fun findAndHookMethod(clazz: Class<*>, methodName: String, vararg args: Any?): Any {
         require(args.isNotEmpty()) { "findAndHookMethod requires callback" }
         val callback = args.last() as? SafeMethodHook
@@ -80,6 +98,15 @@ object XposedApi {
             )
         method.isAccessible = true
         return hookExecutable(method, callback)
+    }
+
+    fun findAndHookConstructor(clazz: Class<*>, vararg args: Any?): Any {
+        require(args.isNotEmpty()) { "findAndHookConstructor requires callback" }
+        val callback = args.last() as? SafeMethodHook
+            ?: throw IllegalArgumentException("callback must be SafeMethodHook")
+        val paramTypes = args.dropLast(1).map { toClass(it) }.toTypedArray()
+        val ctor: Constructor<*> = clazz.getDeclaredConstructor(*paramTypes).apply { isAccessible = true }
+        return hookExecutable(ctor, callback)
     }
 
     fun hookAllMethods(clazz: Class<*>, methodName: String, callback: SafeMethodHook): Set<Any> {
@@ -101,19 +128,79 @@ object XposedApi {
         return hookExecutable(method, callback)
     }
 
+    fun unhook(handle: Any?) {
+        if (handle == null) return
+        try {
+            when (handle) {
+                is XposedInterface.HookHandle -> handle.unhook()
+                else -> {
+                    val m = handle.javaClass.methods.firstOrNull {
+                        it.name == "unhook" && it.parameterTypes.isEmpty()
+                    } ?: return
+                    m.isAccessible = true
+                    m.invoke(handle)
+                }
+            }
+        } catch (e: Throwable) {
+            HookErrorStore.w(TAG, "unhook failed: ${e.message}", e)
+        } finally {
+            handles.remove(handle)
+        }
+    }
+
     fun invokeOriginalMethod(method: Any?, thisObject: Any?, args: Array<Any?>?): Any? {
         val executable = method as? Executable
             ?: throw IllegalArgumentException("method must be Executable")
         val modernXp = modern
         if (modernXp != null) {
-            if (executable !is Method) {
-                throw IllegalArgumentException("modern invokeOriginal only supports Method")
+            return when (executable) {
+                is Method -> {
+                    val invoker = modernXp.getInvoker(executable)
+                    invoker.setType(XposedInterface.Invoker.Type.ORIGIN)
+                    invoker.invoke(thisObject, *(args ?: emptyArray()))
+                }
+                is Constructor<*> -> {
+                    executable.isAccessible = true
+                    executable.newInstance(*(args ?: emptyArray()))
+                }
+                else -> throw IllegalArgumentException("Unsupported executable")
             }
-            val invoker = modernXp.getInvoker(executable)
-            invoker.setType(XposedInterface.Invoker.Type.ORIGIN)
-            return invoker.invoke(thisObject, *(args ?: emptyArray()))
         }
         return classicInvokeOriginal(executable, thisObject, args)
+    }
+
+    private fun findBestMethod(clazz: Class<*>, name: String, args: Array<out Any?>): Method? {
+        val candidates = ArrayList<Method>()
+        var c: Class<*>? = clazz
+        while (c != null) {
+            c.declaredMethods.filterTo(candidates) { it.name == name && it.parameterTypes.size == args.size }
+            c = c.superclass
+        }
+        if (candidates.isEmpty()) return null
+        if (candidates.size == 1) return candidates[0]
+        return candidates.firstOrNull { method ->
+            method.parameterTypes.indices.all { i ->
+                val expected = method.parameterTypes[i]
+                val actual = args[i]
+                if (actual == null) {
+                    !expected.isPrimitive
+                } else {
+                    boxType(expected).isAssignableFrom(actual.javaClass)
+                }
+            }
+        } ?: candidates.first()
+    }
+
+    private fun boxType(type: Class<*>): Class<*> = when (type) {
+        java.lang.Boolean.TYPE -> java.lang.Boolean::class.java
+        java.lang.Byte.TYPE -> java.lang.Byte::class.java
+        java.lang.Character.TYPE -> java.lang.Character::class.java
+        java.lang.Short.TYPE -> java.lang.Short::class.java
+        java.lang.Integer.TYPE -> java.lang.Integer::class.java
+        java.lang.Long.TYPE -> java.lang.Long::class.java
+        java.lang.Float.TYPE -> java.lang.Float::class.java
+        java.lang.Double.TYPE -> java.lang.Double::class.java
+        else -> type
     }
 
     private fun findDeclaredMethodInHierarchy(
@@ -151,7 +238,6 @@ object XposedApi {
     }
 
     private fun classicHookMethod(executable: Executable, callback: SafeMethodHook): Any {
-        // Keep de.robv symbols out of the modern call path by resolving only here.
         val bridge = Class.forName("de.robv.android.xposed.XposedBridge")
         val hookMethod = bridge.getMethod(
             "hookMethod",

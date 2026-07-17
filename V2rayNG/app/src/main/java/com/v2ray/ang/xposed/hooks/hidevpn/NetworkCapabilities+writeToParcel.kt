@@ -3,7 +3,8 @@ package com.v2ray.ang.xposed.hooks.hidevpn
 import android.net.NetworkCapabilities
 import android.os.Binder
 import android.os.Parcel
-import com.v2ray.ang.xposed.hooks.XposedApi`nimport com.v2ray.ang.xposed.HookErrorStore
+import com.v2ray.ang.xposed.hooks.XposedApi
+import com.v2ray.ang.xposed.HookErrorStore
 import com.v2ray.ang.xposed.HookStatusStore
 import com.v2ray.ang.xposed.VpnHideContext
 import com.v2ray.ang.xposed.VpnSanitizer

@@ -103,7 +103,13 @@ abstract class SafeMethodHook(private val source: String) {
         private val mutableArgs: Array<Any?> = chain.args.toTypedArray()
         var argsOverride: Array<Any?>? = null
             private set
-        override val args: Array<Any?> get() = mutableArgs
+        // Expose a mutable snapshot. Any read/write of args marks override so
+        // param.args[i] = x works the same as setArg (legacy XC_MethodHook style).
+        override val args: Array<Any?>
+            get() {
+                argsOverride = mutableArgs
+                return mutableArgs
+            }
         override fun setArg(index: Int, value: Any?) {
             mutableArgs[index] = value
             argsOverride = mutableArgs

@@ -129,9 +129,10 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
         )
     }
 
-    private fun processJniGetNameResult(param: SafeMethodHook.HookParam) {
+    private fun sanitizeNetworkCapabilitiesResult(param: SafeMethodHook.HookParam) {
         val uid = Binder.getCallingUid()
-        if (!helper.shouldHide(param.thisObject, uid)) return
+        val service = param.thisObject ?: return
+        if (!helper.shouldHide(service, uid)) return
         val nc = param.result as? NetworkCapabilities ?: return
         if (!nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return
         param.result = VpnSanitizer.sanitizeNetworkCapabilities(nc)
@@ -150,7 +151,8 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
                     val callerUid = param.args[3] as Int
-                    if (!helper.shouldHide(param.thisObject, callerUid)) return
+                    val service = param.thisObject ?: return
+                    if (!helper.shouldHide(service, callerUid)) return
                     val nc = param.result as? NetworkCapabilities ?: return
                     if (!nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return
                     param.result = VpnSanitizer.sanitizeNetworkCapabilities(nc)

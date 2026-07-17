@@ -263,7 +263,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                     override fun afterHook(param: SafeMethodHook.HookParam) {
                         val name = param.args[0] as? String ?: return
                         if (hooked.get()) {
-                            classLoadUnhook?.unhook()
+                            XposedApi.unhook(classLoadUnhook)
                             classLoadUnhook = null
                             return
                         }
@@ -273,10 +273,10 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                                 val cls = param.result as? Class<*> ?: return
                                 HookErrorStore.i(
                                     SOURCE,
-                                    "ConnectivityService loaded via ${param.thisObject.javaClass.name}: $name",
+                                    "ConnectivityService loaded via ${param.thisObject?.javaClass?.name}: $name",
                                 )
                                 installHooks(cls, "loadClass")
-                                classLoadUnhook?.unhook()
+                                XposedApi.unhook(classLoadUnhook)
                                 classLoadUnhook = null
                             }
                             name == "com.android.server.ConnectivityServiceInitializer" ||
@@ -286,7 +286,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                                 val cls = param.result as? Class<*> ?: return
                                 HookErrorStore.i(
                                     SOURCE,
-                                    "ConnectivityServiceInitializer loaded via ${param.thisObject.javaClass.name}",
+                                    "ConnectivityServiceInitializer loaded via ${param.thisObject?.javaClass?.name}",
                                 )
                                 hookConnectivityServiceInitializerClass(cls)
                             }
@@ -365,7 +365,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                 object : SafeMethodHook(SOURCE) {
                     override fun beforeHook(param: SafeMethodHook.HookParam) {
                         if (hooked.get()) {
-                            onTransactUnhook?.unhook()
+                            XposedApi.unhook(onTransactUnhook)
                             onTransactUnhook = null
                             return
                         }
@@ -375,7 +375,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                             "ConnectivityService discovered via onTransact: ${serviceClass.name}",
                         )
                         installHooks(serviceClass, "onTransact")
-                        onTransactUnhook?.unhook()
+                        XposedApi.unhook(onTransactUnhook)
                         onTransactUnhook = null
                     }
                 },
@@ -450,7 +450,8 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
 
     // region Helper Methods
 
-    fun shouldHide(connectivityService: Any, uid: Int): Boolean {
+    fun shouldHide(connectivityService: Any?, uid: Int): Boolean {
+        if (connectivityService == null) return false
         if (!PrivilegeSettingsStore.isEnabled()) {
             logSkipOnce(uid, "hide_disabled", "Skip hide: uid=$uid hide settings disabled")
             return false
@@ -489,7 +490,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
 
     fun isVpnNai(nai: Any): Boolean = isVPNMethod.invoke(nai) as Boolean
 
-    fun getUnderlyingNetwork(connectivityService: Any, uid: Int): Network? {
+    fun getUnderlyingNetwork(connectivityService: Any?, uid: Int): Network? {
         val nai = getUnderlyingNai(connectivityService, uid) ?: return null
         val method = networkMethod
         return if (method != null) {
@@ -499,13 +500,13 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         }
     }
 
-    fun getUnderlyingLinkProperties(connectivityService: Any, uid: Int): LinkProperties? {
+    fun getUnderlyingLinkProperties(connectivityService: Any?, uid: Int): LinkProperties? {
         val nai = getUnderlyingNai(connectivityService, uid) ?: return null
         val lp = XposedApi.getObjectField(nai, "linkProperties") as LinkProperties? ?: return null
         return VpnSanitizer.cloneLinkProperties(lp)
     }
 
-    fun getUnderlyingNetworkInfo(connectivityService: Any, uid: Int): NetworkInfo? {
+    fun getUnderlyingNetworkInfo(connectivityService: Any?, uid: Int): NetworkInfo? {
         val nai = getUnderlyingNai(connectivityService, uid) ?: return null
         val method = getFilteredNetworkInfoMethod
         if (method != null) {
@@ -514,7 +515,8 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         return XposedApi.getObjectField(nai, "networkInfo") as? NetworkInfo
     }
 
-    fun getUnderlyingNai(connectivityService: Any, uid: Int): Any? {
+    fun getUnderlyingNai(connectivityService: Any?, uid: Int): Any? {
+        if (connectivityService == null) return null
         @Suppress("UNCHECKED_CAST")
         val networks = getVpnUnderlyingNetworksMethod.invoke(connectivityService, uid) as? Array<Network>
         if (networks != null && networks.isNotEmpty()) {

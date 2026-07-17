@@ -1,10 +1,9 @@
-﻿package com.v2ray.ang.xposed.hooks.hidevpnapp
+package com.v2ray.ang.xposed.hooks.hidevpnapp
 
 import android.content.pm.ResolveInfo
 import android.os.Binder
 import android.os.Build
 import android.os.Process
-import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.xposed.HookErrorStore
