@@ -90,6 +90,10 @@
                     android:key="pref_entry_privilege_module_status"
                     android:summary="@string/summary_pref_privilege_module_status"
                     android:title="@string/title_pref_privilege_module_status" />
+                <Preference
+                    android:key="pref_entry_privilege_self_test"
+                    android:summary="@string/summary_pref_privilege_self_test"
+                    android:title="@string/title_pref_privilege_self_test" />
             </PreferenceCategory>
     </PreferenceScreen>
 

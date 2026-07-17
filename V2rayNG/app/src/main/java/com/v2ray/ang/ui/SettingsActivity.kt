@@ -23,7 +23,9 @@ import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.helper.MmkvPreferenceDataStore
 import com.v2ray.ang.root.RootManager
 import com.v2ray.ang.util.Utils
+import com.v2ray.ang.xposed.DetectionResult
 import com.v2ray.ang.xposed.PrivilegeSettingsClient
+import com.v2ray.ang.xposed.VpnDetectionTest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -345,6 +347,8 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         
         private val privilegeManageApps by lazy { findPreference<Preference>("pref_entry_privilege_manage_apps") }
         private val privilegeModuleStatus by lazy { findPreference<Preference>("pref_entry_privilege_module_status") }
+        private val privilegeSelfTest by lazy { findPreference<Preference>("pref_entry_privilege_self_test") }
+        @Volatile private var privilegeSelfTestRunning = false
 
         private fun setupPrivilegePrefs() {
             privilegeHideVpn?.setOnPreferenceChangeListener { _, newValue ->
@@ -417,9 +421,236 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 refreshPrivilegeSummaries()
                 true
             }
+            privilegeSelfTest?.setOnPreferenceClickListener {
+                runPrivilegeSelfTest()
+                true
+            }
             // Initial sync + summary when settings opens.
             PrivilegeSettingsClient.sync()
             refreshPrivilegeSummaries()
+        }
+
+        private fun runPrivilegeSelfTest() {
+            if (!isAdded || privilegeSelfTestRunning) return
+            privilegeSelfTestRunning = true
+            privilegeSelfTest?.isEnabled = false
+
+            val ctx = requireContext()
+            val progress = androidx.appcompat.app.AlertDialog.Builder(ctx)
+                .setTitle(R.string.title_privilege_self_test_result)
+                .setMessage(R.string.summary_pref_privilege_self_test_running)
+                .setCancelable(false)
+                .create()
+            progress.show()
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                var report: String? = null
+                var errorMessage: String? = null
+                try {
+                    // Probe first so the report can distinguish "module state before sync".
+                    val probeBefore = withContext(Dispatchers.IO) {
+                        PrivilegeSettingsClient.refresh()
+                    }
+                    val detection = withContext(Dispatchers.IO) {
+                        VpnDetectionTest.runDetection(ctx)
+                    }
+                    val syncOk = withContext(Dispatchers.IO) {
+                        PrivilegeSettingsClient.sync()
+                    }
+                    val probeAfter = withContext(Dispatchers.IO) {
+                        PrivilegeSettingsClient.refresh()
+                    }
+                    if (!isAdded) return@launch
+                    refreshPrivilegeSummaries()
+                    report = buildPrivilegeSelfTestReport(
+                        detection = detection,
+                        probeBefore = probeBefore,
+                        probeAfter = probeAfter,
+                        syncOk = syncOk,
+                    )
+                    privilegeSelfTest?.summary = report.lineSequence().firstOrNull().orEmpty()
+                } catch (e: Throwable) {
+                    errorMessage = e.message ?: e.javaClass.simpleName
+                } finally {
+                    privilegeSelfTestRunning = false
+                    if (isAdded) {
+                        privilegeSelfTest?.isEnabled = true
+                    }
+                    if (progress.isShowing) {
+                        runCatching { progress.dismiss() }
+                    }
+                }
+
+                if (!isAdded) return@launch
+                if (report != null) {
+                    val finalReport = report
+                    androidx.appcompat.app.AlertDialog.Builder(ctx)
+                        .setTitle(R.string.title_privilege_self_test_result)
+                        .setMessage(finalReport)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .setNeutralButton(R.string.summary_pref_privilege_self_test_copy) { _, _ ->
+                            Utils.setClipboard(ctx, finalReport)
+                            android.widget.Toast.makeText(
+                                ctx,
+                                R.string.toast_privilege_self_test_copied,
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        .show()
+                } else {
+                    androidx.appcompat.app.AlertDialog.Builder(ctx)
+                        .setTitle(R.string.title_privilege_self_test_result)
+                        .setMessage(
+                            getString(
+                                R.string.summary_pref_privilege_self_test_error,
+                                errorMessage ?: "unknown",
+                            ),
+                        )
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            }
+        }
+
+        private fun buildPrivilegeSelfTestReport(
+            detection: DetectionResult,
+            probeBefore: PrivilegeSettingsClient.Probe,
+            probeAfter: PrivilegeSettingsClient.Probe,
+            syncOk: Boolean,
+        ): String {
+            val yes = getString(R.string.summary_pref_privilege_self_test_yes)
+            val no = getString(R.string.summary_pref_privilege_self_test_no)
+            val notDetected = getString(R.string.summary_pref_privilege_self_test_not_detected)
+            val hideEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false)
+            val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
+            val packageName = requireContext().packageName
+            val selfInList = targets.contains(packageName)
+            val running = CoreServiceManager.isRunning() || CoreServiceManager.serviceControl != null
+
+            fun moduleText(probe: PrivilegeSettingsClient.Probe): String = when (probe.result) {
+                PrivilegeSettingsClient.ProbeResult.ACTIVE -> {
+                    val ver = probe.status?.version ?: 0
+                    getString(R.string.summary_pref_privilege_module_status_active_on_ver, ver)
+                }
+                PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
+                    getString(R.string.summary_pref_privilege_module_status_loaded_inactive)
+                PrivilegeSettingsClient.ProbeResult.TRANSACTION_UNHANDLED ->
+                    getString(R.string.summary_pref_privilege_module_status_unhandled)
+                PrivilegeSettingsClient.ProbeResult.UNAUTHORIZED ->
+                    getString(R.string.summary_pref_privilege_module_status_unauthorized)
+                PrivilegeSettingsClient.ProbeResult.BINDER_UNAVAILABLE ->
+                    getString(R.string.summary_pref_privilege_module_status_binder)
+                PrivilegeSettingsClient.ProbeResult.ERROR ->
+                    getString(R.string.summary_pref_privilege_module_status_error)
+            }
+
+            // Hard VPN fingerprints only. MissingNotVpn is weak and should not dominate verdict.
+            val hardFramework = detection.frameworkDetected.filterNot { it == "MissingNotVpn" }
+            val weakFramework = detection.frameworkDetected.filter { it == "MissingNotVpn" }
+            val frameworkText = hardFramework
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(", ")
+                ?: if (weakFramework.isNotEmpty()) {
+                    weakFramework.joinToString(", ") + " (weak)"
+                } else {
+                    notDetected
+                }
+            val frameworkIfaces = detection.frameworkInterfaces
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(", ")
+                ?: notDetected
+            val nativeText = if (detection.nativeDetected) yes else notDetected
+            val nativeIfaces = detection.nativeInterfaces
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(", ")
+                ?: notDetected
+            val httpProxy = detection.httpProxy?.takeIf { it.isNotBlank() } ?: notDetected
+
+            val hardLeaked = hardFramework.isNotEmpty() ||
+                detection.nativeDetected ||
+                !detection.httpProxy.isNullOrBlank()
+            val moduleInjected = probeAfter.result == PrivilegeSettingsClient.ProbeResult.ACTIVE ||
+                probeAfter.result == PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE
+            val moduleActive = probeAfter.result == PrivilegeSettingsClient.ProbeResult.ACTIVE
+
+            val verdict = when {
+                !moduleInjected ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_module_bad)
+                probeAfter.result == PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_hook_inactive)
+                !hideEnabled || targets.isEmpty() ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_config)
+                !running ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_vpn_off)
+                !selfInList ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_self_not_targeted)
+                hardLeaked ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_leaked)
+                moduleActive ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_clean)
+                else ->
+                    getString(R.string.summary_pref_privilege_self_test_verdict_hook_inactive)
+            }
+
+            return buildString {
+                appendLine(verdict)
+                appendLine()
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_module_before,
+                        moduleText(probeBefore),
+                    ),
+                )
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_module_after,
+                        moduleText(probeAfter),
+                    ),
+                )
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_sync,
+                        if (syncOk) yes else no,
+                    ),
+                )
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_hide,
+                        if (hideEnabled) yes else no,
+                    ),
+                )
+                appendLine(getString(R.string.summary_pref_privilege_self_test_targets, targets.size))
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_self_in_list,
+                        if (selfInList) yes else no,
+                    ),
+                )
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_vpn,
+                        if (running) yes else no,
+                    ),
+                )
+                appendLine()
+                appendLine(getString(R.string.summary_pref_privilege_self_test_framework, frameworkText))
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_framework_ifaces,
+                        frameworkIfaces,
+                    ),
+                )
+                appendLine(getString(R.string.summary_pref_privilege_self_test_native, nativeText))
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_native_ifaces,
+                        nativeIfaces,
+                    ),
+                )
+                appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy, httpProxy))
+                appendLine()
+                append(getString(R.string.summary_pref_privilege_self_test_note))
+            }
         }
 
         private fun refreshPrivilegeSummaries() {

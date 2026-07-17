@@ -607,5 +607,36 @@
     <string name="summary_settings_entry_mux">Mux multiplexing options</string>
     <string name="summary_settings_entry_fragment">TLS fragment options</string>
     <string name="summary_settings_entry_advanced">Boot, auto test and diagnostic URLs</string>
+    <string name="title_pref_privilege_self_test">HideVPN self-test</string>
+    <string name="summary_pref_privilege_self_test">Probe module path and VPN signals visible to this app</string>
+    <string name="title_privilege_self_test_result">HideVPN self-test result</string>
+    <string name="summary_pref_privilege_self_test_running">Running detection...</string>
+    <string name="summary_pref_privilege_self_test_not_detected">Not detected</string>
+    <string name="summary_pref_privilege_self_test_framework">Framework: %1$s</string>
+    <string name="summary_pref_privilege_self_test_framework_ifaces">Framework ifaces: %1$s</string>
+    <string name="summary_pref_privilege_self_test_native">Native: %1$s</string>
+    <string name="summary_pref_privilege_self_test_native_ifaces">Native ifaces: %1$s</string>
+    <string name="summary_pref_privilege_self_test_http_proxy">HTTP proxy: %1$s</string>
+    <string name="summary_pref_privilege_self_test_module">Module: %1$s</string>
+    <string name="summary_pref_privilege_self_test_module_before">Module before sync: %1$s</string>
+    <string name="summary_pref_privilege_self_test_module_after">Module after sync: %1$s</string>
+    <string name="summary_pref_privilege_self_test_sync">Settings sync: %1$s</string>
+    <string name="summary_pref_privilege_self_test_hide">Hide switch: %1$s</string>
+    <string name="summary_pref_privilege_self_test_targets">Target apps: %1$d</string>
+    <string name="summary_pref_privilege_self_test_vpn">Core running: %1$s</string>
+    <string name="summary_pref_privilege_self_test_self_in_list">This app in target list: %1$s</string>
+    <string name="summary_pref_privilege_self_test_note">Note: this checks what the current app process sees. To verify other apps, add them to the target list and test inside those apps.</string>
+    <string name="summary_pref_privilege_self_test_verdict_clean">Verdict: no hard VPN fingerprint seen by this process</string>
+    <string name="summary_pref_privilege_self_test_verdict_leaked">Verdict: hard VPN fingerprint still visible to this process</string>
+    <string name="summary_pref_privilege_self_test_verdict_module_bad">Verdict: module path not ready; fix LSPosed/system scope first</string>
+    <string name="summary_pref_privilege_self_test_verdict_config">Verdict: module ready, but hide is off or target list empty</string>
+    <string name="summary_pref_privilege_self_test_verdict_vpn_off">Verdict: core is not running; start VPN first for a meaningful hide test</string>
+    <string name="summary_pref_privilege_self_test_verdict_self_not_targeted">Verdict: this app is not in the hide target list; result is only a host-side reference</string>
+    <string name="summary_pref_privilege_self_test_verdict_hook_inactive">Verdict: hooks injected but active=false; open a target app once or reboot</string>
+    <string name="summary_pref_privilege_self_test_copy">Copy</string>
+    <string name="toast_privilege_self_test_copied">Self-test result copied</string>
+    <string name="summary_pref_privilege_self_test_error">Self-test failed: %1$s</string>
+    <string name="summary_pref_privilege_self_test_yes">yes</string>
+    <string name="summary_pref_privilege_self_test_no">no</string>
 </resources>
 

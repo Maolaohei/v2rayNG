@@ -514,4 +514,35 @@
     <string name="summary_settings_entry_mux">Mux 多路復用選項</string>
     <string name="summary_settings_entry_fragment">TLS 分片選項</string>
     <string name="summary_settings_entry_advanced">開機啟動、自動測試與診斷網址</string>
+    <string name="title_pref_privilege_self_test">HideVPN 自檢</string>
+    <string name="summary_pref_privilege_self_test">檢測模組通路與本應用可見的 VPN 特徵</string>
+    <string name="title_privilege_self_test_result">HideVPN 自檢結果</string>
+    <string name="summary_pref_privilege_self_test_running">正在檢測...</string>
+    <string name="summary_pref_privilege_self_test_not_detected">未檢測到</string>
+    <string name="summary_pref_privilege_self_test_framework">Framework：%1$s</string>
+    <string name="summary_pref_privilege_self_test_framework_ifaces">Framework 網卡：%1$s</string>
+    <string name="summary_pref_privilege_self_test_native">Native：%1$s</string>
+    <string name="summary_pref_privilege_self_test_native_ifaces">Native 網卡：%1$s</string>
+    <string name="summary_pref_privilege_self_test_http_proxy">HTTP 代理：%1$s</string>
+    <string name="summary_pref_privilege_self_test_module">模組：%1$s</string>
+    <string name="summary_pref_privilege_self_test_module_before">同步前模組：%1$s</string>
+    <string name="summary_pref_privilege_self_test_module_after">同步後模組：%1$s</string>
+    <string name="summary_pref_privilege_self_test_sync">設定同步：%1$s</string>
+    <string name="summary_pref_privilege_self_test_hide">隱藏開關：%1$s</string>
+    <string name="summary_pref_privilege_self_test_targets">目標應用：%1$d</string>
+    <string name="summary_pref_privilege_self_test_vpn">核心運行中：%1$s</string>
+    <string name="summary_pref_privilege_self_test_self_in_list">本應用是否在目標列表：%1$s</string>
+    <string name="summary_pref_privilege_self_test_note">說明：此結果只反映目前應用行程看到的內容。驗證其他 App 時，請把它們加入目標列表，並在那些 App 內觀察。</string>
+    <string name="summary_pref_privilege_self_test_verdict_clean">結論：目前行程未看到硬性 VPN 指紋</string>
+    <string name="summary_pref_privilege_self_test_verdict_leaked">結論：目前行程仍能看到硬性 VPN 指紋</string>
+    <string name="summary_pref_privilege_self_test_verdict_module_bad">結論：模組通路未就緒，請先修好 LSPosed/system 作用域</string>
+    <string name="summary_pref_privilege_self_test_verdict_config">結論：模組已就緒，但隱藏未開或目標列表為空</string>
+    <string name="summary_pref_privilege_self_test_verdict_vpn_off">結論：核心未運行；請先啟動 VPN 再測隱藏效果</string>
+    <string name="summary_pref_privilege_self_test_verdict_self_not_targeted">結論：本應用不在隱藏目標列表，結果僅作宿主側參考</string>
+    <string name="summary_pref_privilege_self_test_verdict_hook_inactive">結論：已注入但 active=false；開啟目標應用一次或重啟系統</string>
+    <string name="summary_pref_privilege_self_test_copy">複製</string>
+    <string name="toast_privilege_self_test_copied">自檢結果已複製</string>
+    <string name="summary_pref_privilege_self_test_error">自檢失敗：%1$s</string>
+    <string name="summary_pref_privilege_self_test_yes">是</string>
+    <string name="summary_pref_privilege_self_test_no">否</string>
 </resources>
