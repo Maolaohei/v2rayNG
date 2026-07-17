@@ -21,6 +21,7 @@ import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.helper.MmkvPreferenceDataStore
 import com.v2ray.ang.root.RootManager
 import com.v2ray.ang.util.Utils
+import com.v2ray.ang.xposed.PrivilegeSettingsClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -230,6 +231,7 @@ class SettingsActivity : BaseActivity() {
 
         override fun onStart() {
             super.onStart()
+            refreshPrivilegeSummaries()
             updateHevTunSettings(MmkvManager.decodeSettingsBool(AppConfig.PREF_USE_HEV_TUNNEL, false))
 
             // Initialize mode-dependent UI states.
@@ -303,12 +305,27 @@ class SettingsActivity : BaseActivity() {
 
 
         
+        private val privilegeManageApps by lazy { findPreference<Preference>("pref_entry_privilege_manage_apps") }
+        private val privilegeModuleStatus by lazy { findPreference<Preference>("pref_entry_privilege_module_status") }
+
         private fun setupPrivilegePrefs() {
             privilegeHideVpn?.setOnPreferenceChangeListener { _, newValue ->
                 val enabled = newValue as Boolean
                 // Persist happens via PreferenceDataStore; force sync after change.
                 view?.post {
-                    val ok = com.v2ray.ang.xposed.PrivilegeSettingsClient.sync()
+                    if (enabled) {
+                        val count = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.size ?: 0
+                        if (count == 0) {
+                            context?.let {
+                                android.widget.Toast.makeText(
+                                    it,
+                                    R.string.privilege_empty_target_warning,
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
+                    val ok = PrivilegeSettingsClient.sync()
                     context?.let {
                         if (ok) {
                             android.widget.Toast.makeText(it, R.string.toast_privilege_sync_ok, android.widget.Toast.LENGTH_SHORT).show()
@@ -316,34 +333,66 @@ class SettingsActivity : BaseActivity() {
                             android.widget.Toast.makeText(it, R.string.toast_privilege_sync_fail, android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
+                    refreshPrivilegeSummaries()
                 }
                 true
             }
             privilegeIfaceRename?.setOnPreferenceChangeListener { _, _ ->
-                view?.post { com.v2ray.ang.xposed.PrivilegeSettingsClient.sync() }
+                view?.post {
+                    PrivilegeSettingsClient.sync()
+                    refreshPrivilegeSummaries()
+                }
                 true
             }
             privilegeIfacePrefix?.setOnPreferenceChangeListener { _, _ ->
-                view?.post { com.v2ray.ang.xposed.PrivilegeSettingsClient.sync() }
+                view?.post {
+                    PrivilegeSettingsClient.sync()
+                    refreshPrivilegeSummaries()
+                }
                 true
             }
-            findPreference<Preference>("pref_entry_privilege_manage_apps")?.setOnPreferenceClickListener {
-                // Reuse PerApp picker UI surface for now: write hidevpn package set.
-                startActivity(android.content.Intent(requireContext(), PerAppProxyActivity::class.java).apply {
-                    putExtra("extra_privilege_hide_vpn_picker", true)
+            privilegeManageApps?.setOnPreferenceClickListener {
+                // Dedicated hidevpn package set (not per-app proxy set).
+                startActivity(Intent(requireContext(), PerAppProxyActivity::class.java).apply {
+                    putExtra(PerAppProxyActivity.EXTRA_PRIVILEGE_HIDE_VPN_PICKER, true)
                 })
                 true
             }
-            findPreference<Preference>("pref_entry_privilege_module_status")?.setOnPreferenceClickListener {
-                val active = com.v2ray.ang.xposed.PrivilegeSettingsClient.isModuleActive()
+            privilegeModuleStatus?.setOnPreferenceClickListener {
+                val active = PrivilegeSettingsClient.isModuleActive()
                 val msg = if (active) R.string.toast_privilege_module_active else R.string.toast_privilege_module_inactive
                 android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_LONG).show()
-                // refresh sync attempt
-                com.v2ray.ang.xposed.PrivilegeSettingsClient.sync()
+                PrivilegeSettingsClient.sync()
+                refreshPrivilegeSummaries()
                 true
             }
-            // Initial sync when settings opens.
-            com.v2ray.ang.xposed.PrivilegeSettingsClient.sync()
+            // Initial sync + summary when settings opens.
+            PrivilegeSettingsClient.sync()
+            refreshPrivilegeSummaries()
+        }
+
+        private fun refreshPrivilegeSummaries() {
+            if (!isAdded) return
+            val count = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.size ?: 0
+            privilegeManageApps?.summary = if (count > 0) {
+                getString(R.string.summary_pref_privilege_manage_apps_count, count)
+            } else {
+                getString(R.string.summary_pref_privilege_manage_apps)
+            }
+
+            val hideEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false)
+            val active = PrivilegeSettingsClient.isModuleActive()
+            privilegeModuleStatus?.summary = when {
+                active && hideEnabled -> getString(R.string.summary_pref_privilege_module_status_active_on)
+                active -> getString(R.string.summary_pref_privilege_module_status_active_off)
+                else -> getString(R.string.summary_pref_privilege_module_status_inactive)
+            }
+
+            val rename = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
+            val prefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX)
+                ?.takeIf { it.isNotBlank() } ?: "wlan"
+            privilegeIfacePrefix?.isEnabled = rename
+            privilegeIfacePrefix?.summary = getString(R.string.summary_pref_privilege_iface_prefix_value, prefix)
         }
         private fun hardRestartIfLive() {
             val live =

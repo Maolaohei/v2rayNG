@@ -580,5 +580,12 @@
     <string name="toast_privilege_module_inactive">Module inactive. Enable in LSPosed, scope=system, then reboot</string>
     <string name="toast_privilege_sync_ok">Hide-VPN settings synced to system_server</string>
     <string name="toast_privilege_sync_fail">Sync failed (module inactive or transaction rejected)</string>
+    <string name="summary_pref_privilege_module_status_active_on">Module active · hide enabled</string>
+    <string name="summary_pref_privilege_module_status_inactive">Module inactive. Enable in LSPosed (scope=system), then reboot</string>
+    <string name="summary_pref_privilege_manage_apps_count">%1$d app(s) selected for VPN hide</string>
+    <string name="summary_pref_privilege_iface_prefix_value">Current prefix: %1$s</string>
+    <string name="summary_pref_privilege_module_status_active_off">Module active · hide disabled</string>
+    <string name="privilege_empty_target_warning">Hide-VPN is on but no target apps are selected. Pick apps that should not detect VPN.</string>
+    <string name="title_privilege_hide_vpn_apps">Hide VPN target apps</string>
 </resources>
 

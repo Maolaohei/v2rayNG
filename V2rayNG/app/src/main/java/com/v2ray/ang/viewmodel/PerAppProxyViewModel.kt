@@ -4,18 +4,40 @@ import androidx.lifecycle.ViewModel
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
+import com.v2ray.ang.xposed.PrivilegeSettingsClient
 
 class PerAppProxyViewModel : ViewModel() {
-    private val blacklist: MutableSet<String> = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET)?.let {
-        HashSet(it)
-    } ?: HashSet()
+    private var packageSetKey: String = AppConfig.PREF_PER_APP_PROXY_SET
+    private var privilegeHideVpnMode: Boolean = false
+    private val selectedPackages: MutableSet<String> = HashSet()
+    private var initialized: Boolean = false
 
-    fun contains(packageName: String): Boolean = blacklist.contains(packageName)
+    fun configureMode(privilegeHideVpnPicker: Boolean) {
+        val targetKey = if (privilegeHideVpnPicker) {
+            AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS
+        } else {
+            AppConfig.PREF_PER_APP_PROXY_SET
+        }
+        if (initialized && privilegeHideVpnMode == privilegeHideVpnPicker && packageSetKey == targetKey) {
+            return
+        }
+        privilegeHideVpnMode = privilegeHideVpnPicker
+        packageSetKey = targetKey
+        selectedPackages.clear()
+        MmkvManager.decodeSettingsStringSet(packageSetKey)?.let { selectedPackages.addAll(it) }
+        initialized = true
+    }
 
-    fun getAll(): Set<String> = blacklist.toSet()
+    fun isPrivilegeHideVpnMode(): Boolean = privilegeHideVpnMode
+
+    fun contains(packageName: String): Boolean = selectedPackages.contains(packageName)
+
+    fun getAll(): Set<String> = selectedPackages.toSet()
+
+    fun selectedCount(): Int = selectedPackages.size
 
     fun add(packageName: String): Boolean {
-        val changed = blacklist.add(packageName)
+        val changed = selectedPackages.add(packageName)
         if (changed) {
             save()
         }
@@ -23,7 +45,7 @@ class PerAppProxyViewModel : ViewModel() {
     }
 
     fun remove(packageName: String): Boolean {
-        val changed = blacklist.remove(packageName)
+        val changed = selectedPackages.remove(packageName)
         if (changed) {
             save()
         }
@@ -31,7 +53,7 @@ class PerAppProxyViewModel : ViewModel() {
     }
 
     fun toggle(packageName: String) {
-        if (blacklist.contains(packageName)) {
+        if (selectedPackages.contains(packageName)) {
             remove(packageName)
         } else {
             add(packageName)
@@ -39,26 +61,38 @@ class PerAppProxyViewModel : ViewModel() {
     }
 
     fun addAll(packages: Collection<String>) {
-        if (blacklist.addAll(packages)) {
+        if (selectedPackages.addAll(packages)) {
             save()
         }
     }
 
     fun removeAll(packages: Collection<String>) {
-        if (blacklist.removeAll(packages.toSet())) {
+        if (selectedPackages.removeAll(packages.toSet())) {
             save()
         }
     }
 
     fun clear() {
-        if (blacklist.isNotEmpty()) {
-            blacklist.clear()
+        if (selectedPackages.isNotEmpty()) {
+            selectedPackages.clear()
             save()
         }
     }
 
     private fun save() {
-        MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY_SET, blacklist)
-        SettingsChangeManager.makeHardRestartService()
+        ensureInitialized()
+        MmkvManager.encodeSettings(packageSetKey, selectedPackages)
+        if (privilegeHideVpnMode) {
+            // Push hidevpn target list into system_server; no VPN hard-restart needed.
+            PrivilegeSettingsClient.sync()
+        } else {
+            SettingsChangeManager.makeHardRestartService()
+        }
+    }
+
+    private fun ensureInitialized() {
+        if (!initialized) {
+            configureMode(false)
+        }
     }
 }

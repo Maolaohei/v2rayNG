@@ -567,4 +567,11 @@
     <string name="toast_privilege_module_inactive">模块未激活。请在 LSPosed 启用，作用域选 system，然后重启</string>
     <string name="toast_privilege_sync_ok">隐藏设置已同步到 system_server</string>
     <string name="toast_privilege_sync_fail">同步失败（模块未激活或事务被拒绝）</string>
+    <string name="summary_pref_privilege_module_status_active_on">模块已激活 · 隐藏已开启</string>
+    <string name="summary_pref_privilege_module_status_inactive">模块未激活。请在 LSPosed 启用，作用域选 system，然后重启</string>
+    <string name="summary_pref_privilege_manage_apps_count">已选择 %1$d 个目标应用</string>
+    <string name="summary_pref_privilege_iface_prefix_value">当前前缀：%1$s</string>
+    <string name="summary_pref_privilege_module_status_active_off">模块已激活 · 隐藏未开启</string>
+    <string name="privilege_empty_target_warning">已开启对应用隐藏 VPN，但尚未选择目标应用。请勾选需要抗 VPN 检测的应用。</string>
+    <string name="title_privilege_hide_vpn_apps">隐藏 VPN 目标应用</string>
 </resources>
