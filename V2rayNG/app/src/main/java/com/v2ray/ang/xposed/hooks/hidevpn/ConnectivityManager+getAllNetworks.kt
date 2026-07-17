@@ -17,10 +17,11 @@ class HookConnectivityManagerGetAllNetworks(private val helper: ConnectivityServ
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
                     val uid = Binder.getCallingUid()
-                    if (!helper.shouldHide(param.thisObject, uid)) return
+                    val service = param.thisObject ?: return
+                    if (!helper.shouldHide(service, uid)) return
                     @Suppress("UNCHECKED_CAST")
                     val networks = param.result as? Array<Network> ?: return
-                    val filtered = networks.filter { !helper.isVpnNetwork(param.thisObject, it) }
+                    val filtered = networks.filter { !helper.isVpnNetwork(service, it) }
                     param.result = filtered.toTypedArray()
                 }
             },

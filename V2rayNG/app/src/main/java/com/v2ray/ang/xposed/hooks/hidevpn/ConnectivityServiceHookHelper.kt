@@ -369,7 +369,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
                             onTransactUnhook = null
                             return
                         }
-                        val serviceClass = param.thisObject.javaClass
+                        val serviceClass = param.thisObject?.javaClass ?: return
                         HookErrorStore.i(
                             SOURCE,
                             "ConnectivityService discovered via onTransact: ${serviceClass.name}",
@@ -471,7 +471,8 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         return hasVpn
     }
 
-    fun hasVpnForUid(connectivityService: Any, uid: Int): Boolean {
+    fun hasVpnForUid(connectivityService: Any?, uid: Int): Boolean {
+        if (connectivityService == null) return false
         if (sdkInt >= 31) {
             val vpnForUidMethod = getVpnForUidMethod
             if (vpnForUidMethod != null) {
@@ -483,7 +484,8 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
         return networks != null && networks.isNotEmpty()
     }
 
-    fun isVpnNetwork(connectivityService: Any, network: Network): Boolean {
+    fun isVpnNetwork(connectivityService: Any?, network: Network): Boolean {
+        if (connectivityService == null) return false
         val nai = getNetworkAgentInfoForNetworkMethod.invoke(connectivityService, network) ?: return false
         return isVpnNai(nai)
     }
