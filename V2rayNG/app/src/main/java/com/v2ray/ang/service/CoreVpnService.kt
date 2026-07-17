@@ -1,4 +1,4 @@
-﻿package com.v2ray.ang.service
+package com.v2ray.ang.service
 
 import android.annotation.SuppressLint
 import android.app.Service
@@ -74,18 +74,30 @@ class CoreVpnService : VpnService(), ServiceControl {
                         return
                     }
                     if (isRunning && !CoreServiceManager.isSoftRestarting()) {
-                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, soft-restarting core")
-                        lastNetworkRecoverAtMs = now
-                        try {
-                            MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERING, "")
-                        } catch (_: Exception) {
-                        }
-                        // Soft-restart: keep VPN service + TUN; avoid STOP_SUCCESS UI flicker.
                         CoreServiceManager.bindVpnInterface(mInterface)
-                        CoreServiceManager.restartCoreLoop()
-                        try {
-                            MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERED, "")
-                        } catch (_: Exception) {
+                        // Soft-restart only when the in-process core is actually down.
+                        // Remote blips / Wi-Fi handoff with a live core should not drop every TCP.
+                        if (CoreServiceManager.isRunning()) {
+                            LogUtil.i(
+                                AppConfig.TAG,
+                                "StartCore-VPN: network available after loss, core still live; skip soft-restart"
+                            )
+                            try {
+                                MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERED, "")
+                            } catch (_: Exception) {
+                            }
+                        } else {
+                            LogUtil.i(AppConfig.TAG, "StartCore-VPN: Network available after loss, soft-restarting core")
+                            lastNetworkRecoverAtMs = now
+                            try {
+                                MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERING, "")
+                            } catch (_: Exception) {
+                            }
+                            CoreServiceManager.restartCoreLoop()
+                            try {
+                                MessageUtil.sendMsg2UI(this@CoreVpnService, AppConfig.MSG_STATE_NETWORK_RECOVERED, "")
+                            } catch (_: Exception) {
+                            }
                         }
                     }
                 }
@@ -331,13 +343,33 @@ class CoreVpnService : VpnService(), ServiceControl {
             }
         }
 
-        // Configure DNS servers
-        //if (MmkvManager.decodeSettingsBool(AppConfig.PREF_LOCAL_DNS_ENABLED) == true) {
-        //  builder.addDnsServer(PRIVATE_VLAN4_ROUTER)
-        //} else {
-        SettingsManager.getVpnDnsServers().forEach {
-            if (Utils.isPureIpAddress(it)) {
-                builder.addDnsServer(it)
+        // Configure DNS servers.
+        // Local DNS / FakeDNS path: push system resolvers to the VPN router addresses so
+        // queries enter the TUN inbound and can be hijacked to dns-out by CoreConfigManager.
+        // Otherwise use configured public/custom VPN DNS servers.
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_LOCAL_DNS_ENABLED) == true) {
+            builder.addDnsServer(vpnConfig.ipv4Router)
+            if (MmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED) == true) {
+                try {
+                    builder.addDnsServer(vpnConfig.ipv6Router)
+                } catch (e: Exception) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-VPN: failed to add IPv6 local DNS", e)
+                }
+            }
+            LogUtil.i(
+                AppConfig.TAG,
+                "StartCore-VPN: local DNS via tunnel router ${vpnConfig.ipv4Router}" +
+                    if (MmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED) == true) {
+                        "/${vpnConfig.ipv6Router}"
+                    } else {
+                        ""
+                    }
+            )
+        } else {
+            SettingsManager.getVpnDnsServers().forEach {
+                if (Utils.isPureIpAddress(it)) {
+                    builder.addDnsServer(it)
+                }
             }
         }
 

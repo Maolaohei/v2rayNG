@@ -526,6 +526,43 @@ object CoreServiceManager {
      * `registerReceiver(Context, BroadcastReceiver, IntentFilter, int)`.
      * Starts the V2Ray core service.
      */
+
+    /**
+     * Dup the process-local TUN fd before handing it to libv2ray.
+     * The core owns the copy; Kotlin keeps the source fd for soft-restart.
+     */
+    private fun dupTunFdOrThrow(sourceFd: Int, label: String): Int {
+        return try {
+            val dup = android.system.Os.dup(sourceFd)
+            if (dup <= 0) {
+                error("$label TUN dup returned invalid fd=$dup from source=$sourceFd")
+            }
+            LogUtil.i(AppConfig.TAG, "StartCore-Manager: $label tunFd source=$sourceFd dup=$dup")
+            dup
+        } catch (e: Exception) {
+            throw IllegalStateException("$label TUN dup failed for sourceFd=$sourceFd: ${e.message}", e)
+        }
+    }
+
+    private fun logVpnStartSummary(tunFd: Int, softRestart: Boolean) {
+        val mode = SettingsManager.getRunMode()
+        val hev = SettingsManager.isUsingHevTun()
+        val engine = when {
+            SettingsManager.isRootMode() -> "root/${SettingsManager.rootEngine()}"
+            SettingsManager.isVpnMode() && !hev -> "vpn/xray_tun"
+            SettingsManager.isVpnMode() && hev -> "vpn/hev"
+            else -> "proxy"
+        }
+        val localDns = MmkvManager.decodeSettingsBool(AppConfig.PREF_LOCAL_DNS_ENABLED) == true
+        val fakeDns = MmkvManager.decodeSettingsBool(AppConfig.PREF_FAKE_DNS_ENABLED) == true
+        val perApp = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == true
+        val mtu = SettingsManager.getVpnMtu()
+        LogUtil.i(
+            AppConfig.TAG,
+            "StartCore-Manager: start summary mode=$mode engine=$engine hev=$hev tunFd=$tunFd " +
+                "localDns=$localDns fakeDns=$fakeDns perApp=$perApp mtu=$mtu softRestart=$softRestart"
+        )
+    }
     /** Keep cached TUN in sync when VPN re-establishes the interface. */
     fun bindVpnInterface(vpnInterface: ParcelFileDescriptor?) {
         activeVpnInterface = vpnInterface
@@ -717,19 +754,24 @@ object CoreServiceManager {
         } else {
             activeVpnInterface = null
         }
+        // Always pass a dup'd TUN fd into the core. Bray-Core Android TUN may close
+        // the fd it receives (SetNonblock failure / stack teardown). Soft-restart must
+        // keep the original VpnService/RootTun fd alive for the next startLoop.
         var tunFd = 0
         when {
             SettingsManager.isVpnMode() && !SettingsManager.isUsingHevTun() -> {
-                tunFd = activeVpnInterface?.fd ?: 0
-                if (tunFd <= 0) {
+                val src = activeVpnInterface?.fd ?: 0
+                if (src <= 0) {
                     error("VPN mode requires a valid TUN interface")
                 }
+                tunFd = dupTunFdOrThrow(src, "VPN")
             }
             SettingsManager.isRootXrayTunEngine() -> {
-                tunFd = com.v2ray.ang.root.RootTun.currentFd()
-                if (tunFd <= 0) {
+                val src = com.v2ray.ang.root.RootTun.currentFd()
+                if (src <= 0) {
                     error("ROOT xray_tun requires an open RootTun fd before startLoop")
                 }
+                tunFd = dupTunFdOrThrow(src, "ROOT")
             }
             else -> {
                 tunFd = 0
@@ -743,6 +785,7 @@ object CoreServiceManager {
 
         NotificationManager.showNotification(currentConfig)
         CoreNativeManager.reconcileBrowserDialer(dialerAddr)
+        logVpnStartSummary(tunFd, softRestart = softRestarting.get())
         coreController.startLoop(result.content, tunFd)
 
         if (!coreController.isRunning) {

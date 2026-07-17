@@ -93,8 +93,20 @@ class MainActivity : HelperBaseActivity() {
     }
 
     fun restartV2Ray() {
-        // Home may be hidden (user is on Subscription tab). Always soft-apply selection
-        // through CoreServiceManager; update Home UI when the fragment exists.
+        // Capture-policy changes (per-app/DNS/interface) need a hard VPN re-establish.
+        if (SettingsChangeManager.consumeHardRestartService() || SettingsChangeManager.isHardRestartPending()) {
+            SettingsChangeManager.consumeRestartService()
+            SettingsChangeManager.consumeHardRestartService()
+            val home = homeFragment()
+            if (home != null && home.isAdded) {
+                home.hardRestartForCurrentMode()
+            } else {
+                com.v2ray.ang.core.CoreServiceManager.stopAllModeServices(this)
+                com.v2ray.ang.core.CoreServiceManager.startVService(this)
+            }
+            return
+        }
+        // Home may be hidden (user is on Subscription tab). Soft-apply selection by default.
         val home = homeFragment()
         if (home != null && home.isAdded) {
             home.restartV2Ray()
@@ -114,19 +126,25 @@ class MainActivity : HelperBaseActivity() {
 
     private fun processPendingSettingsChanges() {
         if (SettingsChangeManager.consumeRestartService()) {
-            // Prefer home hard-mode path when available; soft-restart alone cannot switch
-            // service class after Proxy/VPN/ROOT changes from Settings.
+            // Hard path is required when capture policy changed (per-app / local DNS /
+            // interface). Soft-restart alone cannot rebuild VpnService allow/disallow lists.
+            val hard = SettingsChangeManager.consumeHardRestartService()
             val home = homeFragment()
             val live =
                 mainViewModel.isRunning.value == true ||
                     com.v2ray.ang.core.CoreServiceManager.serviceControl != null ||
                     com.v2ray.ang.core.CoreServiceManager.isRunning()
             if (live) {
-                if (home != null && home.isAdded) {
-                    // Re-apply current run mode through home hard-restart helper.
-                    home.hardRestartForCurrentMode()
+                if (hard) {
+                    if (home != null && home.isAdded) {
+                        home.hardRestartForCurrentMode()
+                    } else {
+                        // Fallback when home tab is not ready: stop modes then start again.
+                        com.v2ray.ang.core.CoreServiceManager.stopAllModeServices(this)
+                        com.v2ray.ang.core.CoreServiceManager.startVService(this)
+                    }
                 } else {
-                    // Home not ready: soft-apply is still better than doing nothing for same-class changes.
+                    // Content-only changes keep the same service class / TUN policy.
                     com.v2ray.ang.core.CoreServiceManager.applySelectedServer(this)
                 }
             }

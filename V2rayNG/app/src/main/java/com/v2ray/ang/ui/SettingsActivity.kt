@@ -78,6 +78,23 @@ class SettingsActivity : BaseActivity() {
 
             localDns?.setOnPreferenceChangeListener { _, any ->
                 updateLocalDns(any as Boolean)
+                // Local DNS changes system VpnService DNS list; soft-restart is not enough.
+                SettingsChangeManager.makeHardRestartService()
+                true
+            }
+
+            fakeDns?.setOnPreferenceChangeListener { _, _ ->
+                SettingsChangeManager.makeHardRestartService()
+                true
+            }
+
+            vpnInterfaceAddress?.setOnPreferenceChangeListener { _, _ ->
+                SettingsChangeManager.makeHardRestartService()
+                true
+            }
+
+            vpnMtu?.setOnPreferenceChangeListener { _, _ ->
+                SettingsChangeManager.makeHardRestartService()
                 true
             }
 
@@ -134,6 +151,8 @@ class SettingsActivity : BaseActivity() {
 
             useHevTun?.setOnPreferenceChangeListener { _, newValue ->
                 updateHevTunSettings(newValue as Boolean)
+                // Hev on/off switches dataplane (SOCKS bridge vs Xray TUN) and needs hard reapply.
+                SettingsChangeManager.makeHardRestartService()
                 true
             }
 

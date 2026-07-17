@@ -51,14 +51,14 @@ class PerAppProxyActivity : BaseActivity() {
         binding.switchPerAppProxy.setOnCheckedChangeListener { _, isChecked ->
             MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, isChecked)
             // ROOT/VPN capture policy changes only take effect after service re-apply.
-            SettingsChangeManager.makeRestartService()
+            SettingsChangeManager.makeHardRestartService()
             updatePerAppWarnings()
         }
         binding.switchPerAppProxy.isChecked = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY, false)
 
         binding.switchBypassApps.setOnCheckedChangeListener { _, isChecked ->
             MmkvManager.encodeSettings(AppConfig.PREF_BYPASS_APPS, isChecked)
-            SettingsChangeManager.makeRestartService()
+            SettingsChangeManager.makeHardRestartService()
             updatePerAppWarnings()
         }
         binding.switchBypassApps.isChecked = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS, false)
@@ -262,7 +262,7 @@ class PerAppProxyActivity : BaseActivity() {
 
     private fun allowPerAppProxy() {
         binding.switchPerAppProxy.isChecked = true
-        SettingsChangeManager.makeRestartService()
+        SettingsChangeManager.makeHardRestartService()
     }
 
     @SuppressLint("NotifyDataSetChanged")

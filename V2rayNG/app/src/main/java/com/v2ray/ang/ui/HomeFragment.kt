@@ -252,6 +252,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     fun hardRestartForCurrentMode() {
         if (!isAdded) return
         SettingsChangeManager.consumeRestartService()
+        SettingsChangeManager.consumeHardRestartService()
         modeSwitchJob?.cancel()
         cancelStopConfirm()
         modeToggleReady = false
@@ -281,6 +282,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                 delay(600L)
                 if (!isAdded || view == null) return@launch
                 SettingsChangeManager.consumeRestartService()
+                SettingsChangeManager.consumeHardRestartService()
                 // Start the *new* mode service class (prefs already updated by applyRunMode).
                 when (SettingsManager.getRunMode()) {
                     AppConfig.VPN -> {

@@ -11,15 +11,32 @@ class SettingsChangeManagerTest {
     fun test_consumeRestartService_defaultFalse() {
         // Reset state
         SettingsChangeManager.consumeRestartService()
+        SettingsChangeManager.consumeHardRestartService()
         assertFalse(SettingsChangeManager.consumeRestartService())
+        assertFalse(SettingsChangeManager.consumeHardRestartService())
     }
 
     @Test
     fun test_makeAndConsumeRestartService() {
+        SettingsChangeManager.consumeHardRestartService()
         SettingsChangeManager.makeRestartService()
         assertTrue(SettingsChangeManager.consumeRestartService())
-        // Second consume should return false
+        // Soft flag alone must not imply hard capture-policy rebuild.
+        assertFalse(SettingsChangeManager.consumeHardRestartService())
         assertFalse(SettingsChangeManager.consumeRestartService())
+    }
+
+    @Test
+    fun test_makeHardRestart_setsBothFlags() {
+        SettingsChangeManager.consumeRestartService()
+        SettingsChangeManager.consumeHardRestartService()
+        SettingsChangeManager.makeHardRestartService()
+        assertTrue(SettingsChangeManager.isHardRestartPending())
+        assertTrue(SettingsChangeManager.consumeRestartService())
+        assertTrue(SettingsChangeManager.consumeHardRestartService())
+        assertFalse(SettingsChangeManager.isHardRestartPending())
+        assertFalse(SettingsChangeManager.consumeRestartService())
+        assertFalse(SettingsChangeManager.consumeHardRestartService())
     }
 
     @Test

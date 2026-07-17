@@ -82,8 +82,29 @@ class MmkvPreferenceDataStore : PreferenceDataStore() {
         if (key == AppConfig.PREF_UI_MODE_NIGHT) {
             SettingsManager.setNightMode()
         }
-        // Notify listeners that require service restart or reinit
-        SettingsChangeManager.makeRestartService()
+        // Capture-policy keys must rebuild VpnService (allow/disallow + DNS + interface).
+        if (isHardRestartKey(key)) {
+            SettingsChangeManager.makeHardRestartService()
+        } else {
+            SettingsChangeManager.makeRestartService()
+        }
         SettingsChangeManager.makeSetupGroupTab()
+    }
+
+    private fun isHardRestartKey(key: String): Boolean {
+        return when (key) {
+            AppConfig.PREF_PER_APP_PROXY,
+            AppConfig.PREF_PER_APP_PROXY_SET,
+            AppConfig.PREF_BYPASS_APPS,
+            AppConfig.PREF_LOCAL_DNS_ENABLED,
+            AppConfig.PREF_FAKE_DNS_ENABLED,
+            AppConfig.PREF_USE_HEV_TUNNEL,
+            AppConfig.PREF_VPN_MTU,
+            AppConfig.PREF_VPN_INTERFACE_ADDRESS_CONFIG_INDEX,
+            AppConfig.PREF_VPN_DNS,
+            AppConfig.PREF_IPV6_ENABLED,
+            AppConfig.PREF_APPEND_HTTP_PROXY -> true
+            else -> false
+        }
     }
 }
