@@ -91,6 +91,11 @@
                     android:key="pref_privilege_iface_prefix"
                     android:summary="@string/summary_pref_privilege_iface_prefix"
                     android:title="@string/title_pref_privilege_iface_prefix" />
+                <CheckBoxPreference
+                    android:defaultValue="false"
+                    android:key="pref_privilege_ports"
+                    android:summary="@string/summary_pref_privilege_ports"
+                    android:title="@string/title_pref_privilege_ports" />
                 <Preference
                     android:key="pref_entry_privilege_module_status"
                     android:summary="@string/summary_pref_privilege_module_status"

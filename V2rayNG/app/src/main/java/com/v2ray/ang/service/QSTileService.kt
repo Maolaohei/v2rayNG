@@ -18,21 +18,44 @@ import java.lang.ref.SoftReference
 
 class QSTileService : TileService() {
 
+    private var mMsgReceive: BroadcastReceiver? = null
+
     /**
      * Sets the state of the tile.
      * @param state The state to set.
      */
     fun setState(state: Int) {
-        qsTile?.icon = Icon.createWithResource(applicationContext, R.drawable.ic_stat_name)
+        val tile = qsTile ?: return
+        tile.icon = Icon.createWithResource(applicationContext, R.drawable.ic_stat_name)
         if (state == Tile.STATE_INACTIVE) {
-            qsTile?.state = Tile.STATE_INACTIVE
-            qsTile?.label = getString(R.string.app_name)
+            tile.state = Tile.STATE_INACTIVE
+            tile.label = getString(R.string.app_name)
         } else if (state == Tile.STATE_ACTIVE) {
-            qsTile?.state = Tile.STATE_ACTIVE
-            qsTile?.label = CoreServiceManager.getRunningServerName()
+            tile.state = Tile.STATE_ACTIVE
+            val name = CoreServiceManager.getRunningServerName()
+            tile.label = if (name.isNotBlank()) name else getString(R.string.app_name)
         }
+        tile.updateTile()
+    }
 
-        qsTile?.updateTile()
+    /** Daemon-process live check; sticky against flaky REGISTER races. */
+    fun isSessionLive(): Boolean {
+        return try {
+            CoreServiceManager.hasLiveSession() ||
+                CoreServiceManager.isRunning() ||
+                CoreServiceManager.isSoftRestarting() ||
+                CoreServiceManager.serviceControl != null
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun refreshFromCore() {
+        if (isSessionLive()) {
+            setState(Tile.STATE_ACTIVE)
+        } else {
+            setState(Tile.STATE_INACTIVE)
+        }
     }
 
     /**
@@ -41,15 +64,14 @@ class QSTileService : TileService() {
      */
     override fun onStartListening() {
         super.onStartListening()
-
-        if (CoreServiceManager.isRunning()) {
-            setState(Tile.STATE_ACTIVE)
-        } else {
-            setState(Tile.STATE_INACTIVE)
+        // Paint from local daemon state first so the tile does not flash off
+        // while we wait for MSG_REGISTER_CLIENT round-trip.
+        refreshFromCore()
+        if (mMsgReceive == null) {
+            mMsgReceive = ReceiveMessageHandler(this)
+            val mFilter = IntentFilter(AppConfig.BROADCAST_ACTION_ACTIVITY)
+            ContextCompat.registerReceiver(applicationContext, mMsgReceive, mFilter, Utils.receiverFlags())
         }
-        mMsgReceive = ReceiveMessageHandler(this)
-        val mFilter = IntentFilter(AppConfig.BROADCAST_ACTION_ACTIVITY)
-        ContextCompat.registerReceiver(applicationContext, mMsgReceive, mFilter, Utils.receiverFlags())
         MessageUtil.sendMsg2Service(this, AppConfig.MSG_REGISTER_CLIENT, "")
     }
 
@@ -58,14 +80,15 @@ class QSTileService : TileService() {
      */
     override fun onStopListening() {
         super.onStopListening()
-
         try {
-            applicationContext.unregisterReceiver(mMsgReceive)
-            mMsgReceive = null
+            if (mMsgReceive != null) {
+                applicationContext.unregisterReceiver(mMsgReceive)
+                mMsgReceive = null
+            }
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Failed to unregister receiver", e)
+            mMsgReceive = null
         }
-
     }
 
     /**
@@ -73,42 +96,52 @@ class QSTileService : TileService() {
      */
     override fun onClick() {
         super.onClick()
-        when (qsTile.state) {
-            Tile.STATE_INACTIVE -> {
-                CoreServiceManager.startVServiceFromToggle(this)
-            }
-
-            Tile.STATE_ACTIVE -> {
-                CoreServiceManager.stopVService(this)
-            }
+        // Prefer live session over visual tile state (visual can lag / race).
+        if (isSessionLive()) {
+            CoreServiceManager.stopVService(this)
+            setState(Tile.STATE_INACTIVE)
+        } else {
+            CoreServiceManager.startVServiceFromToggle(this)
+            // Connecting: keep inactive until START_SUCCESS/RUNNING arrives.
+            setState(Tile.STATE_INACTIVE)
         }
     }
-
-    private var mMsgReceive: BroadcastReceiver? = null
 
     private class ReceiveMessageHandler(context: QSTileService) : BroadcastReceiver() {
         var mReference: SoftReference<QSTileService> = SoftReference(context)
         override fun onReceive(ctx: Context?, intent: Intent?) {
-            val context = mReference.get()
+            val context = mReference.get() ?: return
             when (intent?.getIntExtra("key", 0)) {
-                AppConfig.MSG_STATE_RUNNING -> {
-                    context?.setState(Tile.STATE_ACTIVE)
+                AppConfig.MSG_STATE_RUNNING,
+                AppConfig.MSG_STATE_START_SUCCESS,
+                AppConfig.MSG_STATE_NETWORK_RECOVERED,
+                -> {
+                    context.setState(Tile.STATE_ACTIVE)
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
-                    context?.setState(Tile.STATE_INACTIVE)
+                    // Sticky: REGISTER races / soft-restart can emit NOT_RUNNING
+                    // while core is still up. Re-check before dimming.
+                    if (context.isSessionLive()) {
+                        context.setState(Tile.STATE_ACTIVE)
+                    } else {
+                        context.setState(Tile.STATE_INACTIVE)
+                    }
                 }
 
-                AppConfig.MSG_STATE_START_SUCCESS -> {
-                    context?.setState(Tile.STATE_ACTIVE)
+                AppConfig.MSG_STATE_START_FAILURE,
+                AppConfig.MSG_STATE_STOP_SUCCESS,
+                -> {
+                    if (context.isSessionLive()) {
+                        context.setState(Tile.STATE_ACTIVE)
+                    } else {
+                        context.setState(Tile.STATE_INACTIVE)
+                    }
                 }
 
-                AppConfig.MSG_STATE_START_FAILURE -> {
-                    context?.setState(Tile.STATE_INACTIVE)
-                }
-
-                AppConfig.MSG_STATE_STOP_SUCCESS -> {
-                    context?.setState(Tile.STATE_INACTIVE)
+                AppConfig.MSG_STATE_NETWORK_RECOVERING -> {
+                    // Keep active appearance during recovery; proxy still "on".
+                    context.setState(Tile.STATE_ACTIVE)
                 }
             }
         }

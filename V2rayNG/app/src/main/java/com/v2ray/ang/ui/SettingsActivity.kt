@@ -25,6 +25,7 @@ import com.v2ray.ang.helper.MmkvPreferenceDataStore
 import com.v2ray.ang.root.RootManager
 import com.v2ray.ang.util.Utils
 import com.v2ray.ang.xposed.DetectionResult
+import com.v2ray.ang.xposed.PrivilegePortsManager
 import com.v2ray.ang.xposed.PrivilegeSettingsClient
 import com.v2ray.ang.xposed.VpnDetectionTest
 import kotlinx.coroutines.Dispatchers
@@ -95,6 +96,7 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         private val privilegeHideSelfPackage by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_HIDE_SELF_PACKAGE) }
         private val privilegeIfaceRename by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_IFACE_RENAME) }
         private val privilegeIfacePrefix by lazy { findPreference<EditTextPreference>(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX) }
+        private val privilegePorts by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_PORTS) }
 
         private val hevTunLogLevel by lazy { findPreference<ListPreference>(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL) }
         private val hevTunRwTimeout by lazy { findPreference<EditTextPreference>(AppConfig.PREF_HEV_TUNNEL_RW_TIMEOUT) }
@@ -351,6 +353,7 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         private val privilegeModuleStatus by lazy { findPreference<Preference>("pref_entry_privilege_module_status") }
         private val privilegeSelfTest by lazy { findPreference<Preference>("pref_entry_privilege_self_test") }
         @Volatile private var privilegeSelfTestRunning = false
+        private var hardRestartRunnable: Runnable? = null
 
         private fun setupPrivilegePrefs() {
             privilegeHideVpn?.setOnPreferenceChangeListener { _, newValue ->
@@ -370,6 +373,9 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                         }
                     }
                     val ok = PrivilegeSettingsClient.sync()
+                    runCatching {
+                        PrivilegePortsManager.applyFromPrefs(requireContext().applicationContext)
+                    }
                     context?.let {
                         if (ok) {
                             android.widget.Toast.makeText(it, R.string.toast_privilege_sync_ok, android.widget.Toast.LENGTH_SHORT).show()
@@ -388,10 +394,14 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 }
                 true
             }
-            privilegeIfaceRename?.setOnPreferenceChangeListener { _, _ ->
+            privilegeIfaceRename?.setOnPreferenceChangeListener { _, newValue ->
                 view?.post {
+                    // Persist already done by PreferenceDataStore; ensure sync before recreate.
                     PrivilegeSettingsClient.sync()
                     refreshPrivilegeSummaries()
+                    // Create-time rename only applies when system_server names a new iface.
+                    // Re-toggle VPN so jniGetName runs again with the new flag/prefix.
+                    hardRestartIfLive()
                 }
                 true
             }
@@ -399,6 +409,29 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 view?.post {
                     PrivilegeSettingsClient.sync()
                     refreshPrivilegeSummaries()
+                    hardRestartIfLive()
+                }
+                true
+            }
+            privilegePorts?.setOnPreferenceChangeListener { _, newValue ->
+                val enabled = newValue as Boolean
+                view?.post {
+                    MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_PORTS, enabled)
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            PrivilegePortsManager.applyFromPrefs(requireContext().applicationContext)
+                        }
+                        if (!isAdded) return@launch
+                        context?.let {
+                            val msg = when {
+                                !enabled && ok -> R.string.toast_privilege_ports_cleared
+                                enabled && ok -> R.string.toast_privilege_ports_applied
+                                else -> R.string.toast_privilege_ports_failed
+                            }
+                            android.widget.Toast.makeText(it, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        refreshPrivilegeSummaries()
+                    }
                 }
                 true
             }
@@ -464,7 +497,7 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     val syncOk = withContext(Dispatchers.IO) {
                         PrivilegeSettingsClient.sync()
                     }
-                    // Brief settle after privilege settings sync (mask-only; no kernel rename).
+                    // Brief settle after privilege settings sync (hooks / create-time rename flags).
                     withContext(Dispatchers.IO) {
                         try {
                             Thread.sleep(350)
@@ -501,7 +534,11 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 if (!isAdded) return@launch
                 if (report != null) {
                     val finalReport = report
-                    androidx.appcompat.app.AlertDialog.Builder(ctx)
+                    val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
+                    val selfPkg = ctx.packageName
+                    val selfMissing = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false) &&
+                        !targets.contains(selfPkg)
+                    val builder = androidx.appcompat.app.AlertDialog.Builder(ctx)
                         .setTitle(R.string.title_privilege_self_test_result)
                         .setMessage(finalReport)
                         .setPositiveButton(android.R.string.ok, null)
@@ -513,7 +550,12 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                                 android.widget.Toast.LENGTH_SHORT,
                             ).show()
                         }
-                        .show()
+                    if (selfMissing) {
+                        builder.setNegativeButton(R.string.action_privilege_add_self) { _, _ ->
+                            addSelfToHideTargets()
+                        }
+                    }
+                    builder.show()
                 } else {
                     androidx.appcompat.app.AlertDialog.Builder(ctx)
                         .setTitle(R.string.title_privilege_self_test_result)
@@ -710,6 +752,34 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 appendLine(getString(R.string.summary_pref_privilege_self_test_gate, gateText))
                 appendLine()
 
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_hard))
+                val hardParts = mutableListOf<String>()
+                if (hardFramework.isNotEmpty()) hardParts += hardFramework.joinToString(", ")
+                if (detection.nativeDetected) {
+                    hardParts += "Native(" + (detection.nativeInterfaces.takeIf { it.isNotEmpty() }?.joinToString(",") ?: "yes") + ")"
+                }
+                if (!detection.httpProxy.isNullOrBlank()) hardParts += "HTTP " + detection.httpProxy
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_hard,
+                        hardParts.takeIf { it.isNotEmpty() }?.joinToString(" | ")
+                            ?: getString(R.string.summary_pref_privilege_self_test_no_hard),
+                    ),
+                )
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_weak))
+                val weakParts = mutableListOf<String>()
+                if (weakFramework.isNotEmpty()) weakParts += weakFramework.joinToString(", ")
+                if (detection.frameworkInterfaces.isNotEmpty() && hardFramework.isEmpty() && !detection.nativeDetected) {
+                    weakParts += "ifaces=" + detection.frameworkInterfaces.joinToString(",")
+                }
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_weak,
+                        weakParts.takeIf { it.isNotEmpty() }?.joinToString(" | ")
+                            ?: getString(R.string.summary_pref_privilege_self_test_no_weak),
+                    ),
+                )
+                appendLine()
                 appendLine(getString(R.string.summary_pref_privilege_self_test_section_fingerprints))
                 appendLine(getString(R.string.summary_pref_privilege_self_test_framework, frameworkText))
                 appendLine(
@@ -726,6 +796,13 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     ),
                 )
                 appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy, httpProxy))
+                val portsStatus = PrivilegePortsManager.status(requireContext())
+                val portsText = when {
+                    !portsStatus.enabledPref -> getString(R.string.summary_pref_privilege_ports_status_off)
+                    !portsStatus.root -> getString(R.string.summary_pref_privilege_ports_status_no_root)
+                    else -> getString(R.string.summary_pref_privilege_ports_status_on, portsStatus.appliedUids)
+                }
+                appendLine(getString(R.string.summary_pref_privilege_self_test_ports, portsText))
                 appendLine()
 
                 appendLine(getString(R.string.summary_pref_privilege_self_test_section_mask))
@@ -807,20 +884,81 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 ?.takeIf { it.isNotBlank() } ?: "wlan"
             privilegeIfacePrefix?.isEnabled = rename
             privilegeIfacePrefix?.summary = getString(R.string.summary_pref_privilege_iface_prefix_value, prefix)
+
+            val portsEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_PORTS, false)
+            // Prefer cached root only on UI thread; avoid blocking su probe here.
+            val portsRoot = RootManager.cachedRoot()
+            privilegePorts?.summary = when {
+                !portsEnabled -> getString(
+                    R.string.summary_pref_privilege_ports_status,
+                    getString(R.string.summary_pref_privilege_ports_status_off),
+                )
+                !portsRoot -> getString(
+                    R.string.summary_pref_privilege_ports_status,
+                    getString(R.string.summary_pref_privilege_ports_status_no_root),
+                )
+                else -> {
+                    val n = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.size ?: 0
+                    getString(
+                        R.string.summary_pref_privilege_ports_status,
+                        getString(R.string.summary_pref_privilege_ports_status_on, n),
+                    )
+                }
+            }
+        }
+
+        private fun addSelfToHideTargets() {
+            if (!isAdded) return
+            val ctx = requireContext()
+            val pkg = ctx.packageName
+            val set = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.toMutableSet()
+                ?: mutableSetOf()
+            if (!set.add(pkg)) {
+                refreshPrivilegeSummaries()
+                return
+            }
+            MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS, set)
+            viewLifecycleOwner.lifecycleScope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    val synced = PrivilegeSettingsClient.sync()
+                    PrivilegePortsManager.applyFromPrefs(ctx.applicationContext)
+                    synced
+                }
+                if (!isAdded) return@launch
+                android.widget.Toast.makeText(
+                    ctx,
+                    if (ok) R.string.toast_privilege_add_self_ok else R.string.toast_privilege_sync_fail,
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+                refreshPrivilegeSummaries()
+            }
         }
         private fun hardRestartIfLive() {
+            val mainLive = (activity as? MainActivity)?.mainViewModel?.isRunning?.value == true
             val live =
-                CoreServiceManager.serviceControl != null ||
+                mainLive ||
+                    CoreServiceManager.hasLiveSession() ||
+                    CoreServiceManager.serviceControl != null ||
                     CoreServiceManager.isRunning()
             if (!live) return
-            val home = (activity as? MainActivity)?.homeFragmentForModeRestart()
-            if (home != null && home.isAdded) {
-                home.hardRestartForCurrentMode()
-            } else {
-                SettingsChangeManager.makeHardRestartService()
-                CoreServiceManager.stopAllModeServices(requireContext())
-                CoreServiceManager.startVService(requireContext())
+            // Debounce: rename + prefix toggles often fire back-to-back.
+            SettingsChangeManager.makeHardRestartService()
+            hardRestartRunnable?.let { view?.removeCallbacks(it) }
+            val task = Runnable {
+                if (!isAdded) return@Runnable
+                val home = (activity as? MainActivity)?.homeFragmentForModeRestart()
+                if (home != null && home.isAdded) {
+                    home.hardRestartForCurrentMode()
+                } else {
+                    CoreServiceManager.stopAllModeServices(requireContext())
+                    view?.postDelayed({
+                        if (!isAdded) return@postDelayed
+                        CoreServiceManager.startVService(requireContext())
+                    }, 700L)
+                }
             }
+            hardRestartRunnable = task
+            view?.postDelayed(task, 450L)
         }
 
         private fun setupToolEntryClicks() {

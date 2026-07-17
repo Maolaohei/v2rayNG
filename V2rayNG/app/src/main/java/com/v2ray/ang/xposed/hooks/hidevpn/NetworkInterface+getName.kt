@@ -9,7 +9,6 @@ import com.v2ray.ang.xposed.PrivilegeSettingsStore
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
 import com.v2ray.ang.xposed.hooks.XHook
 import java.io.FileDescriptor
-import java.net.NetworkInterface
 import java.net.SocketAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -41,6 +40,13 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
     private val jniHooked = AtomicBoolean(false)
 
     override fun injectHook() {
+        // IMPORTANT:
+        // This module loads in system_server. NetworkInterface.getName/getDisplayName are
+        // local methods; there is no reliable per-app Binder UID here. Masking them
+        // rewrites what system_server itself sees when managing VpnService (stop/start,
+        // route cleanup) and causes stuck VPN OFF + broken connectivity.
+        // Target-app name scrubbing must stay in ConnectivityService/LinkProperties hooks
+        // (per calling uid), not global NetworkInterface presentation rewrites.
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 hookJniGetNameApi33Plus()
@@ -52,36 +58,8 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
             HookErrorStore.e(SOURCE, "jniGetName hook failed, will retry via loadClass: ${e.message}", e)
             hookClassLoaderForVpn()
         }
-        // Presentation mask only for public NetworkInterface APIs.
-        // Kernel/netlink rename is disabled: it breaks VPN stop and other proxy apps.
-        // jniGetName is still hooked so we can log-skip if rename is toggled on.
-        hookPublicGetName()
-    }
-
-    private fun hookPublicGetName() {
-        val cls = NetworkInterface::class.java
-        for (methodName in listOf("getName", "getDisplayName")) {
-            try {
-                XposedApi.findAndHookMethod(
-                    cls,
-                    methodName,
-                    object : SafeMethodHook("$SOURCE.$methodName") {
-                        override fun afterHook(param: SafeMethodHook.HookParam) {
-                            val result = param.result as? String ?: return
-                            if (!PrivilegeSettingsStore.shouldRenameInterface()) return
-                            if (!isTunInterface(result)) return
-                            val prefix = PrivilegeSettingsStore.interfacePrefix()
-                            if (result.startsWith(prefix)) return
-                            // Mask only. Do not netlink-rename here (can take tun down).
-                            param.result = buildInterfaceName(prefix, 0) ?: (prefix + "0")
-                        }
-                    },
-                )
-                HookErrorStore.i(SOURCE, "Hooked NetworkInterface.$methodName")
-            } catch (e: Throwable) {
-                HookErrorStore.w(SOURCE, "Hook NetworkInterface.$methodName failed: ${e.message}", e)
-            }
-        }
+        // Do NOT install public getName/getDisplayName mask in system_server.
+        HookErrorStore.i(SOURCE, "NetworkInterface public name mask disabled (unsafe in system_server)")
     }
 
     private fun hookJniGetNameApi33Plus() {
@@ -154,10 +132,10 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
     }
 
     private fun processJniGetNameResult(param: SafeMethodHook.HookParam) {
-        // Intentionally no-op for kernel rename.
-        // Netlink rename of live VPN ifaces breaks dataplane and VpnService stop
-        // (stuck OFF, other proxy apps offline). Keep the real tun* name for system_server.
-        // Presentation masking stays in NetworkInterface.getName/getDisplayName only.
+        // SFA-style create-time rename only:
+        // Vpn.jniGetName runs when system_server first names the iface. Netlink-renaming
+        // here keeps a single truth for system_server (no getName mask, no eager live rename).
+        // Do NOT reintroduce public NetworkInterface.getName/getDisplayName masking.
         val result = param.result
         if (result !is String) {
             if (result != null) {
@@ -165,13 +143,13 @@ class HookNetworkInterfaceGetName(private val classLoader: ClassLoader) : XHook 
             }
             return
         }
-        if (PrivilegeSettingsStore.shouldRenameInterface() && isTunInterface(result)) {
-            HookErrorStore.d(
-                SOURCE,
-                "skip kernel rename for $result (mask-only policy; real iface name preserved)",
-            )
-        }
+        if (!PrivilegeSettingsStore.shouldRenameInterface()) return
+        if (!isTunInterface(result)) return
+        val prefix = PrivilegeSettingsStore.interfacePrefix()
+        val renamed = renameInterface(result, prefix) ?: return
+        param.result = renamed
     }
+
     private fun findVpnClass(): Class<*> {
         val names = listOf(
             "com.android.server.connectivity.Vpn",

@@ -81,6 +81,8 @@ object AppConfig {
     const val PREF_PRIVILEGE_IFACE_PREFIX = "pref_privilege_iface_prefix"
     /** Hide this client package from hide-target observers (Apps role, default off). */
     const val PREF_PRIVILEGE_HIDE_SELF_PACKAGE = "pref_privilege_hide_self_package"
+    /** Root: block hide targets from 127.0.0.0/8 and ::1 (vpnhide-ports style). */
+    const val PREF_PRIVILEGE_PORTS = "pref_privilege_ports"
     /** Legacy ROOT engine pref key (always treated as xray_tun; hev values migrate). */
     const val PREF_ROOT_ENGINE = "pref_root_engine"
     const val ROOT_ENGINE_HEV = "hev" // legacy only; not used by ROOT runtime

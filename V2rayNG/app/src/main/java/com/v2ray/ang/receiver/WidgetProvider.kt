@@ -22,7 +22,7 @@ class WidgetProvider : AppWidgetProvider() {
      */
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
-        updateWidgetBackground(context, appWidgetManager, appWidgetIds, CoreServiceManager.isRunning())
+        updateWidgetBackground(context, appWidgetManager, appWidgetIds, isSessionLive())
     }
 
     /**
@@ -64,10 +64,21 @@ class WidgetProvider : AppWidgetProvider() {
      * @param context The Context in which the receiver is running.
      * @param intent The Intent being received.
      */
+    private fun isSessionLive(): Boolean {
+        return try {
+            CoreServiceManager.hasLiveSession() ||
+                CoreServiceManager.isRunning() ||
+                CoreServiceManager.isSoftRestarting() ||
+                CoreServiceManager.serviceControl != null
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (AppConfig.BROADCAST_ACTION_WIDGET_CLICK == intent.action) {
-            if (CoreServiceManager.isRunning()) {
+            if (isSessionLive()) {
                 CoreServiceManager.stopVService(context)
             } else {
                 CoreServiceManager.startVServiceFromToggle(context)
@@ -82,10 +93,18 @@ class WidgetProvider : AppWidgetProvider() {
                         )
                     }
 
-                    AppConfig.MSG_STATE_NOT_RUNNING, AppConfig.MSG_STATE_START_FAILURE, AppConfig.MSG_STATE_STOP_SUCCESS -> {
+                    AppConfig.MSG_STATE_NOT_RUNNING -> {
+                        // Sticky: REGISTER races can report not-running while session is live.
                         updateWidgetBackground(
                             context, manager, manager.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java)),
-                            false
+                            isSessionLive(),
+                        )
+                    }
+
+                    AppConfig.MSG_STATE_START_FAILURE, AppConfig.MSG_STATE_STOP_SUCCESS -> {
+                        updateWidgetBackground(
+                            context, manager, manager.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java)),
+                            false,
                         )
                     }
                 }
