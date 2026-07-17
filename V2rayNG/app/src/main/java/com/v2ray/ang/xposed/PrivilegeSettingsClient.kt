@@ -73,7 +73,8 @@ object PrivilegeSettingsClient {
             .orEmpty()
         val rename = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
         val prefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX, "wlan") ?: "wlan"
-        return sync(enabled, packages, rename, prefix)
+        val hideSelf = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_SELF_PACKAGE, false)
+        return sync(enabled, packages, rename, prefix, hideSelf)
     }
 
     fun sync(
@@ -81,6 +82,7 @@ object PrivilegeSettingsClient {
         packages: Collection<String>,
         renameEnabled: Boolean,
         prefix: String,
+        hideSelfPackage: Boolean = false,
     ): Boolean {
         return try {
             val binder = ConnectivityBinderUtils.getBinder(appContext) ?: run {
@@ -95,6 +97,7 @@ object PrivilegeSettingsClient {
                 ParceledListSlice(entries).writeToParcel(data, 0)
                 data.writeInt(if (renameEnabled) 1 else 0)
                 data.writeString(prefix)
+                data.writeInt(if (hideSelfPackage) 1 else 0)
                 val ok = binder.transact(
                     HookStatusKeys.TRANSACTION_UPDATE_PRIVILEGE_SETTINGS,
                     data,
@@ -109,7 +112,7 @@ object PrivilegeSettingsClient {
                 }
                 LogUtil.i(
                     AppConfig.TAG,
-                    "$TAG: synced enabled=$enabled apps=${packages.size} rename=$renameEnabled prefix=$prefix",
+                    "$TAG: synced enabled=$enabled apps=${packages.size} rename=$renameEnabled prefix=$prefix hideSelf=$hideSelfPackage",
                 )
                 true
             }

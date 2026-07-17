@@ -487,6 +487,11 @@
     <string name="summary_pref_privilege_module_status_inactive">模組未啟用。請在 LSPosed 啟用，作用域選 system，然後重啟</string>
     <string name="title_pref_privilege_module_status">模組狀態</string>
     <string name="summary_pref_privilege_iface_rename">僅偽裝應用讀到的網卡名，不改核心真實介面。核心重新命名會導致關閉 VPN 卡住、其他代理應用斷網</string>
+    <string name="title_pref_privilege_hide_self_package">對目標隱藏本應用</string>
+    <string name="summary_pref_privilege_hide_self_package">開啟後，隱藏名單內的應用透過系統套件管理看不到本用戶端（預設關）</string>
+    <string name="summary_pref_privilege_self_test_in_tunnel">本進程疑似在隧道內：%1$s</string>
+    <string name="summary_pref_privilege_self_test_self_in_list">本應用在隱藏名單：%1$s</string>
+    <string name="summary_pref_privilege_self_test_gate">門控：%1$s</string>
     <string name="title_pref_privilege_iface_rename">偽裝 VPN 網卡名</string>
     <string name="summary_pref_privilege_module_status_active_on">模組已啟用 · 隱藏已開啟</string>
     <string name="summary_pref_privilege_module_status_active_off">模組已啟用 · 隱藏未開啟</string>
@@ -531,7 +536,6 @@
     <string name="summary_pref_privilege_self_test_hide">隱藏開關：%1$s</string>
     <string name="summary_pref_privilege_self_test_targets">目標應用：%1$d</string>
     <string name="summary_pref_privilege_self_test_vpn">核心運行中：%1$s</string>
-    <string name="summary_pref_privilege_self_test_self_in_list">本應用是否在目標列表：%1$s</string>
     <string name="summary_pref_privilege_self_test_note">說明：此結果只反映目前應用行程看到的內容。驗證其他 App 時，請把它們加入目標列表，並在那些 App 內觀察。</string>
     <string name="summary_pref_privilege_self_test_verdict_clean">結論：目前行程未看到硬性 VPN 指紋</string>
     <string name="summary_pref_privilege_self_test_verdict_leaked">結論：目前行程仍能看到硬性 VPN 指紋</string>

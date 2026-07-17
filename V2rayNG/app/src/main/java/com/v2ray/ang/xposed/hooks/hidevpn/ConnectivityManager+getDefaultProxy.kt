@@ -4,6 +4,7 @@ import android.net.Network
 import android.net.ProxyInfo
 import android.os.Binder
 import com.v2ray.ang.xposed.hooks.XposedApi
+import com.v2ray.ang.xposed.VpnHideContext
 import com.v2ray.ang.xposed.VpnSanitizer
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
 
@@ -19,7 +20,7 @@ class HookConnectivityManagerGetDefaultProxy(private val helper: ConnectivitySer
             Network::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     param.result as? ProxyInfo ?: return
                     param.result = null
@@ -32,7 +33,7 @@ class HookConnectivityManagerGetDefaultProxy(private val helper: ConnectivitySer
             "getGlobalProxy",
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     param.result as? ProxyInfo ?: return
                     param.result = null

@@ -252,11 +252,27 @@ class HookPackageManagerGetInstalledPackages(private val classLoader: ClassLoade
         if (callerPackages.contains(targetPackage)) {
             return false
         }
+        // Optional Apps role: hide THIS client from hide-target observers only.
+        if (isSelfClientPackage(targetPackage)) {
+            if (!PrivilegeSettingsStore.isEnabled() || !PrivilegeSettingsStore.shouldHideSelfPackage()) {
+                return false
+            }
+            val callerSelected = PrivilegeSettingsStore.isUidSelected(callingUid) ||
+                callerPackages.any { PrivilegeSettingsStore.isPackageSelected(it) }
+            return callerSelected
+        }
         val userId = callingUid / PER_USER_RANGE
         if (!VpnAppStore.isVpnPackage(targetPackage, userId)) {
             return false
         }
-        return true
+        // Other VPN-manager packages: only while hidevpn master switch is on.
+        return PrivilegeSettingsStore.isEnabled()
+    }
+
+    private fun isSelfClientPackage(packageName: String): Boolean {
+        return packageName == BuildConfig.APPLICATION_ID ||
+            packageName == "com.v2ray.ang" ||
+            packageName == "com.v2ray.ang.fdroid"
     }
 
     private fun extractPackageName(arg: Any?): String? {

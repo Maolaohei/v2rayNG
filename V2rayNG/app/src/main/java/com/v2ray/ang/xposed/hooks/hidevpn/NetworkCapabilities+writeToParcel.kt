@@ -48,10 +48,10 @@ class HookNetworkCapabilitiesWriteToParcel : XHook {
                     if (inWrite.get() == true) {
                         return
                     }
-                    val targetUid = VpnHideContext.consumeTargetUid()
+                    val targetUid = VpnHideContext.peekTargetUid()
                     val shouldHide = when {
                         targetUid != null -> VpnSanitizer.shouldHide(targetUid)
-                        else -> VpnSanitizer.shouldHide(Binder.getCallingUid())
+                        else -> VpnSanitizer.shouldHide(VpnHideContext.effectiveCallerUid())
                     }
                     if (!shouldHide) {
                         return

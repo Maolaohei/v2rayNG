@@ -79,6 +79,8 @@ object AppConfig {
     const val PREF_PRIVILEGE_HIDE_VPN_APPS = "pref_privilege_hide_vpn_apps"
     const val PREF_PRIVILEGE_IFACE_RENAME = "pref_privilege_iface_rename"
     const val PREF_PRIVILEGE_IFACE_PREFIX = "pref_privilege_iface_prefix"
+    /** Hide this client package from hide-target observers (Apps role, default off). */
+    const val PREF_PRIVILEGE_HIDE_SELF_PACKAGE = "pref_privilege_hide_self_package"
     /** Legacy ROOT engine pref key (always treated as xray_tun; hev values migrate). */
     const val PREF_ROOT_ENGINE = "pref_root_engine"
     const val ROOT_ENGINE_HEV = "hev" // legacy only; not used by ROOT runtime

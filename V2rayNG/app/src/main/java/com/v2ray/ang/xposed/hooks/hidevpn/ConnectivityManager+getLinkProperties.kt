@@ -6,6 +6,7 @@ import android.net.Network
 import android.os.Binder
 import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.HookErrorStore
+import com.v2ray.ang.xposed.VpnHideContext
 import com.v2ray.ang.xposed.VpnSanitizer
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
 
@@ -63,7 +64,7 @@ class HookConnectivityManagerGetLinkProperties(private val helper: ConnectivityS
             Network::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val lp = param.result as? LinkProperties ?: return
                     if (!VpnSanitizer.hasVpnInterface(lp)) return
@@ -81,7 +82,7 @@ class HookConnectivityManagerGetLinkProperties(private val helper: ConnectivityS
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val networkType = param.args[0] as Int
                     if (networkType == ConnectivityManager.TYPE_VPN) {

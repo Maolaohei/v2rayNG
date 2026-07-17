@@ -139,7 +139,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -160,7 +160,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -185,7 +185,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[1] as? NetworkCapabilities ?: return
                     param.args[1] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -211,7 +211,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[1] as? NetworkCapabilities ?: return
                     param.args[1] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -233,7 +233,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             android.os.IBinder::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -252,7 +252,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -273,7 +273,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -295,7 +295,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             Int::class.javaPrimitiveType,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -316,7 +316,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             android.app.PendingIntent::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -334,7 +334,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -353,7 +353,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -374,7 +374,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             android.app.PendingIntent::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -392,7 +392,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -411,7 +411,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
             String::class.java,
             object : SafeMethodHook(SOURCE) {
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val nc = param.args[0] as? NetworkCapabilities ?: return
                     param.args[0] = VpnSanitizer.sanitizeRequestCapabilities(nc)
@@ -498,6 +498,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val nri = param.args[0] ?: return
                     val uid = helper.getAsUid(nri)
+                    VpnHideContext.setTargetUid(uid)
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val networkAgent = param.args[1]
                     if (networkAgent != null && helper.isVpnNai(networkAgent)) {
@@ -506,7 +507,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
                             param.args[1] = underlying
                         }
                     }
-                    VpnHideContext.setTargetUid(uid)
+                    
                 }
 
                 override fun afterHook(param: SafeMethodHook.HookParam) {
@@ -529,8 +530,8 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val nri = param.args[0] ?: return
                     val uid = helper.getAsUid(nri)
-                    if (!VpnSanitizer.shouldHide(uid)) return
                     VpnHideContext.setTargetUid(uid)
+                    if (!VpnSanitizer.shouldHide(uid)) return
                 }
 
                 override fun afterHook(param: SafeMethodHook.HookParam) {
@@ -552,6 +553,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
                 override fun beforeHook(param: SafeMethodHook.HookParam) {
                     val nri = param.args[0] ?: return
                     val uid = helper.getAsUid(nri)
+                    VpnHideContext.setTargetUid(uid)
                     if (!VpnSanitizer.shouldHide(uid)) return
                     val networkAgent = param.args[1]
                     if (networkAgent != null && helper.isVpnNai(networkAgent)) {
@@ -560,7 +562,7 @@ class HookConnectivityManagerRequestNetwork(private val helper: ConnectivityServ
                             param.args[1] = underlying
                         }
                     }
-                    VpnHideContext.setTargetUid(uid)
+                    
                 }
 
                 override fun afterHook(param: SafeMethodHook.HookParam) {

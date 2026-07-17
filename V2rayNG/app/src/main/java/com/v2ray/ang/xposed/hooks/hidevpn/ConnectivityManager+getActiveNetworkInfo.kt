@@ -1,5 +1,7 @@
 package com.v2ray.ang.xposed.hooks.hidevpn
 
+import com.v2ray.ang.xposed.VpnHideContext
+
 import android.net.ConnectivityManager
 import android.net.NetworkInfo
 import android.os.Binder
@@ -17,7 +19,7 @@ class HookConnectivityManagerGetActiveNetworkInfo(private val helper: Connectivi
             "getActiveNetworkInfo",
             object : SafeMethodHook(SOURCE) {
                 override fun afterHook(param: SafeMethodHook.HookParam) {
-                    val uid = Binder.getCallingUid()
+                    val uid = VpnHideContext.effectiveCallerUid()
                     if (!helper.shouldHide(param.thisObject, uid)) return
                     val info = param.result as? NetworkInfo ?: return
                     if (info.type != ConnectivityManager.TYPE_VPN) return

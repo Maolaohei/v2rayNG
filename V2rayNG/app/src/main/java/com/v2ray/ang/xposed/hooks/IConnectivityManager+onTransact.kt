@@ -91,13 +91,17 @@ class HookIConnectivityManagerOnTransact(private val classLoader: ClassLoader, p
                     }
                     var renameEnabled = false
                     var prefix = "en"
+                    var hideSelfPackage = false
                     if (data.dataAvail() >= 4) {
                         renameEnabled = data.readInt() != 0
                         if (data.dataAvail() > 0) {
                             prefix = data.readString() ?: "en"
                         }
+                        if (data.dataAvail() >= 4) {
+                            hideSelfPackage = data.readInt() != 0
+                        }
                     }
-                    PrivilegeSettingsStore.update(enabled, packages, renameEnabled, prefix)
+                    PrivilegeSettingsStore.update(enabled, packages, renameEnabled, prefix, hideSelfPackage)
                     reply!!.writeNoException()
                     param.result = true
                 }

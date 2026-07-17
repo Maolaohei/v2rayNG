@@ -21,6 +21,9 @@ object PrivilegeSettingsStore {
     private var interfacePrefix = "en"
 
     @Volatile
+    private var hideSelfPackage = false
+
+    @Volatile
     private var loadedFromDisk = false
 
     private val uidCache = ConcurrentHashMap<Int, Boolean>()
@@ -32,16 +35,23 @@ object PrivilegeSettingsStore {
     private val getPackageManagerMethod by lazy { appGlobalsClass.getMethod("getPackageManager") }
     private var getPackagesForUidMethod: Method? = null
 
-    fun update(enabled: Boolean, packages: Set<String>, interfaceRenameEnabled: Boolean, interfacePrefix: String) {
+    fun update(
+        enabled: Boolean,
+        packages: Set<String>,
+        interfaceRenameEnabled: Boolean,
+        interfacePrefix: String,
+        hideSelfPackage: Boolean = this.hideSelfPackage,
+    ) {
         this.enabled = enabled
         packageSet = packages
         this.interfaceRenameEnabled = interfaceRenameEnabled
         this.interfacePrefix = normalizePrefix(interfacePrefix)
+        this.hideSelfPackage = hideSelfPackage
         loadedFromDisk = true
         uidCache.clear()
         HookErrorStore.i(
             "PrivilegeSettingsStore",
-            "PrivilegeSettings updated: enabled=$enabled size=${packages.size} rename=$interfaceRenameEnabled prefix=${this.interfacePrefix}",
+            "PrivilegeSettings updated: enabled=$enabled size=${packages.size} rename=$interfaceRenameEnabled prefix=${this.interfacePrefix} hideSelf=$hideSelfPackage",
         )
         writeSettingsFile()
         runCatching { onUpdated?.invoke() }
@@ -60,6 +70,16 @@ object PrivilegeSettingsStore {
     fun interfacePrefix(): String {
         ensureLoaded()
         return interfacePrefix
+    }
+
+    fun shouldHideSelfPackage(): Boolean {
+        ensureLoaded()
+        return hideSelfPackage
+    }
+
+    fun isPackageSelected(packageName: String): Boolean {
+        ensureLoaded()
+        return packageSet.contains(packageName)
     }
 
     fun isUidSelected(uid: Int): Boolean {
@@ -116,6 +136,7 @@ object PrivilegeSettingsStore {
             var en = false
             var rename = false
             var prefix = "en"
+            var hideSelf = false
             var packages = emptySet<String>()
             file.readLines().forEach { raw ->
                 val line = raw.trim()
@@ -128,6 +149,7 @@ object PrivilegeSettingsStore {
                     "enabled" -> en = value == "1" || value.equals("true", ignoreCase = true)
                     "rename" -> rename = value == "1" || value.equals("true", ignoreCase = true)
                     "prefix" -> prefix = normalizePrefix(value)
+                    "hide_self" -> hideSelf = value == "1" || value.equals("true", ignoreCase = true)
                     "packages" -> {
                         packages = if (value.isEmpty()) {
                             emptySet()
@@ -140,11 +162,12 @@ object PrivilegeSettingsStore {
             enabled = en
             interfaceRenameEnabled = rename
             interfacePrefix = prefix
+            hideSelfPackage = hideSelf
             packageSet = packages
             uidCache.clear()
             HookErrorStore.i(
                 "PrivilegeSettingsStore",
-                "loaded privilege settings: enabled=$enabled size=${packageSet.size} rename=$interfaceRenameEnabled prefix=$interfacePrefix",
+                "loaded privilege settings: enabled=$enabled size=${packageSet.size} rename=$interfaceRenameEnabled prefix=$interfacePrefix hideSelf=$hideSelfPackage",
             )
         } catch (e: Throwable) {
             HookErrorStore.e("PrivilegeSettingsStore", "Failed to load privilege settings file", e)
@@ -170,6 +193,9 @@ object PrivilegeSettingsStore {
                 append('\n')
                 append("prefix=")
                 append(interfacePrefix)
+                append('\n')
+                append("hide_self=")
+                append(if (hideSelfPackage) "1" else "0")
                 append('\n')
                 append("packages=")
                 append(packagesLine)

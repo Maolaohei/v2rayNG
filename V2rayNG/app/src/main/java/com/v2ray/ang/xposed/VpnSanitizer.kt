@@ -60,21 +60,89 @@ object VpnSanitizer {
         val lp = cloneLinkProperties(source)
         clearHttpProxy(lp)
         val iface = lp.interfaceName
+        val vpnLp = isVpnInterface(iface) || hasVpnRoutes(lp)
         if (isVpnInterface(iface)) {
             lp.setInterfaceName(null)
+        }
+        if (vpnLp) {
+            // Deep scrub: tunnel addressing / DNS / VPN routes leak as hard fingerprints.
+            clearListField(lp, "mLinkAddresses")
+            clearListField(lp, "mDnses")
+            clearListField(lp, "mPcscfAddresses")
+            clearRoutesOnVpnIface(lp)
         }
         @Suppress("UNCHECKED_CAST")
         val stacked = getStackedLinksMethod.invoke(lp) as? List<LinkProperties>
         if (!stacked.isNullOrEmpty()) {
-            for (link in stacked) {
+            for (link in stacked.toList()) {
                 clearHttpProxy(link)
-                val iface = link.interfaceName
-                if (iface != null && isVpnInterface(iface)) {
-                    removeStackedLinkMethod.invoke(lp, iface)
+                val stackedIface = link.interfaceName
+                if (stackedIface != null && isVpnInterface(stackedIface)) {
+                    removeStackedLinkMethod.invoke(lp, stackedIface)
+                } else {
+                    sanitizeStackedInPlace(link)
                 }
             }
         }
         return lp
+    }
+
+    private fun sanitizeStackedInPlace(lp: LinkProperties) {
+        clearHttpProxy(lp)
+        if (isVpnInterface(lp.interfaceName) || hasVpnRoutes(lp)) {
+            if (isVpnInterface(lp.interfaceName)) {
+                lp.setInterfaceName(null)
+            }
+            clearListField(lp, "mLinkAddresses")
+            clearListField(lp, "mDnses")
+            clearRoutesOnVpnIface(lp)
+        }
+    }
+
+    private fun clearListField(lp: LinkProperties, fieldName: String) {
+        try {
+            val field = XposedApi.findFieldIfExists(LinkProperties::class.java, fieldName) ?: return
+            val value = field.get(lp)
+            if (value is MutableCollection<*>) {
+                value.clear()
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun clearRoutesOnVpnIface(lp: LinkProperties) {
+        try {
+            val routes = lp.routes ?: return
+            val keep = routes.filterNot { route ->
+                val ifaceName = runCatching {
+                    route.javaClass.methods
+                        .firstOrNull { it.name == "getInterface" || it.name == "getInterfaceName" }
+                        ?.invoke(route) as? String
+                }.getOrNull()
+                isVpnInterface(ifaceName)
+            }
+            if (keep.size == routes.size) return
+            clearListField(lp, "mRoutes")
+            for (route in keep) {
+                runCatching { lp.addRoute(route) }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun hasVpnRoutes(lp: LinkProperties): Boolean {
+        return try {
+            lp.routes.orEmpty().any { route ->
+                val ifaceName = runCatching {
+                    route.javaClass.methods
+                        .firstOrNull { it.name == "getInterface" || it.name == "getInterfaceName" }
+                        ?.invoke(route) as? String
+                }.getOrNull()
+                isVpnInterface(ifaceName)
+            }
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun hasVpnInterface(lp: LinkProperties): Boolean {

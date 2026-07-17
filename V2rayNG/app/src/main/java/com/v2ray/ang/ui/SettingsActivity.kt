@@ -92,6 +92,7 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         private val lanSharing by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_ROOT_LAN_SHARING) }
         private val privilegeCategory by lazy { findPreference<PreferenceCategory>("pref_category_privilege") }
         private val privilegeHideVpn by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_HIDE_VPN) }
+        private val privilegeHideSelfPackage by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_HIDE_SELF_PACKAGE) }
         private val privilegeIfaceRename by lazy { findPreference<CheckBoxPreference>(AppConfig.PREF_PRIVILEGE_IFACE_RENAME) }
         private val privilegeIfacePrefix by lazy { findPreference<EditTextPreference>(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX) }
 
@@ -380,6 +381,13 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                 }
                 true
             }
+            privilegeHideSelfPackage?.setOnPreferenceChangeListener { _, _ ->
+                view?.post {
+                    PrivilegeSettingsClient.sync()
+                    refreshPrivilegeSummaries()
+                }
+                true
+            }
             privilegeIfaceRename?.setOnPreferenceChangeListener { _, _ ->
                 view?.post {
                     PrivilegeSettingsClient.sync()
@@ -562,6 +570,7 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         ): String {
             val yes = getString(R.string.summary_pref_privilege_self_test_yes)
             val no = getString(R.string.summary_pref_privilege_self_test_no)
+            val coreRunning = isCoreLikelyRunning(requireContext(), detection)
             val notDetected = getString(R.string.summary_pref_privilege_self_test_not_detected)
             val hideEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false)
             val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
@@ -691,6 +700,37 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     ),
                 )
                 appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy, httpProxy))
+                val selfPkg = requireContext().packageName
+                val hideList = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
+                val selfInHideList = hideList.contains(selfPkg)
+                val perAppOn = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == true
+                val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS) == true
+                val perAppSet = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET).orEmpty()
+                val likelyInTunnel = when {
+                    !coreRunning -> false
+                    !perAppOn || perAppSet.isEmpty() -> true
+                    bypassApps -> !perAppSet.contains(selfPkg)
+                    else -> perAppSet.contains(selfPkg)
+                }
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_in_tunnel,
+                        if (likelyInTunnel) yes else no,
+                    ),
+                )
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_self_in_list,
+                        if (selfInHideList) yes else no,
+                    ),
+                )
+                val gate = when {
+                    !coreRunning -> "core not running - start VPN before judging hide"
+                    !selfInHideList -> "this app not in hide list - fingerprints here may still show"
+                    !likelyInTunnel -> "this process likely outside tunnel (per-app) - hide probe is weak"
+                    else -> "ok to interpret fingerprint result for this process"
+                }
+                appendLine(getString(R.string.summary_pref_privilege_self_test_gate, gate))
                 val renameEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
                 val renamePrefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX)
                     ?.takeIf { it.isNotBlank() } ?: "wlan"

@@ -570,6 +570,11 @@
     <string name="summary_pref_privilege_hide_vpn">LSPosed/system_server hooks sanitize TRANSPORT_VPN and related APIs for selected packages. Requires LSPosed, module enabled, scope includes system (android). Normal VPN still runs.</string>
     <string name="title_pref_privilege_manage_apps">Target apps</string>
     <string name="summary_pref_privilege_manage_apps">Apps that should not see VPN (anti-detection list)</string>
+    <string name="title_pref_privilege_hide_self_package">Hide this app from targets</string>
+    <string name="summary_pref_privilege_hide_self_package">When on, apps in the hide list cannot see this client package via PackageManager (default off)</string>
+    <string name="summary_pref_privilege_self_test_in_tunnel">Likely in tunnel (this process): %1$s</string>
+    <string name="summary_pref_privilege_self_test_self_in_list">This app in hide list: %1$s</string>
+    <string name="summary_pref_privilege_self_test_gate">Gate: %1$s</string>
     <string name="title_pref_privilege_iface_rename">Mask VPN interface names</string>
     <string name="summary_pref_privilege_iface_rename">Presentation-only mask for NetworkInterface names. Does not rename the real kernel interface (kernel rename breaks VPN stop and other apps)</string>
     <string name="title_pref_privilege_iface_prefix">Masked interface prefix</string>
@@ -624,7 +629,6 @@
     <string name="summary_pref_privilege_self_test_hide">Hide switch: %1$s</string>
     <string name="summary_pref_privilege_self_test_targets">Target apps: %1$d</string>
     <string name="summary_pref_privilege_self_test_vpn">Core running: %1$s</string>
-    <string name="summary_pref_privilege_self_test_self_in_list">This app in target list: %1$s</string>
     <string name="summary_pref_privilege_self_test_note">Note: this checks what the current app process sees. To verify other apps, add them to the target list and test inside those apps.</string>
     <string name="summary_pref_privilege_self_test_verdict_clean">Verdict: no hard VPN fingerprint seen by this process</string>
     <string name="summary_pref_privilege_self_test_verdict_leaked">Verdict: hard VPN fingerprint still visible to this process</string>

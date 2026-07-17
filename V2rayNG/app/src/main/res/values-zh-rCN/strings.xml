@@ -557,6 +557,11 @@
     <string name="summary_pref_privilege_hide_vpn">通过 LSPosed/system_server hook 抹除 TRANSPORT_VPN 等特征。需要 LSPosed、启用模块，且作用域包含 system(android)。普通 VPN 仍会运行。</string>
     <string name="title_pref_privilege_manage_apps">目标应用</string>
     <string name="summary_pref_privilege_manage_apps">需要抗 VPN 检测的应用列表</string>
+    <string name="title_pref_privilege_hide_self_package">对目标隐藏本应用</string>
+    <string name="summary_pref_privilege_hide_self_package">开启后，隐藏名单内的应用通过系统包管理看不到本客户端（默认关）</string>
+    <string name="summary_pref_privilege_self_test_in_tunnel">本进程疑似在隧道内：%1$s</string>
+    <string name="summary_pref_privilege_self_test_self_in_list">本应用在隐藏名单：%1$s</string>
+    <string name="summary_pref_privilege_self_test_gate">门控：%1$s</string>
     <string name="title_pref_privilege_iface_rename">伪装 VPN 网卡名</string>
     <string name="summary_pref_privilege_iface_rename">仅伪装应用读到的网卡名，不改内核真实接口。内核重命名会导致关 VPN 卡住、其他代理应用断网</string>
     <string name="title_pref_privilege_iface_prefix">伪装网卡名前缀</string>
@@ -611,7 +616,6 @@
     <string name="summary_pref_privilege_self_test_hide">隐藏开关：%1$s</string>
     <string name="summary_pref_privilege_self_test_targets">目标应用：%1$d</string>
     <string name="summary_pref_privilege_self_test_vpn">核心运行中：%1$s</string>
-    <string name="summary_pref_privilege_self_test_self_in_list">本应用是否在目标列表：%1$s</string>
     <string name="summary_pref_privilege_self_test_note">说明：此结果只反映当前应用进程看到的内容。验证其他 App 时，请把它们加入目标列表，并在那些 App 内观察。</string>
     <string name="summary_pref_privilege_self_test_verdict_clean">结论：当前进程未看到硬性 VPN 指纹</string>
     <string name="summary_pref_privilege_self_test_verdict_leaked">结论：当前进程仍能看到硬性 VPN 指纹</string>

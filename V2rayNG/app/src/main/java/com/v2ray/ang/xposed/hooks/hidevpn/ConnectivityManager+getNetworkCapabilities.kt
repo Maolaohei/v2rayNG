@@ -5,6 +5,7 @@ import android.net.NetworkCapabilities
 import android.os.Binder
 import com.v2ray.ang.xposed.hooks.XposedApi
 import com.v2ray.ang.xposed.HookErrorStore
+import com.v2ray.ang.xposed.VpnHideContext
 import com.v2ray.ang.xposed.VpnSanitizer
 import com.v2ray.ang.xposed.hooks.SafeMethodHook
 
@@ -130,7 +131,7 @@ class HookConnectivityManagerGetNetworkCapabilities(private val helper: Connecti
     }
 
     private fun sanitizeNetworkCapabilitiesResult(param: SafeMethodHook.HookParam) {
-        val uid = Binder.getCallingUid()
+        val uid = VpnHideContext.effectiveCallerUid()
         val service = param.thisObject ?: return
         if (!helper.shouldHide(service, uid)) return
         val nc = param.result as? NetworkCapabilities ?: return
