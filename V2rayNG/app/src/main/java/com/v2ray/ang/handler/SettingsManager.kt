@@ -493,6 +493,23 @@ object SettingsManager {
         return MmkvManager.decodeSettingsBool(AppConfig.PREF_USE_HEV_TUNNEL, false)
     }
 
+    /** Configured ROOT engine preference (may request xray_tun before it is implemented). */
+    fun configuredRootEngine(): com.v2ray.ang.root.RootEngine {
+        val raw = MmkvManager.decodeSettingsString(AppConfig.PREF_ROOT_ENGINE)
+            ?: AppConfig.ROOT_ENGINE_HEV
+        return com.v2ray.ang.root.RootEngine.fromPref(raw)
+    }
+
+    /** Effective ROOT engine used at runtime (falls back to hev when xray_tun is not ready). */
+    fun rootEngine(): com.v2ray.ang.root.RootEngine {
+        return com.v2ray.ang.root.RootDataPlanes.effectiveEngine()
+    }
+
+    /** True when ROOT should feed a TUN fd into Bray-Core instead of hev+SOCKS. */
+    fun isRootXrayTunEngine(): Boolean {
+        return isRootMode() && rootEngine() == com.v2ray.ang.root.RootEngine.XRAY_TUN
+    }
+
     /**
      * Check if VPN mode is enabled.
      * @return True if VPN mode is enabled, false otherwise.

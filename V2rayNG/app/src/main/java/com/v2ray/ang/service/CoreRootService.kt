@@ -15,6 +15,7 @@ import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.TrafficStatsManager
+import com.v2ray.ang.root.RootDataPlanes
 import com.v2ray.ang.root.RootProxyManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
@@ -139,7 +140,7 @@ class CoreRootService : Service(), ServiceControl {
                 ) {
                     // Only full rebuild when SOCKS is also dead; otherwise keep waiting.
                     LogUtil.w(AppConfig.TAG, "StartCore-Root: re-entry ensure failed ($err), one full rebuild")
-                    val full = RootProxyManager.startDetailed(this@CoreRootService)
+                    val full = RootDataPlanes.current().start(this@CoreRootService)
                     if (full != null) {
                         LogUtil.e(AppConfig.TAG, "StartCore-Root: re-entry full rebuild failed: $full")
                         // Keep service if session still live; fail-close only when core is gone.
@@ -168,9 +169,11 @@ class CoreRootService : Service(), ServiceControl {
                 failAndStop(RootProxyManager.RootError.SOCKS_NOT_READY)
                 return@launch
             }
-            val err = RootProxyManager.startDetailed(this@CoreRootService)
+            val plane = RootDataPlanes.current()
+            LogUtil.i(AppConfig.TAG, "StartCore-Root: dataplane engine=${plane.engine}")
+            val err = plane.start(this@CoreRootService)
             if (err != null) {
-                LogUtil.e(AppConfig.TAG, "StartCore-Root: failed to start root mode: $err")
+                LogUtil.e(AppConfig.TAG, "StartCore-Root: failed to start root mode: $err engine=${plane.engine}")
                 failAndStop(err)
                 return@launch
             }

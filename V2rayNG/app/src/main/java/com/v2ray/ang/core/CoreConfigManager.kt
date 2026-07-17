@@ -512,8 +512,11 @@ object CoreConfigManager {
     }
 
     private fun needTun(): Boolean {
-        // Root uses hev-socks5-tunnel + SOCKS, never core TUN inbound (ioctl would fail without VpnService).
-        if (SettingsManager.isRootMode()) return false
+        // ROOT xray_tun feeds a root-created TUN fd into Bray-Core.
+        // ROOT hev has no core TUN fd - uses local SOCKS + hev instead.
+        if (SettingsManager.isRootMode()) {
+            return SettingsManager.isRootXrayTunEngine()
+        }
         return SettingsManager.isVpnMode() && !SettingsManager.isUsingHevTun()
     }
 
