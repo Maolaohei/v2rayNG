@@ -659,8 +659,10 @@ object CoreServiceManager {
         }
 
         currentConfig = config
-        // Only Android VPN mode may feed a TUN fd into core. Root/Proxy must never pass a
-        // stale VpnService PFD 鈥?that triggers "inappropriate ioctl for device" on start.
+        // TUN fd selection:
+        // - VPN (non-hev): VpnService PFD
+        // - ROOT xray_tun: root-created TUN fd owned by RootTun (same process as StartLoop)
+        // - ROOT hev / Proxy: never pass a TUN fd (or a stale VPN PFD)
         if (SettingsManager.isVpnMode()) {
             if (vpnInterface != null) {
                 activeVpnInterface = vpnInterface
@@ -669,10 +671,21 @@ object CoreServiceManager {
             activeVpnInterface = null
         }
         var tunFd = 0
-        if (SettingsManager.isVpnMode() && !SettingsManager.isUsingHevTun()) {
-            tunFd = activeVpnInterface?.fd ?: 0
-            if (tunFd <= 0) {
-                error("VPN mode requires a valid TUN interface")
+        when {
+            SettingsManager.isVpnMode() && !SettingsManager.isUsingHevTun() -> {
+                tunFd = activeVpnInterface?.fd ?: 0
+                if (tunFd <= 0) {
+                    error("VPN mode requires a valid TUN interface")
+                }
+            }
+            SettingsManager.isRootXrayTunEngine() -> {
+                tunFd = com.v2ray.ang.root.RootTun.currentFd()
+                if (tunFd <= 0) {
+                    error("ROOT xray_tun requires an open RootTun fd before startLoop")
+                }
+            }
+            else -> {
+                tunFd = 0
             }
         }
         val dialerAddr = if (currentConfig?.browserDialerMode.isNullOrEmpty()) {
@@ -1085,3 +1098,5 @@ object CoreServiceManager {
         }
     }
 }
+
+

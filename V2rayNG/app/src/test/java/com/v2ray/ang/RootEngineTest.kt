@@ -19,9 +19,9 @@ class RootEngineTest {
     }
 
     @Test
-    fun xrayTun_featureGate_offInPhase1() {
-        assertFalse(RootTunFeature.isImplemented)
-        assertFalse(RootTunFeature.canUseXrayTun())
+    fun xrayTun_featureGate_onInPhase2() {
+        assertTrue(RootTunFeature.isImplemented)
+        assertTrue(RootTunFeature.canUseXrayTun())
     }
 
     @Test

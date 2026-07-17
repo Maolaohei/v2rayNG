@@ -2,12 +2,11 @@ package com.v2ray.ang.root
 
 /**
  * Gates the experimental ROOT xray_tun engine.
- * Phase 1: API/config plumbing only ? open-fd path is not implemented yet.
- * Flip [isImplemented] when RootTun native open + CoreRootService wiring ship.
+ * When true, pref_root_engine=xray_tun is honored; default engine remains hev.
  */
 object RootTunFeature {
-    /** Set true only after FD open + startLoop(fd) path is wired and smoke-tested. */
-    const val isImplemented: Boolean = false
+    /** Wired: native open + startLoop(fd) + rules-only install. Still experimental. */
+    const val isImplemented: Boolean = true
 
     fun canUseXrayTun(): Boolean = isImplemented
 }

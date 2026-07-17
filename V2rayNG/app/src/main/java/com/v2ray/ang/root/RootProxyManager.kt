@@ -42,7 +42,7 @@ object RootProxyManager {
     private const val MARK = AppConfig.ROOT_MARK_ROUTE
     private const val BYPASS_PRIORITY = AppConfig.ROOT_BYPASS_RULE_PRIORITY
     // Android app UIDs start at 10000. Magic_V2Ray only marks app range (+ a few system uids)
-    // instead of every system uid 鈥?fewer OEM side-effects under all-apps capture.
+    // instead of every system uid 閳?fewer OEM side-effects under all-apps capture.
     private const val APP_UID_RANGE = "10000-2147483647"
     // Xray FakeDNS default pool. MUST be proxied (never LAN-bypassed).
     private const val FAKE_IP_CIDR = "198.18.0.0/15"
@@ -279,7 +279,7 @@ object RootProxyManager {
 
     /**
      * Cheap runtime liveness used by UI / network paths that must not run su every time.
-     * True when local SOCKS accepts — the control plane Xray side is up.
+     * True when local SOCKS accepts 鈥?the control plane Xray side is up.
      */
     fun isRuntimeLive(): Boolean = isLocalSocksReady()
     /** Remaining repair backoff in ms (0 = allowed now). */
@@ -427,7 +427,7 @@ object RootProxyManager {
                 return null
             }
 
-            // Never full-teardown while SOCKS + hev/tun still look usable — that is the main
+            // Never full-teardown while SOCKS + hev/tun still look usable 鈥?that is the main
             // cause of random multi-second blackholes. Prefer light rules / soft-skip.
             probe = probePipeline(context)
             val socksUp = isLocalSocksReady()
@@ -511,34 +511,51 @@ object RootProxyManager {
     }
 
     /**
-     * Reinstall iptables/ip-rule only, keep running hev/tun to minimize datapath downtime.
+     * Public rules-only install for engines that already own the TUN device
+     * (xray_tun core, or hev still running). Does not start hev.
      */
-    private fun reinstallRulesOnly(context: Context): RootError? {
+    fun installRulesOnly(context: Context): RootError? {
         lastError = null
-        val script = buildRulesOnlySetup(context) ?: run {
-            lastError = RootError.HEV_MISSING
-            return lastError
-        }
+        invalidateHealthCache()
+        val script = buildRulesOnlySetup(context)
         val result = RootShell.runScript(context, "setup_rules_light.sh", script)
         if (!result.success) {
             lastError = classifySetupFailure(result.output)
             LogUtil.e(AppConfig.TAG, "RootProxyManager: light rules setup failed ($lastError):\n${result.output}")
             return lastError
         }
-        // Short wait: hev already running; only rules/route must appear.
-        val deadline = System.currentTimeMillis() + 2000L
+        // Short wait: only rules/route/mangle must appear.
+        val deadline = System.currentTimeMillis() + 2500L
         while (System.currentTimeMillis() < deadline) {
-            if (isHealthy(context)) return null
+            val p = probePipeline(context)
+            if (p.rulesOk && p.tunUp) {
+                lastError = null
+                return null
+            }
             try {
                 Thread.sleep(100L)
             } catch (_: InterruptedException) {
                 break
             }
         }
-        return if (isHealthy(context)) null else {
-            lastError = RootError.RULES_FAILED
+        val p = probePipeline(context)
+        return if (p.rulesOk && p.tunUp) {
+            lastError = null
+            null
+        } else {
+            lastError = when {
+                !p.tunUp -> RootError.TUN_FAILED
+                else -> RootError.RULES_FAILED
+            }
             lastError
         }
+    }
+
+    /**
+     * Reinstall iptables/ip-rule only, keep running hev/tun to minimize datapath downtime.
+     */
+    private fun reinstallRulesOnly(context: Context): RootError? {
+        return installRulesOnly(context)
     }
 
     /**
@@ -719,12 +736,8 @@ object RootProxyManager {
      * Light path: flush/reinstall marking + policy routing without restarting hev.
      * Assumes hev already created [TUN] and is still alive.
      */
-    private fun buildRulesOnlySetup(context: Context): String? {
-        val bin = File(context.applicationInfo.nativeLibraryDir, AppConfig.ROOT_TUN2SOCKS_BIN)
-        if (!bin.exists()) {
-            LogUtil.e(AppConfig.TAG, "RootProxyManager: hev-socks5-tunnel binary missing at ${bin.absolutePath}")
-            return null
-        }
+    private fun buildRulesOnlySetup(context: Context): String {
+        // No hev dependency: xray_tun already created [TUN]; hev path only reuses this for light repair.
         val appUid = context.applicationInfo.uid
         val ipv6 = MmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED)
         val perAppEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY)
@@ -829,7 +842,7 @@ object RootProxyManager {
         if (perAppEnabled && !bypassApps && selectedUids.isEmpty()) {
             LogUtil.w(
                 AppConfig.TAG,
-                "RootProxyManager: per-app allow-list is empty 鈥?no app traffic will be marked into TUN"
+                "RootProxyManager: per-app allow-list is empty 閳?no app traffic will be marked into TUN"
             )
         }
 
@@ -1229,3 +1242,4 @@ object RootProxyManager {
         }
     }
 }
+

@@ -16,6 +16,12 @@ android {
         versionName = "2.2.6"
         multiDexEnabled = true
 
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17"
+            }
+        }
+
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
             abi {
@@ -126,6 +132,12 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     packaging {
