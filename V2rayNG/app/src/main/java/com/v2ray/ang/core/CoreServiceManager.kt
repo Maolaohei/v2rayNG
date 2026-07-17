@@ -221,8 +221,9 @@ object CoreServiceManager {
     }
 
     /**
-     * Soft-restart only reloads the in-process core. Root mode still needs iptables/tun2socks
-     * rebound to the new SOCKS port/listener; VPN-mode LAN sharing uses the same helper path.
+     * Soft-restart only reloads the in-process core.
+     * ROOT xray_tun keeps the RootTun fd across restart and only re-ensures MARK/iptables rules;
+     * VPN-mode optional LAN sharing still uses the hev client-sharing helper path.
      */
     private fun rebindRootRoutingAfterSoftRestart() {
         val service = getService() ?: return
@@ -379,6 +380,49 @@ object CoreServiceManager {
         return control is CoreVpnService ||
             control is CoreRootService ||
             control is CoreProxyOnlyService
+    }
+
+    /**
+     * Soft-restart failed but ROOT capture may still be healthy enough to keep FGS.
+     * Shared by both the !ok start path and the outer exception catch so they cannot drift.
+     */
+    private fun shouldKeepRootSessionAfterSoftRestartFailure(): Boolean {
+        if (userStopRequested.get()) return false
+        if (!SettingsManager.isRootMode()) return false
+        return hasLiveSession() ||
+            com.v2ray.ang.root.RootTun.isOpen() ||
+            com.v2ray.ang.root.RootDataPlanes.current().isRuntimeLive()
+    }
+
+    /**
+     * Soft-restart failure handling: keep ROOT session when dataplane still looks live;
+     * otherwise emit START_FAILURE and tear down tracking/FGS.
+     */
+    private fun handleSoftRestartFailure(detail: String) {
+        if (userStopRequested.get()) return
+        val svcControl = serviceControl
+        val svc = svcControl?.getService()
+        if (shouldKeepRootSessionAfterSoftRestartFailure()) {
+            LogUtil.w(
+                AppConfig.TAG,
+                "StartCore-Manager: soft-restart failed but ROOT still live; keep session ($detail)"
+            )
+            if (svc != null) {
+                // Soft signal only; do not mark session dead.
+                MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_RUNNING, "")
+            }
+            return
+        }
+        if (svc != null) {
+            MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, detail)
+        }
+        TrafficStatsManager.stopServiceTracking()
+        NotificationManager.cancelNotification()
+        try {
+            svcControl?.stopService()
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "StartCore-Manager: stopService after soft-restart failure", e)
+        }
     }
 
 
@@ -569,7 +613,7 @@ object CoreServiceManager {
                     return@launch
                 }
                 var ok = startCoreLoop(activeVpnInterface)
-                // ROOT xray_tun soft-restart reuses RootTun fd. If the device vanished,
+                // ROOT xray_tun soft-restart reuses RootTun fd (no hev). If the device vanished,
                 // reopen once before failing the session.
                 if (!ok && SettingsManager.isRootXrayTunEngine() && !com.v2ray.ang.root.RootTun.isOpen()) {
                     LogUtil.w(AppConfig.TAG, "StartCore-Manager: xray_tun fd missing during soft-restart, reopening")
@@ -588,45 +632,15 @@ object CoreServiceManager {
                     LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed to start core")
                     // Phase 4: if ROOT dataplane/session still looks live, keep FGS and avoid
                     // Off->On->Off thrash. Only full-stop when there is no live session left.
-                    if (!userStopRequested.get()) {
-                        val keep =
-                            SettingsManager.isRootMode() &&
-                                (hasLiveSession() ||
-                                    com.v2ray.ang.root.RootTun.isOpen() ||
-                                    com.v2ray.ang.root.RootDataPlanes.current().isRuntimeLive())
-                        val svcControl = serviceControl
-                        val svc = svcControl?.getService()
-                        if (keep) {
-                            LogUtil.w(AppConfig.TAG, "StartCore-Manager: soft-restart failed but ROOT still live; keep session")
-                            if (svc != null) {
-                                // Soft signal only; do not mark session dead.
-                                MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_RUNNING, "")
-                            }
-                        } else {
-                            if (svc != null) {
-                                MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, "Soft-restart failed")
-                            }
-                            TrafficStatsManager.stopServiceTracking()
-                            NotificationManager.cancelNotification()
-                            try { svcControl?.stopService() } catch (e: Exception) {
-                                LogUtil.e(AppConfig.TAG, "StartCore-Manager: stopService after soft-restart failure", e)
-                            }
-                        }
-                    }
+                    handleSoftRestartFailure("Soft-restart failed")
                 } else {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Soft-restart completed")
                 }
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "StartCore-Manager: Soft-restart failed", e)
+                // Mirror the !ok path: ROOT live sessions must not hard-stop on transient exceptions.
                 if (!userStopRequested.get() && generation == sessionGeneration.get()) {
-                    val svcControl = serviceControl
-                    val svc = svcControl?.getService()
-                    if (svc != null) {
-                        MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_START_FAILURE, e.message ?: "Soft-restart failed")
-                    }
-                    TrafficStatsManager.stopServiceTracking()
-                    NotificationManager.cancelNotification()
-                    try { svcControl?.stopService() } catch (_: Exception) { }
+                    handleSoftRestartFailure(e.message ?: "Soft-restart failed")
                 }
             } finally {
                 val canReapply = pendingSelectedApply &&

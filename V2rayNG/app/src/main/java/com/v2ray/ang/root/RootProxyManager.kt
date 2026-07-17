@@ -311,15 +311,21 @@ object RootProxyManager {
     }
 
     /**
-     * Soft-restart / watchdog helper with graduated repair:
+     * Graduated hev/tun2socks pipeline repair used by VPN-mode LAN sharing helpers.
+     *
+     * ROOT system capture no longer calls this path (xray_tun owns RootTun + MARK rules via
+     * [XrayTunRootDataPlane]). Kept for hev client-sharing / legacy local pipeline repair:
      * 1) fully healthy -> no-op
      * 2) hev/tun/rules up, SOCKS temporarily down -> wait only
      * 3) hev/tun up, rules missing -> reinstall rules only (keep hev)
      * 4) hev dead, tun/device still usable -> restart hev only + light rules
      * 5) otherwise full teardown+setup
-     * Re-probes between stages so decisions are not based on a stale snapshot.
      * Concurrent callers wait for the in-flight repair. Failures apply exponential backoff.
      */
+    @Deprecated(
+        message = "ROOT capture uses XrayTunRootDataPlane.ensure/start; this remains for hev LAN-sharing repair only.",
+        level = DeprecationLevel.WARNING,
+    )
     fun ensureRunning(context: Context): RootError? {
         lastError = null
         if (isHealthy(context)) {

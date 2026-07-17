@@ -15,6 +15,9 @@ import java.util.concurrent.atomic.AtomicLong
  * - Single probe after a successful dataplane start, not a second watchdog
  * - Uses local SOCKS (app UID is intentionally bypassed by policy routing)
  * - Soft failure only logs; never tears down a live session by itself
+ *
+ * Scope note: this proves core local SOCKS connectivity (CONNECT through Xray),
+ * not full app-UID MARK -> tun system capture. Treat soft-fail as a signal log only.
  */
 object RootConnectivitySmoke {
     data class Result(
