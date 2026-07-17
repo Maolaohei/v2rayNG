@@ -566,21 +566,34 @@
     </string-array>
 
     <string name="xposed_description">VPN detection hardening (LSPosed) for v2rayNG</string>
-    <string name="title_pref_privilege_hide_vpn">Hide VPN from selected apps</string>
-    <string name="summary_pref_privilege_hide_vpn">LSPosed/system_server hooks sanitize TRANSPORT_VPN and related APIs for selected packages. Requires LSPosed, module enabled, scope includes system (android). Normal VPN still runs.</string>
+    <string name="title_pref_privilege_hide_vpn">Hide VPN from apps</string>
+    <string name="summary_pref_privilege_hide_vpn">Scrub VPN fingerprints for selected apps via LSPosed (system/android). VPN still runs; traffic is unchanged</string>
     <string name="title_pref_privilege_manage_apps">Target apps</string>
-    <string name="summary_pref_privilege_manage_apps">Apps that should not see VPN (anti-detection list)</string>
+    <string name="summary_pref_privilege_manage_apps">Apps that should not see VPN fingerprints</string>
     <string name="title_pref_privilege_hide_self_package">Hide this app from targets</string>
-    <string name="summary_pref_privilege_hide_self_package">When on, apps in the hide list cannot see this client package via PackageManager (default off)</string>
-    <string name="summary_pref_privilege_self_test_in_tunnel">Likely in tunnel (this process): %1$s</string>
+    <string name="summary_pref_privilege_hide_self_package">Hide this client from target apps in PackageManager (default off)</string>
+    <string name="summary_pref_privilege_self_test_in_tunnel">This process likely in tunnel: %1$s</string>
     <string name="summary_pref_privilege_self_test_self_in_list">This app in hide list: %1$s</string>
-    <string name="summary_pref_privilege_self_test_gate">Gate: %1$s</string>
-    <string name="title_pref_privilege_iface_rename">Mask VPN interface names</string>
-    <string name="summary_pref_privilege_iface_rename">Presentation-only mask for NetworkInterface names. Does not rename the real kernel interface (kernel rename breaks VPN stop and other apps)</string>
-    <string name="title_pref_privilege_iface_prefix">Masked interface prefix</string>
-    <string name="summary_pref_privilege_iface_prefix">Prefix used for presentation masking only (default wlan). Real tun* name is kept</string>
+    <string name="summary_pref_privilege_self_test_gate">Readiness: %1$s</string>
+    <string name="summary_pref_privilege_self_test_mask_off">Name mask off — real interface names are not disguised</string>
+    <string name="summary_pref_privilege_self_test_mask_note_clean">No tun/ppp/tap seen. Kernel rename is disabled; only presentation mask is used</string>
+    <string name="summary_pref_privilege_self_test_mask_note_active">Presentation mask active (prefix %1$s). Kernel interface is intentionally NOT renamed</string>
+    <string name="summary_pref_privilege_self_test_mask_note_legacy">Real tun/ppp/tap still visible here is normal if this process is not fully masked; kernel iface stays tun*</string>
+    <string name="summary_pref_privilege_self_test_mask">Name mask: %1$s, prefix=%2$s</string>
+    <string name="summary_pref_privilege_self_test_gate_outside_tunnel">This process is likely outside the tunnel (per-app) — hide probe is weak</string>
+    <string name="summary_pref_privilege_self_test_gate_not_listed">This app is not in the hide list — fingerprints here may still show</string>
+    <string name="summary_pref_privilege_self_test_gate_core_off">Core not running — start VPN first</string>
+    <string name="summary_pref_privilege_self_test_gate_ok">Ready — fingerprint result is meaningful for this process</string>
+    <string name="summary_pref_privilege_self_test_section_note">— Note —</string>
+    <string name="summary_pref_privilege_self_test_section_mask">— Name mask —</string>
+    <string name="summary_pref_privilege_self_test_section_fingerprints">— Fingerprints (this process) —</string>
+    <string name="summary_pref_privilege_self_test_section_conditions">— Conditions —</string>
+    <string name="title_pref_privilege_iface_rename">Mask interface names</string>
+    <string name="summary_pref_privilege_iface_rename">Presentation-only mask for NetworkInterface names. Does not rename the real kernel interface</string>
+    <string name="title_pref_privilege_iface_prefix">Masked name prefix</string>
+    <string name="summary_pref_privilege_iface_prefix">Prefix for presentation masking only (default wlan). Real tun* stays</string>
     <string name="title_pref_privilege_module_status">Module status</string>
-    <string name="summary_pref_privilege_module_status">Check whether LSPosed hidevpn hooks are active in system_server</string>
+    <string name="summary_pref_privilege_module_status">Tap to refresh LSPosed / system_server hook status</string>
     <string name="toast_privilege_module_active">LSPosed hidevpn module active</string>
     <string name="toast_privilege_module_inactive">Module inactive. Enable in LSPosed, scope=system, then reboot</string>
     <string name="toast_privilege_sync_ok">Hide-VPN settings synced to system_server</string>
@@ -613,10 +626,10 @@
     <string name="summary_settings_entry_fragment">TLS fragment options</string>
     <string name="summary_settings_entry_advanced">Boot, auto test and diagnostic URLs</string>
     <string name="title_pref_privilege_self_test">HideVPN self-test</string>
-    <string name="summary_pref_privilege_self_test">Probe module path and VPN signals visible to this app</string>
+    <string name="summary_pref_privilege_self_test">Check fingerprints visible to this process (sync first)</string>
     <string name="title_privilege_self_test_result">HideVPN self-test result</string>
     <string name="summary_pref_privilege_self_test_running">Running detection...</string>
-    <string name="summary_pref_privilege_self_test_not_detected">Not detected</string>
+    <string name="summary_pref_privilege_self_test_not_detected">None</string>
     <string name="summary_pref_privilege_self_test_framework">Framework: %1$s</string>
     <string name="summary_pref_privilege_self_test_framework_ifaces">Framework ifaces: %1$s</string>
     <string name="summary_pref_privilege_self_test_native">Native: %1$s</string>
@@ -625,22 +638,22 @@
     <string name="summary_pref_privilege_self_test_module">Module: %1$s</string>
     <string name="summary_pref_privilege_self_test_module_before">Module before sync: %1$s</string>
     <string name="summary_pref_privilege_self_test_module_after">Module after sync: %1$s</string>
-    <string name="summary_pref_privilege_self_test_sync">Settings sync: %1$s</string>
+    <string name="summary_pref_privilege_self_test_sync">Settings synced: %1$s</string>
     <string name="summary_pref_privilege_self_test_hide">Hide switch: %1$s</string>
     <string name="summary_pref_privilege_self_test_targets">Target apps: %1$d</string>
-    <string name="summary_pref_privilege_self_test_vpn">Core running: %1$s</string>
-    <string name="summary_pref_privilege_self_test_note">Note: this checks what the current app process sees. To verify other apps, add them to the target list and test inside those apps.</string>
+    <string name="summary_pref_privilege_self_test_vpn">Core / VPN running: %1$s</string>
+    <string name="summary_pref_privilege_self_test_note">This only reflects the current app process. To verify other apps, add them to the target list and observe inside those apps. Hide does not change routing.</string>
     <string name="summary_pref_privilege_self_test_verdict_clean">Verdict: no hard VPN fingerprint seen by this process</string>
     <string name="summary_pref_privilege_self_test_verdict_leaked">Verdict: hard VPN fingerprint still visible to this process</string>
-    <string name="summary_pref_privilege_self_test_verdict_module_bad">Verdict: module path not ready; fix LSPosed/system scope first</string>
-    <string name="summary_pref_privilege_self_test_verdict_config">Verdict: module ready, but hide is off or target list empty</string>
-    <string name="summary_pref_privilege_self_test_verdict_vpn_off">Verdict: core is not running; start VPN first for a meaningful hide test</string>
-    <string name="summary_pref_privilege_self_test_verdict_self_not_targeted">Verdict: this app is not in the hide target list; result is only a host-side reference</string>
-    <string name="summary_pref_privilege_self_test_verdict_hook_inactive">Verdict: hooks injected but active=false; open a target app once or reboot</string>
+    <string name="summary_pref_privilege_self_test_verdict_module_bad">Verdict: module path not ready — fix LSPosed scope (system/android) and reboot</string>
+    <string name="summary_pref_privilege_self_test_verdict_config">Verdict: module ready, but hide is off or target list is empty</string>
+    <string name="summary_pref_privilege_self_test_verdict_vpn_off">Verdict: core not running — start VPN before testing hide</string>
+    <string name="summary_pref_privilege_self_test_verdict_self_not_targeted">Verdict: this app is not in the hide list — host-side reference only</string>
+    <string name="summary_pref_privilege_self_test_verdict_hook_inactive">Verdict: hooks loaded but inactive — open a target app once or reboot</string>
     <string name="summary_pref_privilege_self_test_copy">Copy</string>
     <string name="toast_privilege_self_test_copied">Self-test result copied</string>
     <string name="summary_pref_privilege_self_test_error">Self-test failed: %1$s</string>
-    <string name="summary_pref_privilege_self_test_yes">yes</string>
-    <string name="summary_pref_privilege_self_test_no">no</string>
+    <string name="summary_pref_privilege_self_test_yes">Yes</string>
+    <string name="summary_pref_privilege_self_test_no">No</string>
 </resources>
 

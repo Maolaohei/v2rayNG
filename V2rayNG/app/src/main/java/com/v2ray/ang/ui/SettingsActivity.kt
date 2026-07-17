@@ -570,7 +570,6 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         ): String {
             val yes = getString(R.string.summary_pref_privilege_self_test_yes)
             val no = getString(R.string.summary_pref_privilege_self_test_no)
-            val coreRunning = isCoreLikelyRunning(requireContext(), detection)
             val notDetected = getString(R.string.summary_pref_privilege_self_test_not_detected)
             val hideEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false)
             val targets = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
@@ -647,6 +646,8 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             return buildString {
                 appendLine(verdict)
                 appendLine()
+
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_conditions))
                 appendLine(
                     getString(
                         R.string.summary_pref_privilege_self_test_module_before,
@@ -684,7 +685,32 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                         if (running) yes else no,
                     ),
                 )
+                val selfPkg = requireContext().packageName
+                val perAppOn = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == true
+                val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS) == true
+                val perAppSet = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET).orEmpty()
+                val likelyInTunnel = when {
+                    !running -> false
+                    !perAppOn || perAppSet.isEmpty() -> true
+                    bypassApps -> !perAppSet.contains(selfPkg)
+                    else -> perAppSet.contains(selfPkg)
+                }
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_in_tunnel,
+                        if (likelyInTunnel) yes else no,
+                    ),
+                )
+                val gateText = when {
+                    !running -> getString(R.string.summary_pref_privilege_self_test_gate_core_off)
+                    !selfInList -> getString(R.string.summary_pref_privilege_self_test_gate_not_listed)
+                    !likelyInTunnel -> getString(R.string.summary_pref_privilege_self_test_gate_outside_tunnel)
+                    else -> getString(R.string.summary_pref_privilege_self_test_gate_ok)
+                }
+                appendLine(getString(R.string.summary_pref_privilege_self_test_gate, gateText))
                 appendLine()
+
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_fingerprints))
                 appendLine(getString(R.string.summary_pref_privilege_self_test_framework, frameworkText))
                 appendLine(
                     getString(
@@ -700,41 +726,19 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                     ),
                 )
                 appendLine(getString(R.string.summary_pref_privilege_self_test_http_proxy, httpProxy))
-                val selfPkg = requireContext().packageName
-                val hideList = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
-                val selfInHideList = hideList.contains(selfPkg)
-                val perAppOn = MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == true
-                val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS) == true
-                val perAppSet = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PER_APP_PROXY_SET).orEmpty()
-                val likelyInTunnel = when {
-                    !coreRunning -> false
-                    !perAppOn || perAppSet.isEmpty() -> true
-                    bypassApps -> !perAppSet.contains(selfPkg)
-                    else -> perAppSet.contains(selfPkg)
-                }
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_in_tunnel,
-                        if (likelyInTunnel) yes else no,
-                    ),
-                )
-                appendLine(
-                    getString(
-                        R.string.summary_pref_privilege_self_test_self_in_list,
-                        if (selfInHideList) yes else no,
-                    ),
-                )
-                val gate = when {
-                    !coreRunning -> "core not running - start VPN before judging hide"
-                    !selfInHideList -> "this app not in hide list - fingerprints here may still show"
-                    !likelyInTunnel -> "this process likely outside tunnel (per-app) - hide probe is weak"
-                    else -> "ok to interpret fingerprint result for this process"
-                }
-                appendLine(getString(R.string.summary_pref_privilege_self_test_gate, gate))
+                appendLine()
+
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_mask))
                 val renameEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)
                 val renamePrefix = MmkvManager.decodeSettingsString(AppConfig.PREF_PRIVILEGE_IFACE_PREFIX)
                     ?.takeIf { it.isNotBlank() } ?: "wlan"
-                appendLine("Rename: " + (if (renameEnabled) yes else no) + ", prefix=" + renamePrefix)
+                appendLine(
+                    getString(
+                        R.string.summary_pref_privilege_self_test_mask,
+                        if (renameEnabled) yes else no,
+                        renamePrefix,
+                    ),
+                )
                 if (renameEnabled) {
                     val stillLegacy = detection.nativeInterfaces.any {
                         it.startsWith("tun") || it.startsWith("ppp") || it.startsWith("tap")
@@ -743,17 +747,24 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                         detection.frameworkInterfaces.any { it.startsWith(renamePrefix) }
                     when {
                         stillLegacy && !maskedSeen -> appendLine(
-                            "Rename note: mask-only mode. Seeing real tun/ppp/tap is expected if this process is not fully masked; kernel iface stays tun*.",
+                            getString(R.string.summary_pref_privilege_self_test_mask_note_legacy),
                         )
                         maskedSeen -> appendLine(
-                            "Rename note: presentation mask active (prefix `$renamePrefix`). Kernel iface is intentionally NOT renamed.",
+                            getString(
+                                R.string.summary_pref_privilege_self_test_mask_note_active,
+                                renamePrefix,
+                            ),
                         )
                         else -> appendLine(
-                            "Rename note: no tun/ppp/tap seen. Kernel rename is disabled; only presentation mask is used.",
+                            getString(R.string.summary_pref_privilege_self_test_mask_note_clean),
                         )
                     }
+                } else {
+                    appendLine(getString(R.string.summary_pref_privilege_self_test_mask_off))
                 }
                 appendLine()
+
+                appendLine(getString(R.string.summary_pref_privilege_self_test_section_note))
                 append(getString(R.string.summary_pref_privilege_self_test_note))
             }
         }
