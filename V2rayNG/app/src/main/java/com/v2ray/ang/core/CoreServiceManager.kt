@@ -447,7 +447,17 @@ object CoreServiceManager {
     @Throws(Exception::class)
     private fun startContextService(context: Context) {
         if (coreController.isRunning) {
+            // Defensive: if this process already owns a live core (rare for UI callers because
+            // the core lives in :RunSoLibV2RayDaemon), treat as success instead of silent no-op.
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core already running")
+            sessionActive.set(true)
+            val service = getService()
+            if (service != null) {
+                try {
+                    MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_RUNNING, "")
+                } catch (_: Exception) {
+                }
+            }
             return
         }
 
@@ -572,9 +582,41 @@ object CoreServiceManager {
     }
 
     fun startCoreLoop(vpnInterface: ParcelFileDescriptor?): Boolean {
+        // Soft-restart respects the user-stop gate via sessionGeneration. Cold starts must clear
+        // it here: beginUserStop() runs in the daemon process, while UI clearUserStopGate() only
+        // runs in the main process - without this, Off->On after a stop never restarts the core.
+        if (softRestarting.get()) {
+            if (userStopRequested.get()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: skip startCoreLoop during soft-restart after user stop")
+                return false
+            }
+        } else {
+            clearUserStopGate()
+        }
+
+        if (vpnInterface != null && SettingsManager.isVpnMode()) {
+            activeVpnInterface = vpnInterface
+        }
+
+        // "Already running" is success for sticky re-entry / duplicate start intents.
+        // Returning false used to make CoreVpnService.stopAllService() kill healthy sessions.
+        // Soft-restart must NOT take this shortcut: it needs a real stop+start to reload config.
         if (coreController.isRunning) {
+            if (softRestarting.get()) {
+                LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core still running during soft-restart start")
+                return false
+            }
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core already running")
-            return false
+            sessionActive.set(true)
+            val service = getService()
+            if (service != null) {
+                try {
+                    MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_RUNNING, "")
+                } catch (e: Exception) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-Manager: failed to reaffirm RUNNING", e)
+                }
+            }
+            return true
         }
 
         val service = getService()

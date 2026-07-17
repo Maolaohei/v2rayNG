@@ -13,6 +13,8 @@ import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.annotation.RequiresApi
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.LOOPBACK
@@ -35,10 +37,22 @@ class CoreVpnService : VpnService(), ServiceControl {
     private lateinit var mInterface: ParcelFileDescriptor
     @Volatile
     private var isRunning = false
+    /** True only while mInterface is established and not closed. lateinit stays "initialized" after close. */
+    @Volatile
+    private var interfaceOpen = false
     @Volatile
     private var pendingRestart = false
     @Volatile
     private var lastNetworkRecoverAtMs = 0L
+    /** True while stopAllService is tearing down TUN / FGS (blocks cold re-entry races). */
+    private val stopping = AtomicBoolean(false)
+    /** Serializes onStartCommand re-entry and start/stop transitions. */
+    private val lifecycleLock = Any()
+    /**
+     * Generation for in-flight start attempts. Bumped on every user/system stop so a late
+     * start cannot revive a session the user already cancelled.
+     */
+    private val startGeneration = AtomicInteger(0)
     private var tun2SocksService: Tun2SocksControl? = null
 
     /**destroy
@@ -170,6 +184,7 @@ class CoreVpnService : VpnService(), ServiceControl {
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to close interface in onDestroy", e)
             }
+            interfaceOpen = false
             isRunning = false
         }
         NotificationManager.cancelNotification()
@@ -177,11 +192,75 @@ class CoreVpnService : VpnService(), ServiceControl {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service command received")
+        // FGS contract: promote first so re-entry / sticky restart cannot miss the timeout.
         NotificationManager.showNotification(null)
-        setupVpnService()
-        startService()
+
+        // START_STICKY / secondary startForegroundService re-entry must NOT tear down a healthy
+        // VPN session. Closing TUN then hitting "core already running" used to call stopAllService
+        // and force users to toggle multiple times before traffic recovered.
+        synchronized(lifecycleLock) {
+            // If a start arrives while stopAllService holds/just set this flag, we still proceed
+            // after acquiring lifecycleLock (stop finishes first). Clear the flag for cold start.
+            if (stopping.get()) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: start after/during teardown; will cold-start once lock is free")
+            }
+
+            val interfaceReady = interfaceOpen && ::mInterface.isInitialized
+            val action = VpnStartDecision.decide(
+                interfaceOpen = interfaceReady,
+                isRunningFlag = isRunning,
+                coreRunning = CoreServiceManager.isRunning(),
+                softRestarting = CoreServiceManager.isSoftRestarting(),
+                hasLiveSession = CoreServiceManager.hasLiveSession(),
+            )
+
+            if (action != VpnStartDecision.Action.COLD_SETUP) {
+                CoreServiceManager.serviceControl = this
+                if (interfaceReady) {
+                    CoreServiceManager.bindVpnInterface(mInterface)
+                }
+
+                when (action) {
+                    VpnStartDecision.Action.SKIP_REBUILD_CORE_LIVE -> {
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: re-entry while core live, skip rebuild")
+                        // Re-affirm UI truth for sticky / secondary start intents.
+                        try {
+                            MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_RUNNING, "")
+                        } catch (_: Exception) {
+                        }
+                        isRunning = true
+                        stopping.set(false)
+                        return START_STICKY
+                    }
+                    VpnStartDecision.Action.KEEP_SOFT_RESTART -> {
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: re-entry during soft-restart, keep session")
+                        isRunning = true
+                        stopping.set(false)
+                        return START_STICKY
+                    }
+                    VpnStartDecision.Action.REVIVE_CORE_ON_EXISTING_TUN -> {
+                        // Service / TUN still around but core is down: revive without closing TUN.
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: re-entry with TUN live but core down, revive core")
+                        stopping.set(false)
+                        startService()
+                        return START_STICKY
+                    }
+                    VpnStartDecision.Action.COLD_SETUP -> {
+                        // unreachable due to outer guard; fall through
+                    }
+                }
+            }
+
+            stopping.set(false)
+            val generation = startGeneration.incrementAndGet()
+            setupVpnService(generation)
+            if (generation != startGeneration.get() || stopping.get()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-VPN: start aborted after setup (stop raced)")
+                return START_STICKY
+            }
+            startService(generation)
+        }
         return START_STICKY
-        //return super.onStartCommand(intent, flags, startId)
     }
 
     override fun getService(): Service {
@@ -189,19 +268,59 @@ class CoreVpnService : VpnService(), ServiceControl {
     }
 
     override fun startService() {
-        if (!::mInterface.isInitialized) {
+        startService(startGeneration.get())
+    }
+
+    private fun startService(generation: Int) {
+        if (generation != startGeneration.get() || stopping.get()) {
+            LogUtil.i(AppConfig.TAG, "StartCore-VPN: startService skipped (generation/stop race)")
+            return
+        }
+        if (!::mInterface.isInitialized || !interfaceOpen) {
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Interface not initialized")
             return
         }
         // Push hidevpn/rename settings into system_server before traffic/iface probes race.
         runCatching { PrivilegeSettingsClient.sync() }
             .onFailure { LogUtil.w(AppConfig.TAG, "StartCore-VPN: privilege sync failed: ${it.message}") }
+
+        // "Core already running" is success for re-entry / sticky restart; only hard-fail real starts.
+        if (CoreServiceManager.isRunning()) {
+            LogUtil.i(AppConfig.TAG, "StartCore-VPN: core already running, treat as started")
+            CoreServiceManager.bindVpnInterface(mInterface)
+            isRunning = true
+            try {
+                MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_RUNNING, "")
+            } catch (_: Exception) {
+            }
+            RootLanSharing.startClientSharing(this)
+            return
+        }
+
         if (!CoreServiceManager.startCoreLoop(mInterface)) {
+            // Soft-restart may briefly own the core; do not tear down a live session.
+            if (CoreServiceManager.isRunning() || CoreServiceManager.isSoftRestarting() || CoreServiceManager.hasLiveSession()) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: startCoreLoop returned false but session still live; keep service")
+                CoreServiceManager.bindVpnInterface(mInterface)
+                isRunning = true
+                return
+            }
+            if (generation != startGeneration.get() || stopping.get()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-VPN: startCoreLoop failed after user stop; skip teardown spam")
+                return
+            }
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to start core loop")
             stopAllService()
             return
         }
 
+        if (generation != startGeneration.get() || stopping.get()) {
+            LogUtil.i(AppConfig.TAG, "StartCore-VPN: core started after stop request; shutting down")
+            stopAllService()
+            return
+        }
+
+        isRunning = true
         // Start LAN sharing if enabled in settings
         RootLanSharing.startClientSharing(this)
     }
@@ -212,7 +331,7 @@ class CoreVpnService : VpnService(), ServiceControl {
      * when dynamic SOCKS refreshed). System-TUN path only needs the live PFD rebound.
      */
     fun rebindAfterSoftRestart() {
-        if (!::mInterface.isInitialized || !isRunning) {
+        if (!::mInterface.isInitialized || !interfaceOpen || !isRunning) {
             LogUtil.w(AppConfig.TAG, "StartCore-VPN: rebindAfterSoftRestart skipped (interface not ready)")
             return
         }
@@ -257,17 +376,43 @@ class CoreVpnService : VpnService(), ServiceControl {
      * Sets up the VPN service.
      * Prepares the VPN and configures it if preparation is successful.
      */
-    private fun setupVpnService() {
+    private fun setupVpnService(generation: Int = startGeneration.get()) {
+        if (generation != startGeneration.get() || stopping.get()) {
+            LogUtil.i(AppConfig.TAG, "StartCore-VPN: setup aborted (generation/stop race)")
+            return
+        }
         val prepare = prepare(this)
         if (prepare != null) {
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Permission not granted")
+            try {
+                MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_START_FAILURE, "VPN permission not granted")
+            } catch (_: Exception) {
+            }
             stopSelf()
             return
         }
 
-        if (configureVpnService() != true) {
+        if (configureVpnService(generation) != true) {
             LogUtil.e(AppConfig.TAG, "StartCore-VPN: Configuration failed")
-            stopSelf()
+            if (generation == startGeneration.get() && !stopping.get()) {
+                try {
+                    MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_START_FAILURE, "VPN interface setup failed")
+                } catch (_: Exception) {
+                }
+                stopSelf()
+            }
+            return
+        }
+
+        if (generation != startGeneration.get() || stopping.get()) {
+            LogUtil.i(AppConfig.TAG, "StartCore-VPN: setup finished after stop; closing fresh interface")
+            try {
+                if (::mInterface.isInitialized) {
+                    mInterface.close()
+                }
+            } catch (_: Exception) {
+            }
+            interfaceOpen = false
             return
         }
 
@@ -278,7 +423,10 @@ class CoreVpnService : VpnService(), ServiceControl {
      * Configures the VPN service.
      * @return True if the VPN service was configured successfully, false otherwise.
      */
-    private fun configureVpnService(): Boolean {
+    private fun configureVpnService(generation: Int = startGeneration.get()): Boolean {
+        if (generation != startGeneration.get() || stopping.get()) {
+            return false
+        }
         val builder = Builder()
 
         // Configure network settings (addresses, routing and DNS)
@@ -295,19 +443,41 @@ class CoreVpnService : VpnService(), ServiceControl {
         } catch (e: Exception) {
             LogUtil.w(AppConfig.TAG, "Failed to close old interface", e)
         }
+        interfaceOpen = false
+
+        if (generation != startGeneration.get() || stopping.get()) {
+            LogUtil.i(AppConfig.TAG, "StartCore-VPN: configure aborted before establish (stop raced)")
+            return false
+        }
 
         // Configure platform-specific features
         configurePlatformFeatures(builder)
 
         // Create a new interface using the builder and save the parameters
         try {
-            mInterface = builder.establish()!!
+            val established = builder.establish()
+            if (established == null) {
+                LogUtil.e(AppConfig.TAG, "Failed to establish VPN interface: builder.establish() returned null")
+                return false
+            }
+            if (generation != startGeneration.get() || stopping.get()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-VPN: establish completed after stop; closing interface")
+                try {
+                    established.close()
+                } catch (_: Exception) {
+                }
+                return false
+            }
+            mInterface = established
+            interfaceOpen = true
             CoreServiceManager.bindVpnInterface(mInterface)
             isRunning = true
             return true
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Failed to establish VPN interface", e)
-            stopAllService()
+            if (generation == startGeneration.get() && !stopping.get()) {
+                stopAllService()
+            }
         }
         return false
     }
@@ -473,47 +643,77 @@ class CoreVpnService : VpnService(), ServiceControl {
 //        val emptyInfo = VpnNetworkInfo()
 //        val info = loadVpnNetworkInfo(configName, emptyInfo)!! + (lastNetworkInfo ?: emptyInfo)
 //        saveVpnNetworkInfo(configName, info)
-        isRunning = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            try {
-                connectivity.unregisterNetworkCallback(defaultNetworkCallback)
-            } catch (e: Exception) {
-                LogUtil.w(AppConfig.TAG, "StartCore-VPN: Failed to unregister callback", e)
-            }
-        }
-
-        tun2SocksService?.stopTun2Socks()
-        tun2SocksService = null
-
-        RootLanSharing.stopClientSharing(this)
-
-        CoreServiceManager.stopCoreLoop()
-
-        if (isForced) {
-            //stopSelf has to be called ahead of mInterface.close(). otherwise v2ray core cannot be stooped
-            //It's strage but true.
-            //This can be verified by putting stopself() behind and call stopLoop and startLoop
-            //in a row for several times. You will find that later created v2ray core report port in use
-            //which means the first v2ray core somehow failed to stop and release the port.
-            stopSelf()
-
-            // Add a small delay to allow the async core stop operation to complete
-            // before closing the VPN interface, preventing a race condition that can
-            // leave the VPN icon in the status bar after stopping the service.
-            try {
-                Thread.sleep(50)
-            } catch (e: InterruptedException) {
-                LogUtil.w(AppConfig.TAG, "StartCore-VPN: Sleep interrupted", e)
-            }
-
-            try {
-                if (::mInterface.isInitialized) {
-                    mInterface.close()
-                    LogUtil.i(AppConfig.TAG, "StartCore-VPN: VPN interface closed")
+        synchronized(lifecycleLock) {
+            // Invalidate any in-flight cold start before mutating TUN/core.
+            startGeneration.incrementAndGet()
+            stopping.set(true)
+            isRunning = false
+            pendingRestart = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    connectivity.unregisterNetworkCallback(defaultNetworkCallback)
+                } catch (e: Exception) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-VPN: Failed to unregister callback", e)
                 }
-            } catch (e: Exception) {
-                LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to close interface", e)
             }
+
+            try {
+                tun2SocksService?.stopTun2Socks()
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: stopTun2Socks failed", e)
+            }
+            tun2SocksService = null
+
+            try {
+                RootLanSharing.stopClientSharing(this)
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: stop LAN sharing failed", e)
+            }
+
+            try {
+                // Defer STOP_SUCCESS until TUN is closed. Emitting it at stopCoreLoop made the
+                // home switch re-enable while the system iface was still tearing down, so the
+                // next Off->On establish raced and needed multiple toggles to recover.
+                CoreServiceManager.stopCoreLoop(
+                    notifyUi = false,
+                    cancelNotification = true,
+                    stopWatchdog = true,
+                    clearVpnInterface = true,
+                )
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: stopCoreLoop failed", e)
+            }
+
+            if (isForced) {
+                // stopSelf ahead of mInterface.close so core can release ports before TUN dies.
+                stopSelf()
+
+                // Allow async core stop + system VpnService teardown to settle before close.
+                // 50ms was too short: rapid Off->On re-establish raced the previous iface.
+                try {
+                    Thread.sleep(180)
+                } catch (e: InterruptedException) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-VPN: Sleep interrupted", e)
+                }
+
+                try {
+                    if (::mInterface.isInitialized) {
+                        mInterface.close()
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: VPN interface closed")
+                    }
+                } catch (e: Exception) {
+                    LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to close interface", e)
+                }
+                interfaceOpen = false
+            }
+
+            try {
+                MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: failed to emit STOP_SUCCESS after teardown", e)
+            }
+            // Keep stopping=true until destroy finishes; onCreate/onStart of a new instance
+            // starts with a fresh object so the next cold start is not blocked.
         }
     }
 }
