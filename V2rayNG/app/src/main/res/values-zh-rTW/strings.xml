@@ -280,7 +280,7 @@
     <string name="title_ui_settings">介面顯示設定</string>
     <string name="title_pref_ui_mode_night">深色模式</string>
     <string name="title_pref_use_hev_tunnel">啟用 Hev TUN 功能</string>
-    <string name="summary_pref_use_hev_tunnel">選擇啟用後 TUN 將使用 hev-socks5-tunnel 否則使用 xray-core</string>
+    <string name="summary_pref_use_hev_tunnel">預設關閉：VPN 直接把系統 TUN 交給 Xray。開啟後則用 hev-socks5-tunnel 橋接到本地 SOCKS。</string>
     <string name="title_pref_hev_tunnel_loglevel">HevTun 日誌級別</string>
     <string name="title_pref_hev_tunnel_rw_timeout">HevTun 讀寫逾時(秒) (tcp,udp 預設 300,60)</string>
     <string name="title_mode_settings">模式設定</string>

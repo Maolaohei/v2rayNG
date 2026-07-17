@@ -490,6 +490,7 @@ object SettingsManager {
 
     /**
      * Check if HEV TUN is being used.
+     * Product default is Xray TUN (false): VpnService fd is passed to the core.
      * @return True if HEV TUN is used, false otherwise.
      */
     fun isUsingHevTun(): Boolean {

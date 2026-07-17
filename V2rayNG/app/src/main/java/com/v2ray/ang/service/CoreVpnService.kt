@@ -190,6 +190,38 @@ class CoreVpnService : VpnService(), ServiceControl {
         RootLanSharing.startClientSharing(this)
     }
 
+    /**
+     * Soft-restart reloads only the in-process core. Hev still holds the previous SOCKS
+     * target/port, so VPN Hev path must rebind after a successful soft-restart (especially
+     * when dynamic SOCKS refreshed). System-TUN path only needs the live PFD rebound.
+     */
+    fun rebindAfterSoftRestart() {
+        if (!::mInterface.isInitialized || !isRunning) {
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: rebindAfterSoftRestart skipped (interface not ready)")
+            return
+        }
+        try {
+            CoreServiceManager.bindVpnInterface(mInterface)
+            if (SettingsManager.isUsingHevTun()) {
+                LogUtil.i(AppConfig.TAG, "StartCore-VPN: rebinding Hev tun2socks after soft-restart")
+                try {
+                    tun2SocksService?.stopTun2Socks()
+                } catch (e: Exception) {
+                    LogUtil.w(AppConfig.TAG, "StartCore-VPN: stop Hev before rebind failed", e)
+                }
+                tun2SocksService = null
+                runTun2socks()
+            } else {
+                LogUtil.i(AppConfig.TAG, "StartCore-VPN: system TUN path, PFD rebound after soft-restart")
+            }
+            // Optional LAN sharing follows the same soft-restart lifecycle.
+            RootLanSharing.stopClientSharing(this)
+            RootLanSharing.startClientSharing(this)
+        } catch (e: Exception) {
+            LogUtil.e(AppConfig.TAG, "StartCore-VPN: rebindAfterSoftRestart failed", e)
+        }
+    }
+
     override fun stopService() {
         stopAllService(true)
     }

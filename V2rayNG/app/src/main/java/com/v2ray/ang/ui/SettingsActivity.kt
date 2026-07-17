@@ -219,7 +219,7 @@ class SettingsActivity : BaseActivity() {
 
         override fun onStart() {
             super.onStart()
-            updateHevTunSettings(MmkvManager.decodeSettingsBool(AppConfig.PREF_USE_HEV_TUNNEL, true))
+            updateHevTunSettings(MmkvManager.decodeSettingsBool(AppConfig.PREF_USE_HEV_TUNNEL, false))
 
             // Initialize mode-dependent UI states (ROOT UI currently retired).
             SettingsManager.migrateRootModeIfUiHidden()

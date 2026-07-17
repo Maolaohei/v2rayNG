@@ -106,7 +106,7 @@
             android:title="@string/title_pref_vpn_mtu" />
 
         <CheckBoxPreference
-            android:defaultValue="true"
+            android:defaultValue="false"
             android:key="pref_use_hev_tunnel_v2"
             android:summary="@string/summary_pref_use_hev_tunnel"
             android:title="@string/title_pref_use_hev_tunnel" />
@@ -139,7 +139,7 @@
     <PreferenceCategory android:title="@string/title_core_settings">
 
         <CheckBoxPreference
-            android:defaultValue="true"
+            android:defaultValue="false"
             android:key="pref_sniffing_enabled"
             android:summary="@string/summary_pref_sniffing_enabled"
             android:title="@string/title_pref_sniffing_enabled" />

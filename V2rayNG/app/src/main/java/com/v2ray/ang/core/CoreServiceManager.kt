@@ -257,14 +257,10 @@ object CoreServiceManager {
                 }
                 return
             }
-            // VPN-mode optional LAN sharing: rebuild only if preference is still on.
-            if (
-                service is CoreVpnService &&
-                MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_LAN_SHARING) == true
-            ) {
-                LogUtil.i(AppConfig.TAG, "StartCore-Manager: rebinding LAN sharing after soft-restart")
-                com.v2ray.ang.root.RootLanSharing.stopClientSharing(service)
-                com.v2ray.ang.root.RootLanSharing.startClientSharing(service)
+            // VPN path: rebind Hev/system TUN + optional LAN sharing after core soft-restart.
+            if (service is CoreVpnService) {
+                LogUtil.i(AppConfig.TAG, "StartCore-Manager: rebinding VPN dataplane after soft-restart")
+                service.rebindAfterSoftRestart()
             }
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: rebind root routing failed", e)
@@ -383,19 +379,27 @@ object CoreServiceManager {
     }
 
     /**
-     * Soft-restart failed but ROOT capture may still be healthy enough to keep FGS.
+     * Soft-restart failed but ROOT/VPN session may still be healthy enough to keep FGS.
      * Shared by both the !ok start path and the outer exception catch so they cannot drift.
      */
     private fun shouldKeepRootSessionAfterSoftRestartFailure(): Boolean {
         if (userStopRequested.get()) return false
-        if (!SettingsManager.isRootMode()) return false
-        return hasLiveSession() ||
-            com.v2ray.ang.root.RootTun.isOpen() ||
-            com.v2ray.ang.root.RootDataPlanes.current().isRuntimeLive()
+        // ROOT capture path.
+        if (SettingsManager.isRootMode()) {
+            return hasLiveSession() ||
+                com.v2ray.ang.root.RootTun.isOpen() ||
+                com.v2ray.ang.root.RootDataPlanes.current().isRuntimeLive()
+        }
+        // VPN: keep FGS when the Android TUN is still established and session looks live.
+        // Hard-stopping here after a transient soft-restart miss forces users to re-toggle.
+        if (SettingsManager.isVpnMode()) {
+            return activeVpnInterface != null && (hasLiveSession() || serviceControl is CoreVpnService)
+        }
+        return false
     }
 
     /**
-     * Soft-restart failure handling: keep ROOT session when dataplane still looks live;
+     * Soft-restart failure handling: keep ROOT/VPN session when dataplane still looks live;
      * otherwise emit START_FAILURE and tear down tracking/FGS.
      */
     private fun handleSoftRestartFailure(detail: String) {
@@ -405,7 +409,7 @@ object CoreServiceManager {
         if (shouldKeepRootSessionAfterSoftRestartFailure()) {
             LogUtil.w(
                 AppConfig.TAG,
-                "StartCore-Manager: soft-restart failed but ROOT still live; keep session ($detail)"
+                "StartCore-Manager: soft-restart failed but session still live; keep FGS ($detail)"
             )
             if (svc != null) {
                 // Soft signal only; do not mark session dead.
