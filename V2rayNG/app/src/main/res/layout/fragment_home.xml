@@ -237,7 +237,8 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/home_mode_root" />
+                    android:text="@string/home_mode_root"
+                    android:visibility="gone" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
 
             <TextView

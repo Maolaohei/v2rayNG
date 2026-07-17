@@ -483,7 +483,8 @@ object CoreServiceManager {
             context.toast(R.string.toast_services_start)
         }
 
-        val isRootMode = SettingsManager.isRootMode()
+        // ROOT UI may be retired; isRootMode() already migrates sticky prefs.
+        val isRootMode = AppConfig.ROOT_MODE_UI_ENABLED && SettingsManager.isRootMode()
         if (isRootMode && !RootManager.isRootAvailable()) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: root mode requires root but none available")
             error(context.getString(R.string.toast_root_mode_unavailable))

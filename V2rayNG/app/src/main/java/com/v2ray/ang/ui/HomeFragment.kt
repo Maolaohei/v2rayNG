@@ -92,12 +92,16 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         binding.layoutCurrentNode.setOnClickListener { host.openSubscriptionTab() }
 
         setupConnectionSwitch()
+        // Migrate any sticky ROOT preference when ROOT UI is retired.
+        SettingsManager.migrateRootModeIfUiHidden()
         setupModeToggle()
         refreshModeToggle()
-        // Probe root off-main so ROOT button affordance can update without blocking first paint.
-        viewLifecycleOwner.lifecycleScope.launch {
-            withContext(Dispatchers.IO) { RootManager.refresh() }
-            if (isAdded && view != null) refreshModeToggle()
+        if (AppConfig.ROOT_MODE_UI_ENABLED) {
+            // Probe root off-main so ROOT button affordance can update without blocking first paint.
+            viewLifecycleOwner.lifecycleScope.launch {
+                withContext(Dispatchers.IO) { RootManager.refresh() }
+                if (isAdded && view != null) refreshModeToggle()
+            }
         }
         refreshSelectedServerMeta()
         refreshMetricsFromCache()
@@ -190,16 +194,22 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private fun setupModeToggle() {
         modeToggleReady = false
+        // ROOT UI is retired: keep only Proxy / VPN on the home toggle.
+        binding.btnModeRoot.visibility = if (AppConfig.ROOT_MODE_UI_ENABLED) android.view.View.VISIBLE else android.view.View.GONE
         binding.modeToggle.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked || !modeToggleReady) return@addOnButtonCheckedListener
             val next = when (checkedId) {
-                R.id.btn_mode_root -> AppConfig.MODE_ROOT
+                R.id.btn_mode_root -> if (AppConfig.ROOT_MODE_UI_ENABLED) AppConfig.MODE_ROOT else AppConfig.VPN
                 R.id.btn_mode_vpn -> AppConfig.VPN
                 else -> AppConfig.MODE_PROXY_ONLY
             }
             val current = SettingsManager.getRunMode()
             if (current == next) return@addOnButtonCheckedListener
             if (next == AppConfig.MODE_ROOT) {
+                if (!AppConfig.ROOT_MODE_UI_ENABLED) {
+                    applyRunMode(AppConfig.VPN)
+                    return@addOnButtonCheckedListener
+                }
                 // Request root first; only then commit mode.
                 modeToggleReady = false
                 viewLifecycleOwner.lifecycleScope.launch {
@@ -295,20 +305,32 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private fun refreshModeToggle() {
         if (!isAdded || view == null) return
+        SettingsManager.migrateRootModeIfUiHidden()
         val mode = SettingsManager.getRunMode()
         modeToggleReady = false
+        binding.btnModeRoot.visibility =
+            if (AppConfig.ROOT_MODE_UI_ENABLED) android.view.View.VISIBLE else android.view.View.GONE
         when (mode) {
-            AppConfig.MODE_ROOT -> binding.modeToggle.check(R.id.btn_mode_root)
+            AppConfig.MODE_ROOT -> {
+                if (AppConfig.ROOT_MODE_UI_ENABLED) {
+                    binding.modeToggle.check(R.id.btn_mode_root)
+                } else {
+                    binding.modeToggle.check(R.id.btn_mode_vpn)
+                }
+            }
             AppConfig.VPN -> binding.modeToggle.check(R.id.btn_mode_vpn)
             else -> binding.modeToggle.check(R.id.btn_mode_proxy)
         }
-        // Keep ROOT visible for root users; dim when we already know root is unavailable.
-        // Still clickable so users can re-request su after granting superuser.
-        val rootKnownUnavailable = !RootManager.cachedRoot() && mode != AppConfig.MODE_ROOT
-        binding.btnModeRoot.alpha = if (rootKnownUnavailable) 0.55f else 1.0f
-        binding.tvModeHint.text = when (mode) {
-            AppConfig.MODE_ROOT -> getString(R.string.home_mode_hint_root)
-            AppConfig.VPN -> getString(R.string.home_mode_hint_vpn)
+        if (AppConfig.ROOT_MODE_UI_ENABLED) {
+            // Dim ROOT when we already know root is unavailable.
+            val rootKnownUnavailable = !RootManager.cachedRoot() && mode != AppConfig.MODE_ROOT
+            binding.btnModeRoot.alpha = if (rootKnownUnavailable) 0.55f else 1.0f
+        }
+        binding.tvModeHint.text = when {
+            mode == AppConfig.MODE_ROOT && AppConfig.ROOT_MODE_UI_ENABLED ->
+                getString(R.string.home_mode_hint_root)
+            mode == AppConfig.VPN || mode == AppConfig.MODE_ROOT ->
+                getString(R.string.home_mode_hint_vpn)
             else -> getString(R.string.home_mode_hint_proxy)
         }
         modeToggleReady = true

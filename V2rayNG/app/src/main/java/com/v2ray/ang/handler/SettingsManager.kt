@@ -40,6 +40,9 @@ object SettingsManager {
     @Volatile
     private var runtimeSocksPort: Int? = null
 
+    @Volatile
+    private var rootUiMigrated: Boolean = false
+
     fun initApp(context: Context) {
         ensureDefaultSettings()
         initBackground(context)
@@ -522,14 +525,33 @@ object SettingsManager {
     }
 
     /**
+     * One-shot: if ROOT UI is retired, clear sticky ROOT preference and land on VPN.
+     * Code path for CoreRootService is kept for future re-enable.
+     */
+    fun migrateRootModeIfUiHidden() {
+        if (AppConfig.ROOT_MODE_UI_ENABLED || rootUiMigrated) return
+        rootUiMigrated = true
+        val wasRoot = MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+        if (!wasRoot) return
+        MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+        // ROOT was system-wide; map to VPN (not proxy-only).
+        MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.VPN)
+        runtimeSocksPort = null
+        LogUtil.i(AppConfig.TAG, "SettingsManager: ROOT UI disabled; migrated previous ROOT mode to VPN")
+    }
+
+    /**
      * Check if a root (system-wide) run mode is selected.
      */
     fun isRootMode(): Boolean {
+        migrateRootModeIfUiHidden()
+        if (!AppConfig.ROOT_MODE_UI_ENABLED) return false
         return MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_MODE_ENABLE, false)
     }
 
-    /** Home/settings three-way run mode: Proxy only / VPN / ROOT. */
+    /** Home/settings run mode: Proxy only / VPN (/ ROOT when UI enabled). */
     fun getRunMode(): String {
+        migrateRootModeIfUiHidden()
         return when {
             isRootMode() -> AppConfig.MODE_ROOT
             isVpnMode() -> AppConfig.VPN
@@ -538,20 +560,32 @@ object SettingsManager {
     }
 
     /**
-     * Persist three-way mode. Root is stored as PREF_ROOT_MODE_ENABLE and does not use VpnService.
+     * Persist run mode. Root is stored as PREF_ROOT_MODE_ENABLE and does not use VpnService.
+     * When ROOT UI is disabled, MODE_ROOT is coerced to VPN.
      * @return true if the Android service class needs a hard restart (mode family changed).
      */
     fun setRunMode(mode: String): Boolean {
+        val requested =
+            if (!AppConfig.ROOT_MODE_UI_ENABLED && mode == AppConfig.MODE_ROOT) {
+                AppConfig.VPN
+            } else {
+                mode
+            }
         val prev = getRunMode()
-        when (mode) {
+        when (requested) {
             AppConfig.MODE_ROOT -> {
-                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, true)
-                // Keep PREF_MODE non-VPN so any leftover VPN-only knobs stay off while rooted.
-                if ((MmkvManager.decodeSettingsString(AppConfig.PREF_MODE) ?: AppConfig.VPN) == AppConfig.VPN) {
-                    MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.MODE_PROXY_ONLY)
+                if (!AppConfig.ROOT_MODE_UI_ENABLED) {
+                    MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+                    MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.VPN)
+                } else {
+                    MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, true)
+                    // Keep PREF_MODE non-VPN so any leftover VPN-only knobs stay off while rooted.
+                    if ((MmkvManager.decodeSettingsString(AppConfig.PREF_MODE) ?: AppConfig.VPN) == AppConfig.VPN) {
+                        MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.MODE_PROXY_ONLY)
+                    }
+                    // ROOT freezes SOCKS: drop any previous dynamic runtime port.
+                    runtimeSocksPort = null
                 }
-                // ROOT freezes SOCKS: drop any previous dynamic runtime port.
-                runtimeSocksPort = null
             }
             AppConfig.VPN -> {
                 MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)

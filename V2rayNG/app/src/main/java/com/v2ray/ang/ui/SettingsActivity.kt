@@ -221,7 +221,9 @@ class SettingsActivity : BaseActivity() {
             super.onStart()
             updateHevTunSettings(MmkvManager.decodeSettingsBool(AppConfig.PREF_USE_HEV_TUNNEL, true))
 
-            // Initialize mode-dependent UI states (ROOT is owned by home toggle).
+            // Initialize mode-dependent UI states (ROOT UI currently retired).
+            SettingsManager.migrateRootModeIfUiHidden()
+            lanSharing?.isVisible = AppConfig.ROOT_MODE_UI_ENABLED
             updateMode(MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, VPN))
 
             // Initialize local proxy state
@@ -237,16 +239,19 @@ class SettingsActivity : BaseActivity() {
         }
 
         private fun updateMode(value: String?) {
+            SettingsManager.migrateRootModeIfUiHidden()
             // Root is selected on the home screen; if active, VPN-only prefs stay disabled.
-            val root = SettingsManager.isRootMode()
+            val root = AppConfig.ROOT_MODE_UI_ENABLED && SettingsManager.isRootMode()
             val vpn = value == VPN && !root
-            // Hide conflicting dual-source: settings mode is Proxy/VPN only while ROOT is home-owned.
+            // Settings mode is Proxy/VPN only. ROOT UI is currently retired.
             mode?.isEnabled = !root
             mode?.summary = if (root) {
                 getString(R.string.home_mode_root_settings_summary)
             } else {
                 mode?.entry ?: value
             }
+            // ROOT-only extras are hidden while ROOT UI is disabled.
+            lanSharing?.isVisible = AppConfig.ROOT_MODE_UI_ENABLED
             localDns?.isEnabled = vpn
             fakeDns?.isEnabled = vpn
             appendHttpProxy?.isEnabled = vpn

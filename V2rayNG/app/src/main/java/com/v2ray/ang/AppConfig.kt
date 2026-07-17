@@ -206,6 +206,8 @@ object AppConfig {
     const val VPN = "VPN"
     const val MODE_PROXY_ONLY = "Proxy only"
     const val MODE_ROOT = "ROOT"
+    /** When false, hide ROOT entry points and force VPN/Proxy-only runtime path. */
+    const val ROOT_MODE_UI_ENABLED = false
     const val VPN_MTU = 1500
 
     /** Root (system-wide) mode runtime constants. */
