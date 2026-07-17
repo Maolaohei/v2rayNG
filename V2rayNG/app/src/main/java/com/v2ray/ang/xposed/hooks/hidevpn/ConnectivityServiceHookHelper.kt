@@ -451,7 +451,7 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
     // region Helper Methods
 
     fun shouldHide(connectivityService: Any?, uid: Int): Boolean {
-        if (connectivityService == null) return false
+        // connectivityService may be null for pure uid-based checks; still allow hide decisions.
         if (!PrivilegeSettingsStore.isEnabled()) {
             logSkipOnce(uid, "hide_disabled", "Skip hide: uid=$uid hide settings disabled")
             return false
@@ -464,11 +464,17 @@ class ConnectivityServiceHookHelper(private val classLoader: ClassLoader) : XHoo
             logSkipOnce(uid, "uid_vpn_app", "Skip hide: uid=$uid vpn app")
             return false
         }
-        val hasVpn = hasVpnForUid(connectivityService, uid)
-        if (!hasVpn) {
-            logSkipOnce(uid, "uid_no_vpn", "Skip hide: uid=$uid noVpnForUid")
+        // Do NOT require hasVpnForUid here.
+        // getNetworkInfo(TYPE_VPN)/getNetworkForType(TYPE_VPN) leak even when this uid is not
+        // currently routed via VPN (per-app mode / transient states). Selected targets must
+        // always have hard VPN fingerprints sanitized while hide is enabled.
+        if (connectivityService != null) {
+            val hasVpn = runCatching { hasVpnForUid(connectivityService, uid) }.getOrDefault(false)
+            if (!hasVpn) {
+                logSkipOnce(uid, "uid_no_vpn_soft", "Hide without vpnForUid: uid=$uid (still sanitize fingerprints)")
+            }
         }
-        return hasVpn
+        return true
     }
 
     fun hasVpnForUid(connectivityService: Any?, uid: Int): Boolean {

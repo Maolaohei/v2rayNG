@@ -25,6 +25,9 @@ object PrivilegeSettingsStore {
 
     private val uidCache = ConcurrentHashMap<Int, Boolean>()
 
+    @Volatile
+    var onUpdated: (() -> Unit)? = null
+
     private val appGlobalsClass by lazy { Class.forName("android.app.AppGlobals") }
     private val getPackageManagerMethod by lazy { appGlobalsClass.getMethod("getPackageManager") }
     private var getPackagesForUidMethod: Method? = null
@@ -41,6 +44,7 @@ object PrivilegeSettingsStore {
             "PrivilegeSettings updated: enabled=$enabled size=${packages.size} rename=$interfaceRenameEnabled prefix=${this.interfacePrefix}",
         )
         writeSettingsFile()
+        runCatching { onUpdated?.invoke() }
     }
 
     fun isEnabled(): Boolean {
