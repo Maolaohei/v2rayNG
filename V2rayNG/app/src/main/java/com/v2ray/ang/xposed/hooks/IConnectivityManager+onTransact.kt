@@ -103,24 +103,38 @@ class HookIConnectivityManagerOnTransact(private val classLoader: ClassLoader, p
                 }
             },
         )
+        HookStatusStore.markHookActive()
         HookErrorStore.i(SOURCE, "Hooked IConnectivityManager.onTransact")
     }
 
     private fun isCallerAllowed(): Boolean {
         val uid = Binder.getCallingUid()
         if (uid == 0) return true
+        // Allow store + F-Droid application ids. BuildConfig.APPLICATION_ID alone can reject the other flavor.
+        val allowed = setOf(
+            BuildConfig.APPLICATION_ID,
+            "com.v2ray.ang",
+            "com.v2ray.ang.fdroid",
+        )
         val pm = context?.packageManager
-        if (pm == null) {
-            HookErrorStore.e(SOURCE, "isCallerAllowed: context or packageManager is null, uid=$uid")
-            return false
-        }
-        return try {
-            val packages = pm.getPackagesForUid(uid)
-            if (packages == null) {
-                HookErrorStore.w(SOURCE, "isCallerAllowed: getPackagesForUid returned null for uid=$uid")
-                return false
+        if (pm != null) {
+            try {
+                val packages = pm.getPackagesForUid(uid)
+                if (packages != null && packages.any { it in allowed }) {
+                    return true
+                }
+            } catch (e: Throwable) {
+                HookErrorStore.e(SOURCE, "isCallerAllowed packageManager path failed for uid=$uid", e)
             }
-            packages.any { it == BuildConfig.APPLICATION_ID }
+        }
+        // Fallback when system context was not ready at hook install time.
+        return try {
+            val appGlobals = Class.forName("android.app.AppGlobals")
+            val getPm = appGlobals.getMethod("getPackageManager")
+            val ipm = getPm.invoke(null) ?: return false
+            val getPackagesForUid = ipm.javaClass.getMethod("getPackagesForUid", Int::class.javaPrimitiveType)
+            val packages = getPackagesForUid.invoke(ipm, uid) as? Array<*>
+            packages?.any { it is String && it in allowed } == true
         } catch (e: Throwable) {
             HookErrorStore.e(SOURCE, "isCallerAllowed failed for uid=$uid", e)
             false

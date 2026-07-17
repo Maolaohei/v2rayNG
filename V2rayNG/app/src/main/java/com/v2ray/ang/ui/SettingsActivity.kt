@@ -359,8 +359,21 @@ class SettingsActivity : BaseActivity() {
                 true
             }
             privilegeModuleStatus?.setOnPreferenceClickListener {
-                val active = PrivilegeSettingsClient.isModuleActive()
-                val msg = if (active) R.string.toast_privilege_module_active else R.string.toast_privilege_module_inactive
+                val probe = PrivilegeSettingsClient.refresh()
+                val msg = when (probe.result) {
+                    PrivilegeSettingsClient.ProbeResult.ACTIVE ->
+                        getString(R.string.toast_privilege_module_active)
+                    PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
+                        getString(R.string.toast_privilege_module_loaded_inactive)
+                    PrivilegeSettingsClient.ProbeResult.TRANSACTION_UNHANDLED ->
+                        getString(R.string.toast_privilege_module_unhandled)
+                    PrivilegeSettingsClient.ProbeResult.UNAUTHORIZED ->
+                        getString(R.string.toast_privilege_module_unauthorized)
+                    PrivilegeSettingsClient.ProbeResult.BINDER_UNAVAILABLE ->
+                        getString(R.string.toast_privilege_module_binder)
+                    PrivilegeSettingsClient.ProbeResult.ERROR ->
+                        getString(R.string.toast_privilege_module_error, probe.detail ?: "unknown")
+                }
                 android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_LONG).show()
                 PrivilegeSettingsClient.sync()
                 refreshPrivilegeSummaries()
@@ -381,11 +394,27 @@ class SettingsActivity : BaseActivity() {
             }
 
             val hideEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false)
-            val active = PrivilegeSettingsClient.isModuleActive()
-            privilegeModuleStatus?.summary = when {
-                active && hideEnabled -> getString(R.string.summary_pref_privilege_module_status_active_on)
-                active -> getString(R.string.summary_pref_privilege_module_status_active_off)
-                else -> getString(R.string.summary_pref_privilege_module_status_inactive)
+            val probe = PrivilegeSettingsClient.refresh()
+            val status = probe.status
+            privilegeModuleStatus?.summary = when (probe.result) {
+                PrivilegeSettingsClient.ProbeResult.ACTIVE -> {
+                    val ver = status?.version ?: 0
+                    if (hideEnabled) {
+                        getString(R.string.summary_pref_privilege_module_status_active_on_ver, ver)
+                    } else {
+                        getString(R.string.summary_pref_privilege_module_status_active_off_ver, ver)
+                    }
+                }
+                PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
+                    getString(R.string.summary_pref_privilege_module_status_loaded_inactive)
+                PrivilegeSettingsClient.ProbeResult.TRANSACTION_UNHANDLED ->
+                    getString(R.string.summary_pref_privilege_module_status_unhandled)
+                PrivilegeSettingsClient.ProbeResult.UNAUTHORIZED ->
+                    getString(R.string.summary_pref_privilege_module_status_unauthorized)
+                PrivilegeSettingsClient.ProbeResult.BINDER_UNAVAILABLE ->
+                    getString(R.string.summary_pref_privilege_module_status_binder)
+                PrivilegeSettingsClient.ProbeResult.ERROR ->
+                    getString(R.string.summary_pref_privilege_module_status_error)
             }
 
             val rename = MmkvManager.decodeSettingsBool(AppConfig.PREF_PRIVILEGE_IFACE_RENAME, false)

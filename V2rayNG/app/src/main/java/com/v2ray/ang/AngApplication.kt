@@ -41,6 +41,7 @@ class AngApplication : MultiDexApplication() {
 
         appScope.launch {
             SettingsManager.initBackground(this@AngApplication)
+            PrivilegeSettingsClient.register(this@AngApplication)
         }
 
         es.dmoral.toasty.Toasty.Config.getInstance()

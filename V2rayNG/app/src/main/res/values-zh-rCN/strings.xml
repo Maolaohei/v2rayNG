@@ -574,4 +574,16 @@
     <string name="summary_pref_privilege_module_status_active_off">模块已激活 · 隐藏未开启</string>
     <string name="privilege_empty_target_warning">已开启对应用隐藏 VPN，但尚未选择目标应用。请勾选需要抗 VPN 检测的应用。</string>
     <string name="title_privilege_hide_vpn_apps">隐藏 VPN 目标应用</string>
+    <string name="toast_privilege_module_unauthorized">模块拒绝应用身份。请重装并重新启用模块</string>
+    <string name="summary_pref_privilege_module_status_active_off_ver">模块已激活 (v%1$d) · 隐藏未开启</string>
+    <string name="toast_privilege_module_binder">无法连接 Connectivity 服务</string>
+    <string name="toast_privilege_module_loaded_inactive">模块通路可用，但 active=false。可打开目标应用或重启系统</string>
+    <string name="toast_privilege_module_unhandled">模块未注入 system。请在 LSPosed 启用、作用域 system/android，然后重启</string>
+    <string name="summary_pref_privilege_module_status_error">状态探测失败（详见 logcat PrivilegeSettingsClient）</string>
+    <string name="toast_privilege_module_error">状态探测错误：%1$s</string>
+    <string name="summary_pref_privilege_module_status_active_on_ver">模块已激活 (v%1$d) · 隐藏已开启</string>
+    <string name="summary_pref_privilege_module_status_unhandled">未注入 system_server。请启用模块、作用域选 system/android 后重启</string>
+    <string name="summary_pref_privilege_module_status_binder">无法获取 Connectivity 服务</string>
+    <string name="summary_pref_privilege_module_status_unauthorized">模块拒绝了应用身份。请重装应用并在 LSPosed 重新启用</string>
+    <string name="summary_pref_privilege_module_status_loaded_inactive">已注入但 active=false。打开目标应用一次或重启系统</string>
 </resources>

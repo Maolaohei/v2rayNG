@@ -494,4 +494,16 @@
     <string name="summary_pref_privilege_iface_prefix_value">目前前綴：%1$s</string>
     <string name="title_pref_privilege_iface_prefix">網卡名前綴</string>
     <string name="summary_pref_privilege_manage_apps">需要抗 VPN 偵測的應用列表</string>
+    <string name="toast_privilege_module_unauthorized">模組拒絕應用身分。請重裝並重新啟用模組</string>
+    <string name="summary_pref_privilege_module_status_active_off_ver">模組已啟用 (v%1$d) · 隱藏未開啟</string>
+    <string name="toast_privilege_module_binder">無法連接 Connectivity 服務</string>
+    <string name="toast_privilege_module_loaded_inactive">模組通路可用，但 active=false。可開啟目標應用或重啟系統</string>
+    <string name="toast_privilege_module_unhandled">模組未注入 system。請在 LSPosed 啟用、作用域 system/android，然後重啟</string>
+    <string name="summary_pref_privilege_module_status_error">狀態探測失敗（詳見 logcat PrivilegeSettingsClient）</string>
+    <string name="toast_privilege_module_error">狀態探測錯誤：%1$s</string>
+    <string name="summary_pref_privilege_module_status_active_on_ver">模組已啟用 (v%1$d) · 隱藏已開啟</string>
+    <string name="summary_pref_privilege_module_status_unhandled">未注入 system_server。請啟用模組、作用域選 system/android 後重啟</string>
+    <string name="summary_pref_privilege_module_status_binder">無法取得 Connectivity 服務</string>
+    <string name="summary_pref_privilege_module_status_unauthorized">模組拒絕了應用身分。請重裝應用並在 LSPosed 重新啟用</string>
+    <string name="summary_pref_privilege_module_status_loaded_inactive">已注入但 active=false。開啟目標應用一次或重啟系統</string>
 </resources>

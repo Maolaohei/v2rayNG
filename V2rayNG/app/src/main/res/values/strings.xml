@@ -587,5 +587,17 @@
     <string name="summary_pref_privilege_module_status_active_off">Module active · hide disabled</string>
     <string name="privilege_empty_target_warning">Hide-VPN is on but no target apps are selected. Pick apps that should not detect VPN.</string>
     <string name="title_privilege_hide_vpn_apps">Hide VPN target apps</string>
+    <string name="toast_privilege_module_unauthorized">Module rejected app identity. Reinstall / re-enable in LSPosed</string>
+    <string name="summary_pref_privilege_module_status_active_off_ver">Module active (v%1$d) · hide disabled</string>
+    <string name="toast_privilege_module_binder">Cannot reach Connectivity service binder</string>
+    <string name="toast_privilege_module_loaded_inactive">Module path works, but active=false. Try open a target app or reboot</string>
+    <string name="toast_privilege_module_unhandled">Module not injected into system. LSPosed enable + scope system/android + reboot</string>
+    <string name="summary_pref_privilege_module_status_error">Status probe failed (see logcat PrivilegeSettingsClient)</string>
+    <string name="toast_privilege_module_error">Status probe error: %1$s</string>
+    <string name="summary_pref_privilege_module_status_active_on_ver">Module active (v%1$d) · hide enabled</string>
+    <string name="summary_pref_privilege_module_status_unhandled">Not injected into system_server. Enable module, scope=system/android, reboot</string>
+    <string name="summary_pref_privilege_module_status_binder">Connectivity binder unavailable</string>
+    <string name="summary_pref_privilege_module_status_unauthorized">Hook answered unauthorized. Reinstall app and re-enable module</string>
+    <string name="summary_pref_privilege_module_status_loaded_inactive">Hooks loaded, active flag off. Open a target app once or reboot system</string>
 </resources>
 
