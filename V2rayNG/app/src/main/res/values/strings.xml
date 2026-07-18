@@ -390,9 +390,9 @@
     <string name="connection_test_error_status_code">Error code: #%d</string>
     <string name="connection_connected">Connected, tap to check connection</string>
     <string name="connection_not_connected">Not connected</string>
-    <string name="home_status_stopped">Stopped</string>
-    <string name="home_status_running">Running</string>
-    <string name="home_status_connecting">Connecting...</string>
+    <string name="home_status_stopped">Not Connected</string>
+    <string name="home_status_running">Connected</string>
+    <string name="home_status_connecting">Connecting…</string>
     <string name="home_status_unreachable">Connected, no internet</string>
     <string name="home_status_checking">Checking connection...</string>
     <string name="home_status_reconnecting">Network changed, reconnecting...</string>
@@ -425,6 +425,12 @@
     <string name="home_mode_root">ROOT</string>
     <string name="home_mode_proxy">Proxy only</string>
     <string name="home_connection_status">Connection</string>
+    <string name="home_section_status">Status</string>
+    <string name="home_section_node">Node</string>
+    <string name="home_change_node">Change</string>
+    <string name="home_switch_footer">When on, traffic uses the selected node via a system tunnel.</string>
+    <string name="home_switch_footer_running">Tap status to retest. Turn the switch off to disconnect.</string>
+    <string name="home_meta_ready">System VPN · ready</string>
     <string name="home_traffic_24h">Last 24h</string>
     <string name="title_pref_per_app_proxy_entry">Per-app proxy</string>
     <string name="summary_pref_per_app_proxy_entry">Choose apps that use proxy or direct</string>

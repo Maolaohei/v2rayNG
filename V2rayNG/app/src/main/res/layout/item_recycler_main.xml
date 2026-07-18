@@ -140,7 +140,8 @@
                     android:gravity="center"
                     android:nextFocusLeft="@+id/info_container"
                     android:orientation="vertical"
-                    android:padding="@dimen/padding_spacing_dp8">
+                    android:padding="@dimen/padding_spacing_dp8"
+                    android:visibility="gone">
 
                     <ImageView
                         android:layout_width="wrap_content"
@@ -158,7 +159,8 @@
                     android:focusable="true"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="@dimen/padding_spacing_dp8">
+                    android:padding="@dimen/padding_spacing_dp8"
+                    android:visibility="gone">
 
                     <ImageView
                         android:layout_width="@dimen/image_size_dp24"
@@ -176,7 +178,8 @@
                     android:focusable="true"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="@dimen/padding_spacing_dp8">
+                    android:padding="@dimen/padding_spacing_dp8"
+                    android:visibility="gone">
 
                     <ImageView
                         android:layout_width="@dimen/image_size_dp24"
@@ -195,7 +198,7 @@
                     android:gravity="center"
                     android:orientation="vertical"
                     android:padding="@dimen/padding_spacing_dp8"
-                    android:visibility="gone">
+                    android:visibility="visible">
 
                     <ImageView
                         android:layout_width="@dimen/image_size_dp24"

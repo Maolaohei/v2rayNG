@@ -56,6 +56,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private var lastRegion: String? = null
     private var lastRegionGuid: String? = null
+    /** Last successful connectivity latency in ms; null when unknown/failed/cleared. */
+    private var lastLatencyMs: Long? = null
 
     private fun loadPersistedRegion() {
         val guid = MmkvManager.getSelectServer()
@@ -83,6 +85,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private fun clearPersistedRegion() {
         lastRegion = null
         lastRegionGuid = null
+        lastLatencyMs = null
         persistLastRegion(null, null)
     }
     private val CONNECTING_TIMEOUT_MS = 10_000L
@@ -382,6 +385,18 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         val regionText = lastRegion?.takeIf { it.isNotBlank() }
             ?: getString(R.string.home_metric_region_unknown)
         binding.tvMetricRegion.text = regionText
+
+        val latency = lastLatencyMs
+        if (latency != null && latency >= 0L) {
+            binding.tvMetricLatency.text = getString(R.string.home_metric_latency_ms, latency.toInt())
+            binding.tvMetricLatency.setTextColor(requireContext().getColor(R.color.colorPing))
+        } else if (internetReachable == false) {
+            binding.tvMetricLatency.text = getString(R.string.home_metric_latency_fail)
+            binding.tvMetricLatency.setTextColor(requireContext().getColor(R.color.colorPingRed))
+        } else {
+            binding.tvMetricLatency.text = getString(R.string.home_metric_latency_unknown)
+            binding.tvMetricLatency.setTextColor(requireContext().getColor(R.color.md_theme_onSurfaceVariant))
+        }
     }
 
     /**
@@ -393,7 +408,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private fun applyTestResultMetrics(content: String?) {
         if (content.isNullOrBlank()) return
 
-        val latencyMatch = Regex("""(?i)(?:took|latency|delay|寤舵椂|寤惰繜)\s*(\d+)\s*(?:ms|姣)?|(\d+)\s*ms\b""")
+        val latencyMatch = Regex("""(?i)(?:took|latency|delay|延时|延迟)\s*(\d+)\s*(?:ms|毫秒)?|(\d+)\s*ms\b""")
             .find(content)
         val latency = latencyMatch?.groupValues
             ?.drop(1)
@@ -401,15 +416,17 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             ?.toLongOrNull()
         if (latency != null) {
             internetReachable = latency >= 0L
+            lastLatencyMs = if (latency >= 0L) latency else null
         } else if (
             content.contains("Fail", ignoreCase = true) ||
-            content.contains("澶辫触") ||
+            content.contains("失败") ||
             content.contains("Unavailable", ignoreCase = true) ||
             content.contains("error", ignoreCase = true) ||
             content.contains("timeout", ignoreCase = true) ||
-            content.contains("瓒呮椂")
+            content.contains("超时")
         ) {
             internetReachable = false
+            lastLatencyMs = null
         }
 
         // Prefer IP-API country from trailing "(CC) x.x.x.x"
@@ -581,9 +598,13 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             cancelAutoConnectivityTest()
             binding.tvStatusState.text = getString(R.string.home_status_connecting)
             binding.tvSwitchCaption.text = getString(R.string.home_status_connecting)
-            switchReady = false
-            binding.switchConnection.isEnabled = false
-            // Keep the user's intended checked state while connecting (start=on / stop=off).
+            binding.tvStatusDetail.visibility = android.view.View.VISIBLE
+            binding.tvStatusDetail.text = getString(R.string.home_meta_ready)
+            binding.tvSwitchFooter.text = getString(R.string.home_switch_footer)
+            binding.statusDot.setBackgroundResource(R.drawable.bg_home_status_dot)
+            // Keep switch enabled so the user can reverse (cancel start / re-start stop).
+            switchReady = true
+            binding.switchConnection.isEnabled = true
             setTestState(getString(R.string.home_status_connecting))
             return
         }
@@ -591,7 +612,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         uiConnecting = false
         clearConnectingTimeout()
 
-        // No-op when UI already matches 鈥?prevents switch/caption flicker on tab resume.
+        // No-op when UI already matches — prevents switch/caption flicker on tab resume.
         if (isServiceRunning == isRunning &&
             binding.switchConnection.isEnabled &&
             binding.switchConnection.isChecked == isRunning
@@ -611,6 +632,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
         if (isRunning) {
             binding.switchConnection.contentDescription = getString(R.string.action_stop_service)
+            binding.statusDot.setBackgroundResource(R.drawable.bg_home_status_dot_on)
+            binding.tvSwitchFooter.text = getString(R.string.home_switch_footer_running)
             startTrafficUpdates()
             refreshConnectivityChrome()
         } else {
@@ -618,9 +641,12 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             lastFailureMessage = null
             binding.tvStatusState.text = getString(R.string.home_status_stopped)
             binding.tvSwitchCaption.text = getString(R.string.home_status_stopped)
+            binding.tvStatusDetail.visibility = android.view.View.VISIBLE
+            binding.tvStatusDetail.text = getString(R.string.home_meta_ready)
+            binding.tvSwitchFooter.text = getString(R.string.home_switch_footer)
+            binding.statusDot.setBackgroundResource(R.drawable.bg_home_status_dot)
             binding.switchConnection.contentDescription = getString(R.string.tasker_start_service)
             setTestState(getString(R.string.home_tap_to_test))
-            binding.tvStatusDetail.visibility = android.view.View.GONE
             // Keep last known region across disconnect; clear only when node changes.
             stopTrafficUpdates()
             binding.tvTraffic24h.text = TrafficStatsManager.currentDayBytes().toTrafficString()
@@ -633,10 +659,17 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     private fun refreshConnectivityChrome() {
         if (!isAdded || view == null) return
         if (!isServiceRunning && !stickyRunning) return
+        binding.statusDot.setBackgroundResource(R.drawable.bg_home_status_dot_on)
+        binding.tvSwitchFooter.text = getString(R.string.home_switch_footer_running)
+        val regionPart = lastRegion?.takeIf { it.isNotBlank() }
         when (internetReachable) {
             true -> {
                 binding.tvStatusState.text = getString(R.string.home_status_running)
-                binding.tvSwitchCaption.text = getString(R.string.home_status_running)
+                binding.tvSwitchCaption.text = if (regionPart != null) {
+                    getString(R.string.home_status_running) + " · " + regionPart
+                } else {
+                    getString(R.string.home_status_running)
+                }
                 binding.tvStatusDetail.visibility = android.view.View.VISIBLE
                 binding.tvStatusDetail.text = getString(R.string.home_status_detail_ok)
             }
@@ -650,9 +683,14 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                 if (uiConnecting) {
                     binding.tvStatusState.text = getString(R.string.home_status_connecting)
                     binding.tvSwitchCaption.text = getString(R.string.home_status_connecting)
+                    binding.statusDot.setBackgroundResource(R.drawable.bg_home_status_dot)
                 } else {
                     binding.tvStatusState.text = getString(R.string.home_status_running)
-                    binding.tvSwitchCaption.text = getString(R.string.home_status_running)
+                    binding.tvSwitchCaption.text = if (regionPart != null) {
+                        getString(R.string.home_status_running) + " · " + regionPart
+                    } else {
+                        getString(R.string.home_status_running)
+                    }
                 }
                 binding.tvStatusDetail.visibility = android.view.View.GONE
             }
@@ -690,6 +728,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             binding.tvStatusState.text = getString(R.string.home_status_reconnecting)
             binding.tvSwitchCaption.text = getString(R.string.home_status_reconnecting)
             binding.tvStatusDetail.visibility = android.view.View.GONE
+            binding.statusDot.setBackgroundResource(R.drawable.bg_home_status_dot)
         } else {
             // Keep sticky running; auto retest.
             stickyRunning = true

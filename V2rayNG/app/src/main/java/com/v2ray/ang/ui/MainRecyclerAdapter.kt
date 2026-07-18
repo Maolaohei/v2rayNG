@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
@@ -91,20 +92,26 @@ class MainRecyclerAdapter(
             holder.itemMainBinding.tvSubscription.text = subRemarks
             holder.itemMainBinding.layoutSubscription.visibility = if (subRemarks.isEmpty()) View.GONE else View.VISIBLE
 
-            // Always single-column actions: full-width row for long node names.
-            holder.itemMainBinding.layoutShare.visibility = View.VISIBLE
-            holder.itemMainBinding.layoutEdit.visibility = View.VISIBLE
-            holder.itemMainBinding.layoutRemove.visibility = View.VISIBLE
-            holder.itemMainBinding.layoutMore.visibility = View.GONE
+            // Keep the row calm: secondary actions live in overflow, not as permanent icons.
+            holder.itemMainBinding.layoutShare.visibility = View.GONE
+            holder.itemMainBinding.layoutEdit.visibility = View.GONE
+            holder.itemMainBinding.layoutRemove.visibility = View.GONE
+            holder.itemMainBinding.layoutMore.visibility = View.VISIBLE
 
-            holder.itemMainBinding.layoutShare.setOnClickListener {
-                adapterListener?.onShare(guid, profile, position, false)
-            }
-            holder.itemMainBinding.layoutEdit.setOnClickListener {
-                adapterListener?.onEdit(guid, position, profile)
-            }
-            holder.itemMainBinding.layoutRemove.setOnClickListener {
-                adapterListener?.onRemove(guid, position)
+            holder.itemMainBinding.layoutMore.setOnClickListener { anchor ->
+                val menu = PopupMenu(context, anchor)
+                menu.menu.add(0, 1, 0, R.string.title_configuration_share)
+                menu.menu.add(0, 2, 1, R.string.menu_item_edit_config)
+                menu.menu.add(0, 3, 2, R.string.menu_item_del_config)
+                menu.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> adapterListener?.onShare(guid, profile, position, false)
+                        2 -> adapterListener?.onEdit(guid, position, profile)
+                        3 -> adapterListener?.onRemove(guid, position)
+                    }
+                    true
+                }
+                menu.show()
             }
 
             holder.itemMainBinding.infoContainer.setOnClickListener {

@@ -1,0 +1,2140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>v2rayNG · Apple Design 审查与效果图</title>
+<style>
+  :root {
+    --bg: #f2f2f7;
+    --bg-elevated: rgba(255,255,255,0.72);
+    --surface: #ffffff;
+    --label: #1c1c1e;
+    --secondary: #8e8e93;
+    --tertiary: #c7c7cc;
+    --separator: rgba(60,60,67,0.12);
+    --fill: rgba(120,120,128,0.12);
+    --fill-2: rgba(120,120,128,0.08);
+    --blue: #007aff;
+    --green: #34c759;
+    --orange: #ff9f0a;
+    --red: #ff3b30;
+    --indigo: #5856d6;
+    --teal: #30b0c7;
+    --shadow: 0 8px 32px rgba(0,0,0,0.08);
+    --phone-w: 390px;
+    --phone-h: 844px;
+    --radius-xl: 28px;
+    --radius-lg: 20px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+            "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font);
+    background: #0b0b0f;
+    color: #f5f5f7;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── page chrome ── */
+  .hero {
+    padding: 72px 32px 48px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .hero .eyebrow {
+    color: var(--orange);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .hero h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+  .hero p.lead {
+    font-size: 18px;
+    color: #a1a1a6;
+    max-width: 680px;
+    line-height: 1.55;
+  }
+  .score-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 32px;
+  }
+  .score-pill {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #d1d1d6;
+  }
+  .score-pill strong { color: #fff; font-weight: 600; margin-right: 6px; }
+  .score-pill.good strong { color: var(--green); }
+  .score-pill.warn strong { color: var(--orange); }
+  .score-pill.bad strong { color: var(--red); }
+
+  section {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 48px 32px;
+  }
+  section h2 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  section .sub {
+    color: #a1a1a6;
+    font-size: 15px;
+    margin-bottom: 32px;
+    max-width: 720px;
+  }
+
+  /* ── findings ── */
+  .findings {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .finding {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .finding .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .tag.p1 { background: rgba(255,59,48,0.15); color: #ff6961; }
+  .tag.p2 { background: rgba(255,159,10,0.15); color: #ffb340; }
+  .tag.p3 { background: rgba(10,132,255,0.15); color: #64b5ff; }
+  .tag.ok { background: rgba(52,199,89,0.15); color: #6ee78a; }
+  .finding h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .finding p {
+    font-size: 13.5px;
+    color: #a1a1a6;
+    line-height: 1.55;
+  }
+  .finding .principle {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #636366;
+  }
+
+  /* ── mockup stage ── */
+  .stage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    justify-content: center;
+    align-items: flex-start;
+    margin-top: 16px;
+  }
+  .phone-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .phone-label {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #8e8e93;
+  }
+  .phone-label.accent { color: var(--orange); }
+
+  /* iPhone shell */
+  .phone {
+    width: var(--phone-w);
+    height: var(--phone-h);
+    background: #000;
+    border-radius: 48px;
+    padding: 12px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.08),
+      0 40px 80px rgba(0,0,0,0.55),
+      inset 0 0 0 1px rgba(255,255,255,0.04);
+    position: relative;
+  }
+  .phone-inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 38px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--label);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--font);
+  }
+  .dynamic-island {
+    position: absolute;
+    top: 11px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 34px;
+    background: #000;
+    border-radius: 20px;
+    z-index: 50;
+  }
+  .status-bar {
+    height: 54px;
+    padding: 14px 28px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    font-size: 15px;
+    font-weight: 600;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 40;
+  }
+  .status-bar .icons {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  /* ── CURRENT app screens ── */
+  .cur-toolbar {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    flex-shrink: 0;
+  }
+  .cur-toolbar .title {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .cur-toolbar .actions {
+    display: flex;
+    gap: 14px;
+    color: #666;
+    font-size: 18px;
+  }
+  .cur-scroll {
+    flex: 1;
+    overflow: hidden;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: #fff;
+  }
+  .cur-card {
+    border: 1px solid #cac4d0;
+    border-radius: 16px;
+    padding: 16px;
+    background: #fff;
+  }
+  .cur-card .label {
+    font-size: 11px;
+    color: #49454f;
+    text-transform: none;
+  }
+  .cur-card .headline {
+    font-size: 22px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+  .cur-card .link {
+    font-size: 12px;
+    color: #f97910;
+    margin-top: 4px;
+  }
+  .cur-card .detail {
+    font-size: 12px;
+    color: #49454f;
+    margin-top: 4px;
+  }
+  .cur-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .cur-switch {
+    width: 52px;
+    height: 32px;
+    border-radius: 16px;
+    background: #ccc;
+    position: relative;
+  }
+  .cur-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .cur-switch.on { background: #f97910; }
+  .cur-switch.on::after { left: 22px; }
+  .cur-switch-cap {
+    font-size: 11px;
+    color: #49454f;
+    text-align: center;
+    margin-top: 4px;
+  }
+  .cur-metrics {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .cur-metric {
+    flex: 1;
+    border: 1px solid #cac4d0;
+    border-radius: 12px;
+    padding: 10px;
+  }
+  .cur-metric .m-label { font-size: 11px; color: #49454f; }
+  .cur-metric .m-val { font-size: 14px; font-weight: 700; margin-top: 4px; }
+  .cur-mode {
+    border: 1px solid #cac4d0;
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .cur-mode .label { font-size: 11px; color: #49454f; }
+  .cur-toggle {
+    display: flex;
+    margin-top: 8px;
+    border: 1px solid #cac4d0;
+    border-radius: 20px;
+    overflow: hidden;
+  }
+  .cur-toggle span {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    font-size: 13px;
+    border-right: 1px solid #cac4d0;
+  }
+  .cur-toggle span:last-child { border-right: none; }
+  .cur-toggle span.active {
+    background: #1c1b1f;
+    color: #fff;
+  }
+  .cur-hint { font-size: 12px; color: #49454f; margin-top: 8px; }
+  .cur-node {
+    border: 1px solid #cac4d0;
+    border-radius: 16px;
+    padding: 16px;
+  }
+  .cur-node .label { font-size: 11px; color: #49454f; }
+  .cur-node .name { font-size: 16px; font-weight: 700; margin-top: 4px; }
+  .cur-node .hint { font-size: 12px; color: #49454f; margin-top: 4px; }
+  .cur-bottom {
+    height: 64px;
+    background: #fff;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+    flex-shrink: 0;
+  }
+  .cur-bottom .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 10px;
+    color: #49454f;
+  }
+  .cur-bottom .tab.active { color: #f97910; }
+  .cur-bottom .tab .ico { font-size: 20px; line-height: 1; }
+
+  /* current running */
+  .cur-card.running {
+    background: #1A009966;
+    border-color: #009966;
+  }
+  .cur-card.running .headline { color: #009966; }
+
+  /* node list current */
+  .cur-list {
+    flex: 1;
+    overflow: hidden;
+    background: #f5f5f5;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .cur-node-item {
+    background: #fff;
+    border: 1px solid #cac4d0;
+    border-radius: 12px;
+    padding: 10px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .cur-node-item.sel {
+    background: #1Af97910;
+    border-color: #f97910;
+  }
+  .cur-node-item .ind {
+    width: 4px;
+    align-self: stretch;
+    border-radius: 2px;
+    background: transparent;
+  }
+  .cur-node-item.sel .ind { background: #f97910; }
+  .cur-node-item .body { flex: 1; min-width: 0; }
+  .cur-node-item .n { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cur-node-item .meta { font-size: 11px; color: #f97910; margin-top: 2px; }
+  .cur-node-item .ping { font-size: 12px; font-weight: 700; color: #009966; }
+  .cur-node-item .acts { display: flex; gap: 2px; color: #666; font-size: 16px; }
+
+  /* ── PROPOSED screens ── */
+  .prop-scroll {
+    flex: 1;
+    overflow: hidden;
+    padding: 0 16px 100px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    background: var(--bg);
+  }
+  .prop-large-title {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    padding: 4px 4px 0;
+  }
+  .prop-large-title .subline {
+    display: block;
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--secondary);
+    letter-spacing: 0;
+    margin-top: 4px;
+  }
+
+  /* ── elegant status (iOS Settings / system VPN grammar) ── */
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tertiary);
+    flex-shrink: 0;
+  }
+  .status-dot.on {
+    background: var(--green);
+    box-shadow: 0 0 0 3px rgba(52,199,89,0.18);
+  }
+  .status-dot.warn {
+    background: var(--orange);
+    box-shadow: 0 0 0 3px rgba(255,159,10,0.18);
+  }
+  /* iOS system switch */
+  .ios-switch {
+    width: 51px;
+    height: 31px;
+    border-radius: 16px;
+    background: rgba(120,120,128,0.32);
+    position: relative;
+    flex-shrink: 0;
+    transition: background 180ms ease;
+  }
+  .ios-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15), 0 1px 1px rgba(0,0,0,0.06);
+    transition: transform 180ms ease;
+  }
+  .ios-switch.on {
+    background: var(--green);
+  }
+  .ios-switch.on::after {
+    transform: translateX(20px);
+  }
+  .footer-note {
+    font-size: 13px;
+    color: var(--secondary);
+    padding: 6px 16px 0;
+    line-height: 1.35;
+  }
+  .row .title.semibold {
+    font-weight: 600;
+  }
+  .row.tall {
+    min-height: 60px;
+    align-items: center;
+  }
+  .metric-inline {
+    display: flex;
+    gap: 0;
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .metric-inline .cell {
+    flex: 1;
+    padding: 14px 12px;
+    text-align: center;
+    position: relative;
+  }
+  .metric-inline .cell + .cell::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 0.5px;
+    background: var(--separator);
+  }
+  .metric-inline .ml {
+    font-size: 12px;
+    color: var(--secondary);
+    font-weight: 400;
+  }
+  .metric-inline .mv {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .metric-inline .mv.green { color: var(--green); }
+  .metric-inline .mv.dim { color: var(--secondary); font-weight: 500; }
+
+  /* large title status — calm, not theatrical */
+  .status-title {
+    padding: 4px 4px 2px;
+  }
+  .status-title .eyebrow {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--secondary);
+    letter-spacing: 0;
+    text-transform: none;
+    margin-bottom: 2px;
+  }
+  .status-title h1 {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    color: var(--label);
+  }
+  .status-title .meta {
+    margin-top: 6px;
+    font-size: 15px;
+    color: var(--secondary);
+    letter-spacing: -0.01em;
+  }
+  .status-title .meta a,
+  .status-title .meta .link {
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .group + .group-header,
+  .metric-inline + .group-header,
+  .status-title + .group-header {
+    margin-top: 8px;
+  }
+  .row .leading-dot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* metrics strip (legacy, keep for other pages if needed) */
+  .metric-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .metric-tile {
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: 12px 10px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+  }
+  .metric-tile .ml {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--secondary);
+    letter-spacing: 0.01em;
+  }
+  .metric-tile .mv {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .metric-tile .mv.green { color: var(--green); }
+
+  /* inset grouped list (iOS Settings style) */
+  .group {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .group-header {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    padding: 0 16px 6px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding: 10px 16px;
+    gap: 12px;
+    position: relative;
+  }
+  .row + .row::before {
+    content: "";
+    position: absolute;
+    left: 16px;
+    right: 0;
+    top: 0;
+    height: 0.5px;
+    background: var(--separator);
+  }
+  .row .icon-tile {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .row .icon-tile.orange { background: var(--orange); }
+  .row .icon-tile.blue { background: var(--blue); }
+  .row .icon-tile.green { background: var(--green); }
+  .row .icon-tile.indigo { background: var(--indigo); }
+  .row .icon-tile.teal { background: var(--teal); }
+  .row .body { flex: 1; min-width: 0; }
+  .row .title {
+    font-size: 17px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+  .row .subtitle {
+    font-size: 13px;
+    color: var(--secondary);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .value {
+    font-size: 17px;
+    color: var(--secondary);
+    flex-shrink: 0;
+  }
+  .row .chev {
+    color: var(--tertiary);
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .row.pressable:active {
+    background: var(--fill);
+  }
+
+  /* segmented control */
+  .segmented {
+    background: var(--fill);
+    border-radius: 9px;
+    padding: 2px;
+    display: flex;
+    gap: 0;
+  }
+  .segmented button {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--label);
+    padding: 7px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .segmented button.active {
+    background: var(--surface);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 1px rgba(0,0,0,0.04);
+  }
+
+  /* iOS-style nav bar (translucent) */
+  .prop-nav {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    background: rgba(242,242,247,0.72);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 0.5px solid var(--separator);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 30;
+  }
+  .prop-nav .nav-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .prop-nav .nav-btn {
+    color: var(--blue);
+    font-size: 17px;
+    font-weight: 400;
+    background: none;
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .prop-nav .nav-btn.bold { font-weight: 600; }
+  .prop-nav .nav-icons {
+    display: flex;
+    gap: 16px;
+    color: var(--blue);
+    font-size: 20px;
+  }
+
+  /* tab bar translucent */
+  .prop-tabbar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 83px;
+    padding: 6px 0 24px;
+    background: rgba(255,255,255,0.78);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-top: 0.5px solid var(--separator);
+    display: flex;
+    z-index: 40;
+  }
+  .prop-tabbar .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--secondary);
+  }
+  .prop-tabbar .tab.active { color: var(--orange); }
+  .prop-tabbar .tab .ico {
+    font-size: 22px;
+    line-height: 1;
+    height: 26px;
+    display: grid;
+    place-items: center;
+  }
+
+  /* home indicator */
+  .home-ind {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 134px;
+    height: 5px;
+    background: #000;
+    border-radius: 3px;
+    z-index: 60;
+    opacity: 0.85;
+  }
+
+  /* node list proposed */
+  .prop-list {
+    flex: 1;
+    overflow: hidden;
+    padding: 8px 16px 100px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--bg);
+  }
+  .search-field {
+    background: var(--fill);
+    border-radius: 10px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 6px;
+    color: var(--secondary);
+    font-size: 17px;
+  }
+  .search-field span { color: var(--secondary); }
+  .node-card {
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: 14px 14px 14px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+    transition: transform 100ms ease-out;
+  }
+  .node-card:active { transform: scale(0.985); }
+  .node-card.selected {
+    box-shadow: 0 0 0 2px var(--orange), 0 4px 16px rgba(255,159,10,0.15);
+  }
+  .node-card .check {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1.5px solid var(--tertiary);
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+  }
+  .node-card.selected .check {
+    background: var(--orange);
+    border-color: var(--orange);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .node-card .body { flex: 1; min-width: 0; }
+  .node-card .n {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .node-card .meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255,159,10,0.12);
+    color: #c46a00;
+  }
+  .badge.vless { background: rgba(0,122,255,0.1); color: #0066d6; }
+  .badge.ss { background: rgba(88,86,214,0.12); color: #4745b0; }
+  .node-card .submeta {
+    font-size: 12px;
+    color: var(--secondary);
+  }
+  .node-card .ping {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .node-card .ping .ms {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--green);
+    letter-spacing: -0.02em;
+  }
+  .node-card .ping .ms.mid { color: var(--orange); }
+  .node-card .ping .ms.bad { color: var(--red); }
+  .node-card .ping .lbl {
+    font-size: 11px;
+    color: var(--secondary);
+  }
+  .more-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--fill);
+    display: grid;
+    place-items: center;
+    color: var(--secondary);
+    font-size: 16px;
+    flex-shrink: 0;
+    border: none;
+    cursor: pointer;
+  }
+
+  /* context menu mock */
+  .ctx-menu {
+    position: absolute;
+    right: 24px;
+    top: 280px;
+    width: 220px;
+    background: rgba(255,255,255,0.86);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border-radius: 14px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.22), 0 0 0 0.5px rgba(0,0,0,0.06);
+    overflow: hidden;
+    z-index: 70;
+    animation: popIn 220ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.88); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .ctx-menu .mi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    font-size: 17px;
+  }
+  .ctx-menu .mi + .mi {
+    border-top: 0.5px solid var(--separator);
+  }
+  .ctx-menu .mi.danger { color: var(--red); }
+  .ctx-menu .mi .sym { color: var(--secondary); font-size: 16px; }
+  .ctx-menu .mi.danger .sym { color: var(--red); }
+
+  /* sheet mock */
+  .sheet-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.28);
+    z-index: 55;
+  }
+  .sheet {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: rgba(242,242,247,0.96);
+    backdrop-filter: blur(40px);
+    border-radius: 14px 14px 0 0;
+    padding: 8px 16px 34px;
+    z-index: 56;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.15);
+  }
+  .sheet .grabber {
+    width: 36px;
+    height: 5px;
+    background: rgba(60,60,67,0.3);
+    border-radius: 3px;
+    margin: 4px auto 16px;
+  }
+  .sheet h3 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .sheet .sheet-sub {
+    text-align: center;
+    font-size: 13px;
+    color: var(--secondary);
+    margin-bottom: 16px;
+  }
+
+  /* privilege diagnostic redesigned */
+  .status-hero {
+    border-radius: var(--radius-lg);
+    padding: 18px 16px;
+    background: linear-gradient(135deg, rgba(255,159,10,0.18), rgba(255,159,10,0.06));
+    border: 0.5px solid rgba(255,159,10,0.25);
+  }
+  .status-hero.ok {
+    background: linear-gradient(135deg, rgba(52,199,89,0.18), rgba(52,199,89,0.06));
+    border-color: rgba(52,199,89,0.25);
+  }
+  .status-hero .pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #c46a00;
+    background: rgba(255,159,10,0.18);
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .status-hero.ok .pill {
+    color: #1b7a45;
+    background: rgba(52,199,89,0.18);
+  }
+  .status-hero .t {
+    font-size: 17px;
+    font-weight: 600;
+    margin-top: 8px;
+    letter-spacing: -0.01em;
+  }
+  .status-hero .d {
+    font-size: 13px;
+    color: var(--secondary);
+    margin-top: 4px;
+  }
+  .pill-chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .pill-chip.ok { background: rgba(52,199,89,0.15); color: #1b7a45; }
+  .pill-chip.warn { background: rgba(255,159,10,0.15); color: #9a6b00; }
+  .pill-chip.fail { background: rgba(255,59,48,0.12); color: #c41e16; }
+
+  /* dark phone variant */
+  .phone.dark .phone-inner {
+    background: #000;
+    color: #f5f5f7;
+  }
+  .phone.dark .prop-scroll {
+    background: #000;
+  }
+  .phone.dark .metric-tile,
+  .phone.dark .metric-inline,
+  .phone.dark .group,
+  .phone.dark .node-card {
+    background: #1c1c1e;
+  }
+  .phone.dark .status-title h1 { color: #f5f5f7; }
+  .phone.dark .status-title .eyebrow,
+  .phone.dark .status-title .meta,
+  .phone.dark .metric-inline .ml,
+  .phone.dark .footer-note { color: #98989f; }
+  .phone.dark .metric-inline .mv { color: #f5f5f7; }
+  .phone.dark .metric-inline .cell + .cell::before { background: rgba(84,84,88,0.65); }
+  .phone.dark .ios-switch { background: rgba(120,120,128,0.36); }
+  .phone.dark .ios-switch.on { background: var(--green); }
+  .phone.dark .prop-nav {
+    background: rgba(0,0,0,0.72);
+    border-bottom-color: rgba(84,84,88,0.45);
+  }
+  .phone.dark .prop-tabbar {
+    background: rgba(28,28,30,0.82);
+    border-top-color: rgba(84,84,88,0.45);
+  }
+  .phone.dark .home-ind { background: #fff; opacity: 0.3; }
+  .phone.dark .segmented { background: rgba(120,120,128,0.24); }
+  .phone.dark .segmented button.active { background: #636366; color: #fff; }
+  .phone.dark .search-field { background: rgba(120,120,128,0.24); }
+  .phone.dark .row + .row::before { background: rgba(84,84,88,0.65); }
+  .phone.dark .more-btn { background: rgba(120,120,128,0.24); }
+  .phone.dark .metric-tile .ml,
+  .phone.dark .row .subtitle,
+  .phone.dark .row .value,
+  .phone.dark .node-card .submeta,
+  .phone.dark .node-card .ping .lbl,
+  .phone.dark .group-header,
+  .phone.dark .prop-large-title .subline { color: #98989f; }
+  .phone.dark .prop-large-title,
+  .phone.dark .row .title,
+  .phone.dark .metric-tile .mv,
+  .phone.dark .node-card .n { color: #f5f5f7; }
+  .phone.dark .prop-scroll {
+    background: #000;
+  }
+
+  /* comparison callouts */
+  .callouts {
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-top: 40px;
+  }
+  .callout {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .callout .num {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--orange);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .callout h4 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 4px 0 6px;
+  }
+  .callout p {
+    font-size: 13px;
+    color: #a1a1a6;
+    line-height: 1.5;
+  }
+
+  /* principles table */
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  .matrix th, .matrix td {
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    vertical-align: top;
+  }
+  .matrix th {
+    color: #8e8e93;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .matrix td:first-child { color: #fff; font-weight: 500; white-space: nowrap; }
+  .matrix .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .dot.g { background: var(--green); }
+  .dot.y { background: var(--orange); }
+  .dot.r { background: var(--red); }
+
+  .footer {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 32px 80px;
+    color: #636366;
+    font-size: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .callouts { max-width: 100%; padding-top: 0; }
+    .phone { transform: scale(0.92); transform-origin: top center; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="eyebrow">Apple Design Review · v2rayNG</div>
+  <h1>像系统设置一样冷静，<br>而不是像 VPN 广告一样用力</h1>
+  <p class="lead">
+    基于 WWDC 设计原则审查当前首页、节点列表、底部导航与诊断对话框。
+    方向不是更大的电源钮，也不是蓝绿渐变英雄区，而是 iOS 设置 / 系统 VPN 的语法：
+    大标题、inset 分组、系统开关、次要信息退后。状态机已经成熟，缺的是克制的呈现。
+  </p>
+  <div class="score-row">
+    <div class="score-pill good"><strong>结构</strong> 7/10 · 首页信息分层清晰</div>
+    <div class="score-pill warn"><strong>气质</strong> 4/10 · 描边卡片偏工具面板</div>
+    <div class="score-pill bad"><strong>动效与打断</strong> 2/10 · 几乎无 spring / 手势</div>
+    <div class="score-pill warn"><strong>材质与深度</strong> 4/10 · 无 blur、无分层</div>
+    <div class="score-pill good"><strong>文案与状态</strong> 8/10 · Connecting/Running 语义完整</div>
+  </div>
+</header>
+
+<!-- ════════ FINDINGS ════════ -->
+<section>
+  <h2>审查结论 · 按原则</h2>
+  <p class="sub">下列问题按优先级排列。每条对应 Apple 设计原则中的具体条款，并指向下方效果图中的改法。</p>
+
+  <div class="findings">
+    <article class="finding">
+      <span class="tag p1">P0 · 清晰与熟悉</span>
+      <h3>连接被做成「工具面板」，而不是系统级状态页</h3>
+      <p>
+        当前首页是描边卡片堆叠 + 表单 Switch，读起来像设置页草稿。
+        优雅的方向不是更大的按钮，而是 iOS 设置 / 系统 VPN 的语法：
+        大标题状态、分组列表、系统开关、次要信息退后。
+        避免圆钮 ON/OFF、渐变英雄区、国旗选服条——那些是廉价 VPN 的识别符。
+      </p>
+      <div class="principle">Familiarity · Simplicity · Craft</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag p1">P0 · 反馈</span>
+      <h3>Connecting / Running 几乎只改文字与描边色</h3>
+      <p>
+        <code>bg_home_status_card_running</code> 只是浅绿底 + 绿描边；
+        开关本身没有 scale、没有 spring settle、没有 haptics。
+        连接是高风险异步任务，却缺少「进行中」的连续反馈与可中断感。
+      </p>
+      <div class="principle">Response · Behavior over animation · Multimodal</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag p1">P0 · 简化</span>
+      <h3>节点行永久露出 分享 / 编辑 / 删除 三个图标</h3>
+      <p>
+        <code>item_recycler_main</code> 把次要操作钉在主列表上，挤压名称与延迟，
+        视觉噪音高，误触面大。iOS 做法是：主行只保留选择与延迟；
+        次要操作进「…」或长按 Context Menu / 左滑。
+      </p>
+      <div class="principle">Simplicity · Purpose · Agency</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag p2">P1 · 材质</span>
+      <h3>卡片全靠 1dp 描边，无层级与模糊</h3>
+      <p>
+        状态卡、指标卡、模式卡、节点卡都是
+        <code>stroke + radius</code>。底部导航不透明 elevation 8dp。
+        结果是「表格式」而不是「浮层式」——内容无法在 chrome 下滚动，
+        也没有 scroll edge 渐隐。
+      </p>
+      <div class="principle">Materials &amp; depth · Familiarity</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag p2">P1 · 空间一致性</span>
+      <h3>模式切换与节点跳转缺少源锚定</h3>
+      <p>
+        模式用 OutlinedButton ToggleGroup，视觉重量与「连接」主任务抢戏。
+        点「当前节点」跳转订阅 Tab，没有从卡片生长出的 sheet / 过渡，
+        空间关系断裂（If it disappears one way, it should reappear the same way）。
+      </p>
+      <div class="principle">Spatial consistency · Hint in gesture direction</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag p2">P1 · 手势</span>
+      <h3>列表无 spring、无 rubber-band 语义、无上下文菜单</h3>
+      <p>
+        节点列表是标准 RecyclerView + 描边 item。拖拽排序存在（ItemTouchHelper），
+        但缺少松开时的 velocity handoff；没有长按菜单，没有左滑归档式操作。
+      </p>
+      <div class="principle">Interruptibility · Velocity handoff · Rubber-banding</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag p2">P1 · 版式</span>
+      <h3>字阶混用 Material3 与 AppCompat，tracking 未按字号调整</h3>
+      <p>
+        首页用 Material3 Headline/Body；节点行用
+        <code>TextAppearance.AppCompat.Small</code> + 硬编码 11–12sp。
+        大标题缺少负 tracking；小字未加正 tracking。层次靠 bold 堆叠而非
+        weight + size + leading 的组合。
+      </p>
+      <div class="principle">Typography · Craft</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag p3">P2 · 安全与代理</span>
+      <h3>诊断对话框信息密度高，但缺少「下一步做什么」</h3>
+      <p>
+        HideVPN 自检卡片状态分层不错（pill / section），
+        但结论与行动（重试、打开模块、复制日志）距离远。
+        Agency：给选择，不要只给原始数据。
+      </p>
+      <div class="principle">Agency · Responsibility · Clarity</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag ok">保留</span>
+      <h3>状态机语义已经扎实</h3>
+      <p>
+        Stopped / Connecting / Running / Unreachable / Reconnecting 与
+        stickyRunning、超时、自动测通，说明后端状态模型成熟。
+        设计债主要在「如何呈现」而非「是否知道状态」。
+      </p>
+      <div class="principle">Purpose · Feedback kinds</div>
+    </article>
+
+    <article class="finding">
+      <span class="tag ok">保留</span>
+      <h3>四 Tab 信息架构合理</h3>
+      <p>
+        首页 / 订阅 / 路由 / 更多，符合「主任务 + 资源 + 策略 + 设置」。
+        不建议再加第五 Tab；建议把「测全部 / 管理订阅」沉到订阅页工具栏。
+      </p>
+      <div class="principle">Wayfinding · Familiarity</div>
+    </article>
+  </div>
+</section>
+
+<!-- ════════ HOME COMPARISON ════════ -->
+<section>
+  <h2>效果图 1 · 首页（已停止）</h2>
+  <p class="sub">左：当前 UI。右：iOS 设置语法——大标题状态、系统开关行、inset 分组、指标一行三列。没有电源钮、没有渐变英雄区、没有 ON/OFF 圆盘。</p>
+
+  <div class="stage">
+    <!-- CURRENT stopped -->
+    <div class="phone-wrap">
+      <div class="phone-label">当前 · 已停止</div>
+      <div class="phone">
+        <div class="phone-inner">
+          <div class="status-bar">
+            <span>9:41</span>
+            <span class="icons">●●● ▮▮▮ 🔋</span>
+          </div>
+          <div class="cur-toolbar">
+            <div class="title">v2rayNG</div>
+            <div class="actions">⌕ ＋</div>
+          </div>
+          <div class="cur-scroll">
+            <div class="cur-card">
+              <div class="cur-row">
+                <div>
+                  <div class="label">连接状态</div>
+                  <div class="headline">已停止</div>
+                  <div class="link">点按测试</div>
+                </div>
+                <div>
+                  <div class="cur-switch"></div>
+                  <div class="cur-switch-cap">已停止</div>
+                </div>
+              </div>
+              <div class="cur-metrics">
+                <div class="cur-metric">
+                  <div class="m-label">地区</div>
+                  <div class="m-val">—</div>
+                </div>
+                <div class="cur-metric">
+                  <div class="m-label">近 24h</div>
+                  <div class="m-val">0 B</div>
+                </div>
+              </div>
+            </div>
+            <div class="cur-mode">
+              <div class="label">模式</div>
+              <div class="cur-toggle">
+                <span>仅代理</span>
+                <span class="active">VPN</span>
+              </div>
+              <div class="cur-hint">系统级隧道 · 兼容性最好</div>
+            </div>
+            <div class="cur-node">
+              <div class="label">当前节点</div>
+              <div class="name">HK-01 · Edge</div>
+              <div class="hint">请在「订阅」页切换节点</div>
+            </div>
+          </div>
+          <div class="cur-bottom">
+            <div class="tab active"><div class="ico">⌂</div>首页</div>
+            <div class="tab"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico"> cons</div>路由</div>
+            <div class="tab"><div class="ico">⋯</div>更多</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROPOSED stopped -->
+    <div class="phone-wrap">
+      <div class="phone-label accent">建议 · 设置式</div>
+      <div class="phone">
+        <div class="phone-inner">
+          <div class="dynamic-island"></div>
+          <div class="status-bar">
+            <span>9:41</span>
+            <span class="icons">●●● ▮▮▮ 🔋</span>
+          </div>
+          <div class="prop-scroll" style="padding-top: 8px;">
+            <div class="status-title">
+              <div class="eyebrow">连接</div>
+              <h1>未连接</h1>
+              <div class="meta">系统 VPN · 准备就绪</div>
+            </div>
+
+            <div class="group">
+              <div class="row tall">
+                <div class="leading-dot">
+                  <div class="status-dot"></div>
+                  <div class="body">
+                    <div class="title semibold">VPN</div>
+                    <div class="subtitle">未连接</div>
+                  </div>
+                </div>
+                <div class="ios-switch" aria-label="连接开关"></div>
+              </div>
+            </div>
+            <div class="footer-note">开启后将通过所选节点建立系统隧道。</div>
+
+            <div class="group-header">状态</div>
+            <div class="metric-inline">
+              <div class="cell">
+                <div class="ml">地区</div>
+                <div class="mv dim">—</div>
+              </div>
+              <div class="cell">
+                <div class="ml">延迟</div>
+                <div class="mv dim">—</div>
+              </div>
+              <div class="cell">
+                <div class="ml">近 24h</div>
+                <div class="mv">0 B</div>
+              </div>
+            </div>
+
+            <div class="group-header">模式</div>
+            <div class="group">
+              <div class="row">
+                <div class="body" style="flex:1">
+                  <div class="segmented" style="width:100%">
+                    <button>仅代理</button>
+                    <button class="active">VPN</button>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="body">
+                  <div class="title">系统级隧道</div>
+                  <div class="subtitle">兼容性最好 · 切换会短暂重连</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="group-header">节点</div>
+            <div class="group">
+              <div class="row pressable">
+                <div class="icon-tile orange">⌘</div>
+                <div class="body">
+                  <div class="title">HK-01 · Edge</div>
+                  <div class="subtitle">VLESS · 订阅 A</div>
+                </div>
+                <div class="value">更换</div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="prop-tabbar">
+            <div class="tab active"><div class="ico">⌂</div>首页</div>
+            <div class="tab"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⚙</div>更多</div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callouts">
+      <div class="callout">
+        <div class="num">01 · Familiarity</div>
+        <h4>系统设置的语法</h4>
+        <p>大标题写状态，不是产品 slogan。主操作是系统开关，不是圆形电源。用户不会觉得在用「那种 VPN」。</p>
+      </div>
+      <div class="callout">
+        <div class="num">02 · Hierarchy</div>
+        <h4>状态在上，细节退后</h4>
+        <p>「未连接」是页面的唯一大字。模式、节点、指标都是 inset 分组，不与主状态抢戏。</p>
+      </div>
+      <div class="callout">
+        <div class="num">03 · Craft</div>
+        <h4>没有戏剧性装饰</h4>
+        <p>无渐变英雄区、无国旗条、无 ON/OFF 圆盘。绿色只出现在「已连接」的小圆点与开关上。</p>
+      </div>
+      <div class="callout">
+        <div class="num">04 · Metrics</div>
+        <h4>一行三列，安静并列</h4>
+        <p>地区 / 延迟 / 24h 用分隔线并排，不是三张描边小卡。未连接时数值用 secondary 灰色。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ HOME RUNNING ════════ -->
+<section>
+  <h2>效果图 2 · 首页（运行中）</h2>
+  <p class="sub">运行态不靠整屏变色。大标题改为「已连接」，开关变绿，状态点亮，副标题显示时长与测通结果。Connecting 时标题写「连接中…」，开关仍可关掉以取消。</p>
+
+  <div class="stage">
+    <div class="phone-wrap">
+      <div class="phone-label">当前 · 运行中</div>
+      <div class="phone">
+        <div class="phone-inner">
+          <div class="status-bar"><span>9:41</span><span class="icons">●●● ▮▮▮ 🔋</span></div>
+          <div class="cur-toolbar"><div class="title">v2rayNG</div><div class="actions">⌕ ＋</div></div>
+          <div class="cur-scroll">
+            <div class="cur-card running">
+              <div class="cur-row">
+                <div>
+                  <div class="label">连接状态</div>
+                  <div class="headline">运行中</div>
+                  <div class="link">外网正常 · 点状态可复测</div>
+                </div>
+                <div>
+                  <div class="cur-switch on"></div>
+                  <div class="cur-switch-cap">运行中</div>
+                </div>
+              </div>
+              <div class="cur-metrics">
+                <div class="cur-metric"><div class="m-label">地区</div><div class="m-val">Hong Kong</div></div>
+                <div class="cur-metric"><div class="m-label">近 24h</div><div class="m-val">1.2 GB</div></div>
+              </div>
+            </div>
+            <div class="cur-mode">
+              <div class="label">模式</div>
+              <div class="cur-toggle"><span>仅代理</span><span class="active">VPN</span></div>
+              <div class="cur-hint">系统级隧道 · 兼容性最好</div>
+            </div>
+            <div class="cur-node">
+              <div class="label">当前节点</div>
+              <div class="name">HK-01 · Edge</div>
+              <div class="hint">请在「订阅」页切换节点</div>
+            </div>
+          </div>
+          <div class="cur-bottom">
+            <div class="tab active"><div class="ico">⌂</div>首页</div>
+            <div class="tab"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⋯</div>更多</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-label accent">建议 · 已连接</div>
+      <div class="phone">
+        <div class="phone-inner">
+          <div class="dynamic-island"></div>
+          <div class="status-bar">
+            <span>9:41</span>
+            <span class="icons">●●● ▮▮▮ 🔋</span>
+          </div>
+          <div class="prop-scroll" style="padding-top: 8px;">
+            <div class="status-title">
+              <div class="eyebrow">连接</div>
+              <h1>已连接</h1>
+              <div class="meta">00:42:18 · <span class="link">外网正常</span></div>
+            </div>
+
+            <div class="group">
+              <div class="row tall">
+                <div class="leading-dot">
+                  <div class="status-dot on"></div>
+                  <div class="body">
+                    <div class="title semibold">VPN</div>
+                    <div class="subtitle">已连接 · Hong Kong</div>
+                  </div>
+                </div>
+                <div class="ios-switch on" aria-label="连接开关"></div>
+              </div>
+            </div>
+            <div class="footer-note">点状态可复测连通性。关闭开关即断开。</div>
+
+            <div class="group-header">状态</div>
+            <div class="metric-inline">
+              <div class="cell">
+                <div class="ml">地区</div>
+                <div class="mv">Hong Kong</div>
+              </div>
+              <div class="cell">
+                <div class="ml">延迟</div>
+                <div class="mv green">48 ms</div>
+              </div>
+              <div class="cell">
+                <div class="ml">近 24h</div>
+                <div class="mv">1.2 GB</div>
+              </div>
+            </div>
+
+            <div class="group-header">模式</div>
+            <div class="group">
+              <div class="row">
+                <div class="body" style="flex:1">
+                  <div class="segmented" style="width:100%">
+                    <button>仅代理</button>
+                    <button class="active">VPN</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="group-header">节点</div>
+            <div class="group">
+              <div class="row pressable">
+                <div class="icon-tile orange">⌘</div>
+                <div class="body">
+                  <div class="title">HK-01 · Edge</div>
+                  <div class="subtitle">VLESS · 上传 2.1 MB/s</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="prop-tabbar">
+            <div class="tab active"><div class="ico">⌂</div>首页</div>
+            <div class="tab"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⚙</div>更多</div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callouts">
+      <div class="callout">
+        <div class="num">05 · Feedback</div>
+        <h4>状态用字与小点，不靠整屏变色</h4>
+        <p>大标题「已连接」、绿点、绿开关。没有蓝紫→绿的英雄区切换。Connecting 时标题变「连接中…」，开关仍可关。</p>
+      </div>
+      <div class="callout">
+        <div class="num">06 · Duration</div>
+        <h4>时长进副标题</h4>
+        <p>00:42:18 与「外网正常」并排在 meta 行，不做成巨大计时器。测通是蓝色文字链，贴在因果点上。</p>
+      </div>
+      <div class="callout">
+        <div class="num">07 · Quiet metrics</div>
+        <h4>数字有，但不喧哗</h4>
+        <p>延迟用 tabular nums 与绿色；上下行若需要可放节点副标题，不单独做 Download/Upload 三格广告牌。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ NODE LIST ════════ -->
+<section>
+  <h2>效果图 3 · 订阅节点列表</h2>
+  <p class="sub">压缩行内动作，把分享/编辑/删除收进「…」与长按菜单；选中用描边光环而非背景染色；延迟用 tabular nums。</p>
+
+  <div class="stage">
+    <div class="phone-wrap">
+      <div class="phone-label">当前 · 节点列表</div>
+      <div class="phone">
+        <div class="phone-inner">
+          <div class="status-bar"><span>9:41</span><span class="icons">●●● ▮▮▮ 🔋</span></div>
+          <div class="cur-toolbar">
+            <div class="title">订阅</div>
+            <div class="actions">⌕ ＋</div>
+          </div>
+          <div class="cur-list">
+            <div class="cur-node-item sel">
+              <div class="ind"></div>
+              <div class="body">
+                <div class="n">HK-01 · Edge</div>
+                <div class="meta">VLESS</div>
+              </div>
+              <div class="ping">48ms</div>
+              <div class="acts">↗ ✎ 🗑</div>
+            </div>
+            <div class="cur-node-item">
+              <div class="ind"></div>
+              <div class="body">
+                <div class="n">JP-Tokyo-03</div>
+                <div class="meta">VLESS</div>
+              </div>
+              <div class="ping">86ms</div>
+              <div class="acts">↗ ✎ 🗑</div>
+            </div>
+            <div class="cur-node-item">
+              <div class="ind"></div>
+              <div class="body">
+                <div class="n">US-LAX-Premium-Long-Name</div>
+                <div class="meta">SS</div>
+              </div>
+              <div class="ping" style="color:#f97910">214ms</div>
+              <div class="acts">↗ ✎ 🗑</div>
+            </div>
+            <div class="cur-node-item">
+              <div class="ind"></div>
+              <div class="body">
+                <div class="n">SG-02</div>
+                <div class="meta">Trojan</div>
+              </div>
+              <div class="ping" style="color:#FF0099">timeout</div>
+              <div class="acts">↗ ✎ 🗑</div>
+            </div>
+            <div class="cur-node-item">
+              <div class="ind"></div>
+              <div class="body">
+                <div class="n">TW-01 · Stream</div>
+                <div class="meta">VLESS</div>
+              </div>
+              <div class="ping">62ms</div>
+              <div class="acts">↗ ✎ 🗑</div>
+            </div>
+          </div>
+          <div class="cur-bottom">
+            <div class="tab"><div class="ico">⌂</div>首页</div>
+            <div class="tab active"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⋯</div>更多</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-label accent">建议 · 节点列表 + 菜单</div>
+      <div class="phone">
+        <div class="phone-inner">
+          <div class="dynamic-island"></div>
+          <div class="status-bar"><span>9:41</span><span class="icons">●●● ▮▮▮ 🔋</span></div>
+          <div class="prop-nav">
+            <button class="nav-btn">订阅组 ▾</button>
+            <div class="nav-title">节点</div>
+            <div class="nav-icons">＋</div>
+          </div>
+          <div class="prop-list">
+            <div class="search-field">⌕ <span>搜索节点</span></div>
+
+            <div class="node-card selected">
+              <div class="check">✓</div>
+              <div class="body">
+                <div class="n">HK-01 · Edge</div>
+                <div class="meta">
+                  <span class="badge vless">VLESS</span>
+                  <span class="submeta">订阅 A</span>
+                </div>
+              </div>
+              <div class="ping">
+                <div class="ms">48</div>
+                <div class="lbl">ms</div>
+              </div>
+              <button class="more-btn">···</button>
+            </div>
+
+            <div class="node-card">
+              <div class="check"></div>
+              <div class="body">
+                <div class="n">JP-Tokyo-03</div>
+                <div class="meta">
+                  <span class="badge vless">VLESS</span>
+                  <span class="submeta">订阅 A</span>
+                </div>
+              </div>
+              <div class="ping">
+                <div class="ms">86</div>
+                <div class="lbl">ms</div>
+              </div>
+              <button class="more-btn">···</button>
+            </div>
+
+            <div class="node-card">
+              <div class="check"></div>
+              <div class="body">
+                <div class="n">US-LAX-Premium-Long-Name</div>
+                <div class="meta">
+                  <span class="badge ss">SS</span>
+                  <span class="submeta">订阅 B</span>
+                </div>
+              </div>
+              <div class="ping">
+                <div class="ms mid">214</div>
+                <div class="lbl">ms</div>
+              </div>
+              <button class="more-btn">···</button>
+            </div>
+
+            <div class="node-card">
+              <div class="check"></div>
+              <div class="body">
+                <div class="n">SG-02</div>
+                <div class="meta">
+                  <span class="badge">Trojan</span>
+                  <span class="submeta">订阅 A</span>
+                </div>
+              </div>
+              <div class="ping">
+                <div class="ms bad">—</div>
+                <div class="lbl">超时</div>
+              </div>
+              <button class="more-btn">···</button>
+            </div>
+
+            <div class="node-card">
+              <div class="check"></div>
+              <div class="body">
+                <div class="n">TW-01 · Stream</div>
+                <div class="meta">
+                  <span class="badge vless">VLESS</span>
+                  <span class="submeta">订阅 A</span>
+                </div>
+              </div>
+              <div class="ping">
+                <div class="ms">62</div>
+                <div class="lbl">ms</div>
+              </div>
+              <button class="more-btn">···</button>
+            </div>
+          </div>
+
+          <!-- context menu -->
+          <div class="ctx-menu">
+            <div class="mi">分享二维码 <span class="sym">□↗</span></div>
+            <div class="mi">编辑配置 <span class="sym">✎</span></div>
+            <div class="mi">复制链接 <span class="sym">❐</span></div>
+            <div class="mi danger">删除 <span class="sym">🗑</span></div>
+          </div>
+
+          <div class="prop-tabbar">
+            <div class="tab"><div class="ico">⌂</div>首页</div>
+            <div class="tab active"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⚙</div>更多</div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callouts">
+      <div class="callout">
+        <div class="num">08 · Simplicity</div>
+        <h4>一行只做一件事：选中</h4>
+        <p>点整行 = 选中并可选自动连接。分享/编辑/删除进 ··· 与长按 UIMenu，命中区更大、误删更少。</p>
+      </div>
+      <div class="callout">
+        <div class="num">09 · Selection</div>
+        <h4>选中用环，不用脏底色</h4>
+        <p>2pt 橙色描边 + 勾选圆，比 <code>color_home_node_selected_bg</code> 半透明橙底更干净，暗色模式也稳定。</p>
+      </div>
+      <div class="callout">
+        <div class="num">10 · Gesture</div>
+        <h4>长按 = 上下文菜单</h4>
+        <p>对齐 iOS 系统列表：长按弹出毛玻璃菜单，可打断、可滑出取消。左滑可保留「删除」快捷。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ DIAGNOSTIC SHEET ════════ -->
+<section>
+  <h2>效果图 4 · HideVPN 诊断（Sheet）</h2>
+  <p class="sub">从 Alert 式长滚动改为可拖拽 Bottom Sheet；顶部结论 + 行动按钮，细节折叠在分组里。</p>
+
+  <div class="stage">
+    <div class="phone-wrap">
+      <div class="phone-label accent">建议 · 诊断 Sheet</div>
+      <div class="phone">
+        <div class="phone-inner">
+          <div class="dynamic-island"></div>
+          <div class="status-bar"><span>9:41</span><span class="icons">●●● ▮▮▮ 🔋</span></div>
+          <div class="prop-scroll" style="padding-top: 8px; filter: blur(2px); opacity: 0.55;">
+            <div class="prop-large-title">更多</div>
+            <div class="group">
+              <div class="row"><div class="icon-tile indigo">🛡</div><div class="body"><div class="title">特权增强</div></div><div class="chev">›</div></div>
+              <div class="row"><div class="icon-tile blue">↑</div><div class="body"><div class="title">检查更新</div></div><div class="chev">›</div></div>
+            </div>
+          </div>
+
+          <div class="sheet-scrim"></div>
+          <div class="sheet">
+            <div class="grabber"></div>
+            <h3>隐藏检测</h3>
+            <div class="sheet-sub">应用侧正常 · 内核网卡名仍可见</div>
+
+            <div class="status-hero">
+              <span class="pill">部分通过</span>
+              <div class="t">应用侧隐藏正常 — 仍可见原生网卡名（预期）</div>
+              <div class="d">改名已停用，不等于隐藏失败</div>
+            </div>
+
+            <div class="group-header" style="margin-top:16px">检测结果</div>
+            <div class="group">
+              <div class="row">
+                <div class="body">
+                  <div class="title">Java API</div>
+                  <div class="subtitle">未检测到敏感特征</div>
+                </div>
+                <span class="pill-chip ok">干净</span>
+              </div>
+              <div class="row">
+                <div class="body">
+                  <div class="title">Native 网卡</div>
+                  <div class="subtitle">可见 tun0 · 属预期</div>
+                </div>
+                <span class="pill-chip warn">可见</span>
+              </div>
+            </div>
+
+            <div class="group-header" style="margin-top:16px">环境</div>
+            <div class="group">
+              <div class="row"><div class="body"><div class="title">模块</div></div><div class="value">已激活</div></div>
+              <div class="row"><div class="body"><div class="title">目标应用</div></div><div class="value">19 · 含本应用</div></div>
+              <div class="row"><div class="body"><div class="title">VPN</div></div><div class="value">运行中</div></div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:18px;">
+              <button style="flex:1; height:50px; border:none; border-radius:12px; background:var(--fill); font-family:inherit; font-size:17px; font-weight:600; cursor:pointer;">复制报告</button>
+              <button style="flex:1; height:50px; border:none; border-radius:12px; background:var(--orange); color:#fff; font-family:inherit; font-size:17px; font-weight:600; cursor:pointer;">重新检测</button>
+            </div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callouts">
+      <div class="callout">
+        <div class="num">11 · Agency</div>
+        <h4>结论在上，行动在下</h4>
+        <p>用户先看到「部分通过」和含义，再决定复制报告或重测。原始 ifaces 字符串默认折叠。</p>
+      </div>
+      <div class="callout">
+        <div class="num">12 · Sheet physics</div>
+        <h4>可拖拽、可打断</h4>
+        <div style="font-size:13px;color:#a1a1a6;line-height:1.5">
+          damping 0.8 / response 0.3；下拉超界 rubber-band；松手按 velocity 投影决定关闭或回弹。
+        </div>
+      </div>
+      <div class="callout">
+        <div class="num">13 · Scrim</div>
+        <h4>模态才压暗，非阻塞不压暗</h4>
+        <p>诊断是模态任务 → 28% scrim + 背景轻微缩放。设置内的并行面板则只靠材质分离。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ DARK ════════ -->
+<section>
+  <h2>效果图 5 · 深色模式</h2>
+  <p class="sub">纯黑底 + elevated #1c1c1e 分组。开关仍是系统绿，大标题与分组列表保持与浅色相同的冷静语法——不引入渐变英雄区。</p>
+
+  <div class="stage">
+    <div class="phone-wrap">
+      <div class="phone-label accent">建议 · Dark · 已连接</div>
+      <div class="phone dark">
+        <div class="phone-inner">
+          <div class="dynamic-island"></div>
+          <div class="status-bar" style="color:#f5f5f7"><span>9:41</span><span class="icons">●●● ▮▮▮ 🔋</span></div>
+          <div class="prop-scroll" style="padding-top: 8px;">
+            <div class="status-title">
+              <div class="eyebrow">连接</div>
+              <h1>已连接</h1>
+              <div class="meta">00:42:18 · <span class="link">外网正常</span></div>
+            </div>
+
+            <div class="group">
+              <div class="row tall">
+                <div class="leading-dot">
+                  <div class="status-dot on"></div>
+                  <div class="body">
+                    <div class="title semibold">VPN</div>
+                    <div class="subtitle">已连接 · Hong Kong</div>
+                  </div>
+                </div>
+                <div class="ios-switch on"></div>
+              </div>
+            </div>
+
+            <div class="group-header">状态</div>
+            <div class="metric-inline">
+              <div class="cell">
+                <div class="ml">地区</div>
+                <div class="mv">Hong Kong</div>
+              </div>
+              <div class="cell">
+                <div class="ml">延迟</div>
+                <div class="mv green">48 ms</div>
+              </div>
+              <div class="cell">
+                <div class="ml">近 24h</div>
+                <div class="mv">1.2 GB</div>
+              </div>
+            </div>
+
+            <div class="group-header">节点</div>
+            <div class="group">
+              <div class="row pressable">
+                <div class="icon-tile orange">⌘</div>
+                <div class="body">
+                  <div class="title">HK-01 · Edge</div>
+                  <div class="subtitle">VLESS · 上传 2.1 MB/s</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+          <div class="prop-tabbar">
+            <div class="tab active"><div class="ico">⌂</div>首页</div>
+            <div class="tab"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⚙</div>更多</div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ MATRIX ════════ -->
+<section>
+  <h2>原则对照表</h2>
+  <p class="sub">当前实现 vs 建议改法，方便排期。</p>
+  <div style="overflow-x:auto; background:rgba(255,255,255,0.03); border-radius:16px; border:1px solid rgba(255,255,255,0.06);">
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>原则</th>
+          <th>当前</th>
+          <th>建议</th>
+          <th>优先</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Response</td>
+          <td>开关在 up 后改状态；Connecting 仅禁用控件</td>
+          <td>大标题写「连接中…」；开关始终可关以取消</td>
+          <td><span class="dot r"></span>P0</td>
+        </tr>
+        <tr>
+          <td>Familiarity / Craft</td>
+          <td>描边卡片堆叠，像工具面板</td>
+          <td>iOS 设置语法：大标题 + 系统开关 + inset 分组</td>
+          <td><span class="dot r"></span>P0</td>
+        </tr>
+        <tr>
+          <td>Interruptibility</td>
+          <td>启动过程中开关 disabled</td>
+          <td>允许反向手势取消；动画从 presentation value 起</td>
+          <td><span class="dot r"></span>P0</td>
+        </tr>
+        <tr>
+          <td>Springs / velocity</td>
+          <td>无 spring；无 velocity handoff</td>
+          <td>Motion / Dynamicanimation；sheet 投影落地</td>
+          <td><span class="dot y"></span>P1</td>
+        </tr>
+        <tr>
+          <td>Materials</td>
+          <td>1dp outline 卡片；不透明 bottom nav</td>
+          <td>surface + blur chrome；scroll-edge fade</td>
+          <td><span class="dot y"></span>P1</td>
+        </tr>
+        <tr>
+          <td>Simplicity</td>
+          <td>节点行 3 个常驻图标</td>
+          <td>··· + 长按菜单 + 左滑删除</td>
+          <td><span class="dot r"></span>P0</td>
+        </tr>
+        <tr>
+          <td>Spatial consistency</td>
+          <td>节点卡 → 硬切 Tab</td>
+          <td>从节点行 shared-element / sheet 选节点</td>
+          <td><span class="dot y"></span>P1</td>
+        </tr>
+        <tr>
+          <td>Typography</td>
+          <td>M3 + AppCompat 混用；固定 letter-spacing</td>
+          <td>统一 SF/系统字体阶；大字负 tracking</td>
+          <td><span class="dot y"></span>P1</td>
+        </tr>
+        <tr>
+          <td>Haptics</td>
+          <td>无</td>
+          <td>连接成功 light impact；失败 notification warning</td>
+          <td><span class="dot y"></span>P1</td>
+        </tr>
+        <tr>
+          <td>Reduced motion</td>
+          <td>未处理</td>
+          <td>prefers-reduced-motion 时改为交叉淡入</td>
+          <td><span class="dot g"></span>P2</td>
+        </tr>
+        <tr>
+          <td>State model</td>
+          <td>语义完整（Connecting/sticky…）</td>
+          <td>保留，仅改呈现层</td>
+          <td><span class="dot g"></span>保留</td>
+        </tr>
+        <tr>
+          <td>IA (4 tabs)</td>
+          <td>首页/订阅/路由/更多</td>
+          <td>保留；工具沉入各页导航栏</td>
+          <td><span class="dot g"></span>保留</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>落地建议（不改业务语义）</h2>
+  <p class="sub">可按三期推进，状态机与服务层保持不动。</p>
+  <div class="findings">
+    <article class="finding">
+      <span class="tag p1">Phase A · 1 周</span>
+      <h3>首页设置式重排 + 节点行瘦身</h3>
+      <p>
+        首页改为大标题状态 + 系统开关行 + inset 分组（模式/节点）；
+        去掉描边状态卡与表单式堆叠；节点行隐藏 share/edit/remove，改为 overflow；
+        指标一行三列补回延迟。不引入电源钮或渐变英雄区。
+      </p>
+    </article>
+    <article class="finding">
+      <span class="tag p2">Phase B · 1–2 周</span>
+      <h3>材质与分组</h3>
+      <p>
+        去掉描边卡片，改 surface + 轻 elevation；BottomNav 半透明；
+        模式改为 SegmentedButton（M3）或自定义 segmented；
+        诊断对话框改 Material BottomSheet。
+      </p>
+    </article>
+    <article class="finding">
+      <span class="tag p3">Phase C · 持续</span>
+      <h3>动效与触感</h3>
+      <p>
+        Dynamicanimation / Motion 弹簧；Connecting 可取消；
+        长按 Context Menu；haptic 成功/失败；
+        尊重系统「减少动态效果」。
+      </p>
+    </article>
+  </div>
+</section>
+
+<footer class="footer">
+  审查基于当前仓库 layout：
+  <code>fragment_home.xml</code> · <code>item_recycler_main.xml</code> · <code>activity_main.xml</code> ·
+  <code>dialog_privilege_self_test.xml</code> · <code>colors.xml</code> · <code>HomeFragment.kt</code>。<br/>
+  设计准则：Apple WWDC Designing Fluid Interfaces / Principles of Great Design · 本地 skill apple-design。<br/>
+  效果图为静态 HTML 示意，非可运行 Android UI。打开本文件即可对照查看。
+</footer>
+
+</body>
+</html>
