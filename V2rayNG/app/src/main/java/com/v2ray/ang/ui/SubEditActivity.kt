@@ -54,6 +54,7 @@ class SubEditActivity : BaseActivity() {
         binding.etRemarks.text = Utils.getEditable(subItem.remarks)
         binding.etUrl.text = Utils.getEditable(subItem.url)
         binding.etUserAgent.text = Utils.getEditable(subItem.userAgent)
+        binding.etRequestHeaders.text = Utils.getEditable(subItem.requestHeaders)
         binding.etFilter.text = Utils.getEditable(subItem.filter)
         binding.chkEnable.isChecked = subItem.enabled
         binding.autoUpdateCheck.isChecked = subItem.autoUpdate
@@ -70,6 +71,8 @@ class SubEditActivity : BaseActivity() {
     private fun clearServer(): Boolean {
         binding.etRemarks.text = null
         binding.etUrl.text = null
+        binding.etUserAgent.text = null
+        binding.etRequestHeaders.text = null
         binding.etFilter.text = null
         binding.chkEnable.isChecked = true
         binding.etUpdateInterval.text = null
@@ -118,6 +121,7 @@ class SubEditActivity : BaseActivity() {
         subItem.remarks = binding.etRemarks.text.toString()
         subItem.url = binding.etUrl.text.toString()
         subItem.userAgent = binding.etUserAgent.text.toString()
+        subItem.requestHeaders = binding.etRequestHeaders.text.toString().trim().ifEmpty { null }
         subItem.filter = binding.etFilter.text.toString()
         subItem.enabled = binding.chkEnable.isChecked
         subItem.autoUpdate = binding.autoUpdateCheck.isChecked

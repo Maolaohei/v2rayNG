@@ -370,6 +370,45 @@
     </PreferenceScreen>
 
     <PreferenceScreen
+        android:key="pref_screen_observatory"
+        android:title="@string/title_observatory_settings"
+        android:summary="@string/summary_settings_entry_observatory">
+        <PreferenceCategory android:title="@string/title_observatory_settings">
+            <EditTextPreference
+                android:key="pref_observatory_least_ping_interval"
+                android:defaultValue="3m"
+                android:summary="3m"
+                android:title="@string/title_pref_observatory_least_ping_interval" />
+
+            <EditTextPreference
+                android:key="pref_observatory_least_load_interval"
+                android:defaultValue="5m"
+                android:summary="5m"
+                android:title="@string/title_pref_observatory_least_load_interval" />
+
+            <ListPreference
+                android:defaultValue="HEAD"
+                android:entries="@array/observatory_least_load_method"
+                android:entryValues="@array/observatory_least_load_method"
+                android:key="pref_observatory_least_load_method"
+                android:summary="%s"
+                android:title="@string/title_pref_observatory_least_load_method" />
+
+            <EditTextPreference
+                android:key="pref_observatory_least_load_sampling"
+                android:defaultValue="2"
+                android:summary="2"
+                android:title="@string/title_pref_observatory_least_load_sampling" />
+
+            <EditTextPreference
+                android:key="pref_observatory_least_load_timeout"
+                android:defaultValue="30s"
+                android:summary="30s"
+                android:title="@string/title_pref_observatory_least_load_timeout" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen
         android:key="pref_screen_advanced"
         android:title="@string/title_advanced"
         android:summary="@string/summary_settings_entry_advanced">

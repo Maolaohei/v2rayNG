@@ -80,7 +80,8 @@
     </style>
 
     <!-- Preference list: inset card-like groups on page background -->
-    <style name="AppPreferenceTheme" parent="PreferenceThemeOverlay.v14.Material3">
+    <!-- preference-ktx only ships PreferenceThemeOverlay.v14.Material, not Material3. -->
+    <style name="AppPreferenceTheme" parent="PreferenceThemeOverlay.v14.Material">
         <item name="android:scrollbars">none</item>
         <item name="allowDividerAbove">false</item>
         <item name="allowDividerBelow">false</item>

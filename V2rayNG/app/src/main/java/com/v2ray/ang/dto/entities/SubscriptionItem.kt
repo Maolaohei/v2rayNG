@@ -13,5 +13,7 @@ data class SubscriptionItem(
     var filter: String? = null,
     var allowInsecureUrl: Boolean = false,
     var userAgent: String? = null,
+    /** Optional JSON object of custom HTTP headers for subscription fetch. */
+    var requestHeaders: String? = null,
 )
 

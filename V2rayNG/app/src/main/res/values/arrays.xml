@@ -223,6 +223,11 @@
     </string-array>
 
 
+    <string-array name="observatory_least_load_method" translatable="false">
+        <item>HEAD</item>
+        <item>GET</item>
+    </string-array>
+
     <string-array name="xposed_scope" translatable="false">
         <item>android</item>
         <item>system</item>

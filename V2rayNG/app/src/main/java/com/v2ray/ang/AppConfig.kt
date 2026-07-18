@@ -44,6 +44,11 @@ object AppConfig {
     const val PREF_FRAGMENT_LENGTH = "pref_fragment_length"
     const val PREF_FRAGMENT_INTERVAL = "pref_fragment_interval"
     const val PREF_FRAGMENT_MAXSPLIT = "pref_fragment_maxsplit"
+    const val PREF_OBSERVATORY_LEAST_PING_INTERVAL = "pref_observatory_least_ping_interval"
+    const val PREF_OBSERVATORY_LEAST_LOAD_INTERVAL = "pref_observatory_least_load_interval"
+    const val PREF_OBSERVATORY_LEAST_LOAD_METHOD = "pref_observatory_least_load_method"
+    const val PREF_OBSERVATORY_LEAST_LOAD_SAMPLING = "pref_observatory_least_load_sampling"
+    const val PREF_OBSERVATORY_LEAST_LOAD_TIMEOUT = "pref_observatory_least_load_timeout"
     const val SUBSCRIPTION_UPDATE_TASK_NAME = "subscription_updater"
     const val SUBSCRIPTION_MIN_INTERVAL_MINUTES = 15L
     const val PREF_SPEED_ENABLED = "pref_speed_enabled"
@@ -142,6 +147,11 @@ object AppConfig {
     const val TG_CHANNEL_URL = ""
     const val DELAY_TEST_URL = "https://www.gstatic.com/generate_204"
     const val DELAY_TEST_URL2 = "https://www.google.com/generate_204"
+    const val OBSERVATORY_LEAST_PING_INTERVAL = "3m"
+    const val OBSERVATORY_LEAST_LOAD_INTERVAL = "5m"
+    const val OBSERVATORY_LEAST_LOAD_METHOD = "HEAD"
+    const val OBSERVATORY_LEAST_LOAD_SAMPLING = "2"
+    const val OBSERVATORY_LEAST_LOAD_TIMEOUT = "30s"
 
     //    const val IP_API_URL = "https://speed.cloudflare.com/meta"
     const val IP_API_URL = "https://api.ip.sb/geoip"
@@ -212,6 +222,7 @@ object AppConfig {
     const val HYSTERIA = "hysteria://"
     const val HYSTERIA2 = "hysteria2://"
     const val HY2 = "hy2://"
+    const val V2RAYNFMTS = "v2rayn://"
 
     /** Give a good name to this, IDK*/
     const val VPN = "VPN"
@@ -357,4 +368,6 @@ object AppConfig {
         TAG_DIRECT,
         TAG_BLOCKED,
     )
+
+    val OBSERVATORY_DURATION_PATTERN = Regex("""[1-9]\d*(ms|s|m|h)""")
 }

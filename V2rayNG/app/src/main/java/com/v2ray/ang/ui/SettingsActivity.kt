@@ -246,10 +246,31 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
                             pref.summary = pref.text.orEmpty()
                         }
                         pref.setOnPreferenceChangeListener { p, newValue ->
-                            if (p.key == AppConfig.PREF_SOCKS_PASSWORD) {
-                                p.summary = if ((newValue as? String).isNullOrEmpty()) "" else "******"
-                            } else {
-                                p.summary = (newValue as? String).orEmpty()
+                            val text = (newValue as? String).orEmpty().trim()
+                            when (p.key) {
+                                AppConfig.PREF_SOCKS_PASSWORD -> {
+                                    p.summary = if (text.isEmpty()) "" else "******"
+                                }
+                                AppConfig.PREF_OBSERVATORY_LEAST_PING_INTERVAL,
+                                AppConfig.PREF_OBSERVATORY_LEAST_LOAD_INTERVAL,
+                                AppConfig.PREF_OBSERVATORY_LEAST_LOAD_TIMEOUT -> {
+                                    if (!AppConfig.OBSERVATORY_DURATION_PATTERN.matches(text)) {
+                                        context?.toastError(R.string.toast_invalid_observatory_duration)
+                                        return@setOnPreferenceChangeListener false
+                                    }
+                                    p.summary = text
+                                }
+                                AppConfig.PREF_OBSERVATORY_LEAST_LOAD_SAMPLING -> {
+                                    val sampling = text.toIntOrNull()?.takeIf { it > 0 }
+                                    if (sampling == null) {
+                                        context?.toastError(R.string.toast_invalid_observatory_sampling)
+                                        return@setOnPreferenceChangeListener false
+                                    }
+                                    p.summary = sampling.toString()
+                                }
+                                else -> {
+                                    p.summary = text
+                                }
                             }
                             true
                         }
