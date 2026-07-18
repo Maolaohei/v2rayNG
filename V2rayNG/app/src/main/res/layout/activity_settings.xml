@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
     android:fitsSystemWindows="true"
     android:orientation="vertical"
     tools:context=".ui.SettingsActivity">
@@ -11,6 +12,7 @@
         android:id="@+id/fragment_settings"
         android:name="com.v2ray.ang.ui.SettingsActivity$SettingsFragment"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:background="?android:attr/colorBackground" />
 
 </LinearLayout>

@@ -118,6 +118,25 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
             return parentFragment
         }
 
+        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+            super.onViewCreated(view, savedInstanceState)
+            // Gray page chrome so preference groups read as inset cards.
+            view.setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.md_theme_background))
+            listView?.apply {
+                setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.md_theme_background))
+                setPadding(
+                    resources.getDimensionPixelSize(R.dimen.padding_spacing_dp8),
+                    resources.getDimensionPixelSize(R.dimen.padding_spacing_dp8),
+                    resources.getDimensionPixelSize(R.dimen.padding_spacing_dp8),
+                    resources.getDimensionPixelSize(R.dimen.padding_spacing_dp16),
+                )
+                clipToPadding = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+            }
+            setDivider(null)
+            setDividerHeight(0)
+        }
+
         override fun onCreatePreferences(bundle: Bundle?, rootKey: String?) {
             // Use MMKV as the storage backend for all Preferences
             // This prevents inconsistencies between SharedPreferences and MMKV

@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>v2rayNG · 修复后代码复现图</title>
+<style>
+  :root {
+    --bg: #F2F2F7;
+    --surface: #FFFFFF;
+    --label: #1C1B1F;
+    --secondary: #636366;
+    --outline: #CAC4D0;
+    --orange: #f97910;
+    --green: #009966;
+    --radius: 16px;
+    --radius-node: 12px;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: #0b0b0f;
+    color: #f5f5f7;
+    padding: 48px 24px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 {
+    max-width: 1200px;
+    margin: 0 auto 8px;
+    font-size: 28px;
+    letter-spacing: -0.02em;
+  }
+  .lead {
+    max-width: 1200px;
+    margin: 0 auto 32px;
+    color: #a1a1a6;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .stage {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 32px;
+    justify-content: center;
+  }
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .phone-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8e8e93;
+  }
+  .phone {
+    width: 390px;
+    height: 844px;
+    background: #000;
+    border-radius: 48px;
+    padding: 12px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 40px 80px rgba(0,0,0,0.5);
+  }
+  .inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 38px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--label);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .island {
+    position: absolute;
+    top: 11px; left: 50%;
+    transform: translateX(-50%);
+    width: 120px; height: 34px;
+    background: #000;
+    border-radius: 20px;
+    z-index: 20;
+  }
+  .status {
+    height: 54px;
+    padding: 14px 28px 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .toolbar {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    font-weight: 600;
+    background: var(--bg);
+  }
+  .scroll {
+    flex: 1;
+    overflow: hidden;
+    padding: 8px 16px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .eyebrow {
+    font-size: 14px;
+    color: var(--secondary);
+  }
+  .title {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    margin-top: 2px;
+  }
+  .meta {
+    font-size: 15px;
+    color: var(--secondary);
+    margin-top: 4px;
+  }
+  .link {
+    font-size: 15px;
+    color: var(--orange);
+    margin-top: 4px;
+  }
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    margin-top: 16px;
+    overflow: hidden;
+  }
+  .card.tight { margin-top: 8px; }
+  .section {
+    margin-top: 16px;
+    padding-left: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .footer-note {
+    margin-top: 8px;
+    padding: 0 4px;
+    font-size: 12px;
+    color: var(--secondary);
+    line-height: 1.35;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    min-height: 64px;
+    padding: 12px 16px 12px 16px;
+    gap: 12px;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--outline);
+    flex-shrink: 0;
+  }
+  .dot.on { background: var(--green); }
+  .row .body { flex: 1; min-width: 0; }
+  .row .t { font-size: 17px; font-weight: 700; }
+  .row .s { font-size: 13px; color: var(--secondary); margin-top: 1px; }
+  .switch {
+    width: 51px; height: 31px;
+    border-radius: 16px;
+    background: rgba(120,120,128,0.32);
+    position: relative;
+    flex-shrink: 0;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 27px; height: 27px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+  }
+  .switch.on { background: var(--green); }
+  .switch.on::after { left: 22px; }
+  .metrics {
+    display: flex;
+    padding: 12px 0;
+  }
+  .metrics .cell {
+    flex: 1;
+    text-align: center;
+    padding: 0 8px;
+    position: relative;
+  }
+  .metrics .cell + .cell::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 4px; bottom: 4px;
+    width: 1px;
+    background: var(--outline);
+  }
+  .metrics .ml { font-size: 11px; color: var(--secondary); }
+  .metrics .mv {
+    margin-top: 2px;
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .metrics .mv.green { color: var(--green); }
+  .mode-pad { padding: 12px; }
+  .seg {
+    display: flex;
+    border: 1px solid var(--outline);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+  .seg span {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    font-size: 13px;
+    border-right: 1px solid var(--outline);
+  }
+  .seg span:last-child { border-right: none; }
+  .seg span.active {
+    background: #1c1b1f;
+    color: #fff;
+  }
+  .hint {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--secondary);
+  }
+  .node-row {
+    display: flex;
+    align-items: center;
+    min-height: 64px;
+    padding: 12px 12px 12px 16px;
+    gap: 8px;
+  }
+  .node-row .body { flex: 1; min-width: 0; }
+  .node-row .t { font-size: 17px; font-weight: 700; }
+  .node-row .s { font-size: 13px; color: var(--secondary); margin-top: 2px; }
+  .node-row .change { font-size: 15px; color: var(--secondary); }
+  .node-row .chev { font-size: 22px; color: var(--outline); line-height: 1; }
+  .tabbar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 83px;
+    padding: 6px 0 24px;
+    background: rgba(255,255,255,0.92);
+    border-top: 0.5px solid rgba(60,60,67,0.12);
+    display: flex;
+  }
+  .tabbar .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    color: var(--secondary);
+  }
+  .tabbar .tab.active { color: var(--orange); }
+  .tabbar .ico { font-size: 20px; height: 24px; }
+  .home-ind {
+    position: absolute;
+    bottom: 8px; left: 50%;
+    transform: translateX(-50%);
+    width: 134px; height: 5px;
+    background: #000;
+    border-radius: 3px;
+    opacity: 0.85;
+    z-index: 30;
+  }
+
+  /* node list */
+  .list {
+    flex: 1;
+    overflow: hidden;
+    padding: 8px 16px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--bg);
+  }
+  .node-card {
+    background: var(--surface);
+    border-radius: var(--radius-node);
+    padding: 12px 12px 12px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .node-card.sel {
+    background: rgba(249,121,16,0.10);
+    box-shadow: inset 0 0 0 1.5px var(--orange);
+  }
+  .ind {
+    width: 4px;
+    align-self: stretch;
+    border-radius: 2px;
+    background: transparent;
+  }
+  .node-card.sel .ind { background: var(--orange); }
+  .node-card .n {
+    font-size: 16px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .node-card .type {
+    font-size: 11px;
+    color: var(--orange);
+    margin-top: 2px;
+  }
+  .node-card .ping {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--green);
+  }
+  .more {
+    width: 28px; height: 28px;
+    display: grid;
+    place-items: center;
+    color: var(--secondary);
+    font-size: 18px;
+  }
+
+  /* settings */
+  .pref {
+    flex: 1;
+    overflow: hidden;
+    padding: 8px 12px 96px;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .pref-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .pref-row {
+    display: flex;
+    align-items: center;
+    min-height: 56px;
+    padding: 10px 16px;
+    gap: 12px;
+  }
+  .pref-row + .pref-row {
+    border-top: 0.5px solid rgba(60,60,67,0.12);
+  }
+  .pref-row .body { flex: 1; min-width: 0; }
+  .pref-row .t { font-size: 17px; }
+  .pref-row .s {
+    font-size: 13px;
+    color: var(--secondary);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pref-row .chev { color: #c7c7cc; font-size: 18px; }
+  .note {
+    max-width: 1200px;
+    margin: 40px auto 0;
+    color: #8e8e93;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  code { color: #d1d1d6; }
+</style>
+</head>
+<body>
+  <h1>修复后 · 根据代码复现</h1>
+  <p class="lead">
+    对照当前 layout：页面底 <code>#F2F2F7</code>，分组用 <code>MaterialCardView</code>（<code>HomeInsetCard</code>，16dp 圆角、白 surface、无描边）。
+    开关行 / 指标 / 模式 / 节点均裁剪子视图到圆角。更多页保持二级 <code>PreferenceScreen</code> 入口，灰底 + 白卡分组。
+  </p>
+
+  <div class="stage">
+    <!-- HOME -->
+    <div class="phone-wrap">
+      <div class="phone-label">首页 · fragment_home</div>
+      <div class="phone">
+        <div class="inner">
+          <div class="island"></div>
+          <div class="status"><span>9:41</span><span>●●● ▮▮▮ 🔋</span></div>
+          <div class="toolbar">v2rayNG</div>
+          <div class="scroll">
+            <div class="eyebrow">连接</div>
+            <div class="title">未连接</div>
+            <div class="meta">系统 VPN · 准备就绪</div>
+            <div class="link">点按测试</div>
+
+            <div class="card">
+              <div class="row">
+                <div class="dot"></div>
+                <div class="body">
+                  <div class="t">VPN</div>
+                  <div class="s">未连接</div>
+                </div>
+                <div class="switch"></div>
+              </div>
+            </div>
+            <div class="footer-note">开启后将通过所选节点建立系统隧道。</div>
+
+            <div class="section">状态</div>
+            <div class="card tight">
+              <div class="metrics">
+                <div class="cell"><div class="ml">地区</div><div class="mv">—</div></div>
+                <div class="cell"><div class="ml">延迟</div><div class="mv">—</div></div>
+                <div class="cell"><div class="ml">近 24h</div><div class="mv">0 B</div></div>
+              </div>
+            </div>
+
+            <div class="section">模式</div>
+            <div class="card tight">
+              <div class="mode-pad">
+                <div class="seg">
+                  <span>仅代理</span>
+                  <span class="active">VPN</span>
+                </div>
+                <div class="hint">系统级隧道 · 兼容性最好</div>
+              </div>
+            </div>
+
+            <div class="section">节点</div>
+            <div class="card tight">
+              <div class="node-row">
+                <div class="body">
+                  <div class="t">HK-01 · Edge</div>
+                  <div class="s">请在「订阅」页切换节点</div>
+                </div>
+                <div class="change">更换</div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab active"><div class="ico">⌂</div>首页</div>
+            <div class="tab"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⚙</div>更多</div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NODE LIST -->
+    <div class="phone-wrap">
+      <div class="phone-label">订阅 · item_recycler_main</div>
+      <div class="phone">
+        <div class="inner">
+          <div class="island"></div>
+          <div class="status"><span>9:41</span><span>●●● ▮▮▮ 🔋</span></div>
+          <div class="toolbar">订阅</div>
+          <div class="list">
+            <div class="node-card sel">
+              <div class="ind"></div>
+              <div class="body" style="flex:1;min-width:0">
+                <div class="n">HK-01 · Edge</div>
+                <div class="type">VLESS</div>
+              </div>
+              <div class="ping">48ms</div>
+              <div class="more">···</div>
+            </div>
+            <div class="node-card">
+              <div class="ind"></div>
+              <div class="body" style="flex:1;min-width:0">
+                <div class="n">JP-Tokyo-03</div>
+                <div class="type">VLESS</div>
+              </div>
+              <div class="ping">86ms</div>
+              <div class="more">···</div>
+            </div>
+            <div class="node-card">
+              <div class="ind"></div>
+              <div class="body" style="flex:1;min-width:0">
+                <div class="n">US-LAX-Premium</div>
+                <div class="type">SS</div>
+              </div>
+              <div class="ping" style="color:var(--orange)">214ms</div>
+              <div class="more">···</div>
+            </div>
+            <div class="node-card">
+              <div class="ind"></div>
+              <div class="body" style="flex:1;min-width:0">
+                <div class="n">SG-02</div>
+                <div class="type">Trojan</div>
+              </div>
+              <div class="ping" style="color:#FF0099">timeout</div>
+              <div class="more">···</div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><div class="ico">⌂</div>首页</div>
+            <div class="tab active"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab"><div class="ico">⚙</div>更多</div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MORE / SETTINGS -->
+    <div class="phone-wrap">
+      <div class="phone-label">更多 · pref_settings 二级入口</div>
+      <div class="phone">
+        <div class="inner">
+          <div class="island"></div>
+          <div class="status"><span>9:41</span><span>●●● ▮▮▮ 🔋</span></div>
+          <div class="toolbar">更多</div>
+          <div class="pref">
+            <div class="pref-card">
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">界面设置</div>
+                  <div class="s">语言、主题、扫描与列表行为</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">模式设置</div>
+                  <div class="s">VPN / 仅代理</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">特权增强</div>
+                  <div class="s">HideVPN、目标应用、自检</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+            <div class="pref-card">
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">VPN 设置</div>
+                  <div class="s">分流、DNS、HevTun、资产</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">核心设置</div>
+                  <div class="s">嗅探、本地代理、DNS、工具</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">Mux 设置</div>
+                  <div class="s">多路复用与并发</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">Fragment 设置</div>
+                  <div class="s">分包与间隔</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+              <div class="pref-row">
+                <div class="body">
+                  <div class="t">高级</div>
+                  <div class="s">开机启动、测速与排序</div>
+                </div>
+                <div class="chev">›</div>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><div class="ico">⌂</div>首页</div>
+            <div class="tab"><div class="ico">▤</div>订阅</div>
+            <div class="tab"><div class="ico">⇄</div>路由</div>
+            <div class="tab active"><div class="ico">⚙</div>更多</div>
+          </div>
+          <div class="home-ind"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    复现依据：
+    <code>fragment_home.xml</code>（MaterialCardView + HomeInsetCard）·
+    <code>item_recycler_main.xml</code> / <code>item_recycler_sub_setting.xml</code>（HomeNodeCard）·
+    <code>colors.xml</code>（bg #F2F2F7 / surface #FFFFFF）·
+    <code>pref_settings.xml</code>（8 个二级 PreferenceScreen 入口保留）·
+    <code>SettingsActivity.SettingsFragment.onViewCreated</code>（灰底 + 无 divider）。
+    文件路径：<code>docs/apple-design-review/repro-after-fix.html</code>
+  </p>
+</body>
+</html>

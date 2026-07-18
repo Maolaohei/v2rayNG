@@ -28,15 +28,16 @@
     <color name="md_theme_onError">#690005</color>
     <color name="md_theme_onErrorContainer">#FFDAD6</color>
 
-    <!-- Background colors -->
-    <color name="md_theme_background">#1C1B1F</color>
-    <color name="md_theme_onBackground">#E6E1E5</color>
+    <!-- Background colors — pure black page -->
+    <color name="md_theme_background">#000000</color>
+    <color name="md_theme_onBackground">#F5F5F7</color>
+    <color name="md_theme_surface_container">#000000</color>
 
-    <!-- Surface colors -->
-    <color name="md_theme_surface">#1C1B1F</color>
-    <color name="md_theme_onSurface">#E6E1E5</color>
-    <color name="md_theme_surfaceVariant">#49454F</color>
-    <color name="md_theme_onSurfaceVariant">#CAC4D0</color>
+    <!-- Surface colors — elevated dark cards -->
+    <color name="md_theme_surface">#1C1C1E</color>
+    <color name="md_theme_onSurface">#F5F5F7</color>
+    <color name="md_theme_surfaceVariant">#2C2C2E</color>
+    <color name="md_theme_onSurfaceVariant">#98989F</color>
     <color name="md_theme_inverseSurface">#E6E1E5</color>
     <color name="md_theme_inverseOnSurface">#1C1B1F</color>
 

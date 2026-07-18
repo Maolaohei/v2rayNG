@@ -82,10 +82,19 @@ class MainRecyclerAdapter(
 
             if (guid == selectedGuid) {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(R.color.colorIndicator)
-                holder.itemMainBinding.infoContainer.setBackgroundResource(R.drawable.bg_home_node_item_selected)
+                holder.itemMainBinding.infoContainer.setCardBackgroundColor(
+                    ContextCompat.getColor(context, R.color.color_home_node_selected_bg)
+                )
+                holder.itemMainBinding.infoContainer.strokeWidth =
+                    (1.5f * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+                holder.itemMainBinding.infoContainer.strokeColor =
+                    ContextCompat.getColor(context, R.color.color_fab_active)
             } else {
                 holder.itemMainBinding.layoutIndicator.setBackgroundResource(0)
-                holder.itemMainBinding.infoContainer.setBackgroundResource(R.drawable.bg_home_node_item)
+                holder.itemMainBinding.infoContainer.setCardBackgroundColor(
+                    ContextCompat.getColor(context, R.color.md_theme_surface)
+                )
+                holder.itemMainBinding.infoContainer.strokeWidth = 0
             }
 
             val subRemarks = getSubscriptionRemarks(profile)

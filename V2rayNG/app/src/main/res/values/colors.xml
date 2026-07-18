@@ -33,15 +33,16 @@
     <color name="md_theme_onError">#FFFFFF</color>
     <color name="md_theme_onErrorContainer">#410002</color>
 
-    <!-- Background colors -->
-    <color name="md_theme_background">#FFFFFF</color>
+    <!-- Background colors — page chrome (gray so white cards read as cards) -->
+    <color name="md_theme_background">#F2F2F7</color>
     <color name="md_theme_onBackground">#1C1B1F</color>
+    <color name="md_theme_surface_container">#F2F2F7</color>
 
-    <!-- Surface colors -->
+    <!-- Surface colors — elevated white cards / groups -->
     <color name="md_theme_surface">#FFFFFF</color>
     <color name="md_theme_onSurface">#1C1B1F</color>
-    <color name="md_theme_surfaceVariant">#E7E0EC</color>
-    <color name="md_theme_onSurfaceVariant">#49454F</color>
+    <color name="md_theme_surfaceVariant">#E5E5EA</color>
+    <color name="md_theme_onSurfaceVariant">#636366</color>
     <color name="md_theme_inverseSurface">#313033</color>
     <color name="md_theme_inverseOnSurface">#F4EFF4</color>
 

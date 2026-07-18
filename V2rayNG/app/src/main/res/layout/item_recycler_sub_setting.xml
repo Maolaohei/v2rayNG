@@ -5,28 +5,26 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
-    android:paddingStart="@dimen/padding_spacing_dp8"
+    android:paddingStart="@dimen/padding_spacing_dp16"
     android:paddingTop="@dimen/home_node_margin"
-    android:paddingEnd="@dimen/padding_spacing_dp8"
+    android:paddingEnd="@dimen/padding_spacing_dp16"
     android:paddingBottom="@dimen/home_node_margin">
 
-    <LinearLayout
+    <com.google.android.material.card.MaterialCardView
         android:id="@+id/info_container"
+        style="@style/HomeNodeCard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:background="@drawable/bg_home_node_item"
         android:clickable="true"
         android:focusable="true"
-        android:gravity="center"
-        android:nextFocusRight="@+id/layout_share"
-        android:orientation="horizontal"
-        android:padding="@dimen/padding_spacing_dp8">
+        android:nextFocusRight="@+id/layout_share">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:padding="@dimen/padding_spacing_dp8">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -180,6 +178,6 @@
 
         </LinearLayout>
 
-    </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
 </LinearLayout>

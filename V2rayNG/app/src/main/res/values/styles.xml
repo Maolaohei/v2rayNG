@@ -18,4 +18,17 @@
         <item name="android:paddingTop">12dp</item>
         <item name="android:paddingBottom">12dp</item>
     </style>
+
+    <!-- White/elevated inset card on gray page background; clips children to corners -->
+    <style name="HomeInsetCard" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+        <item name="cardCornerRadius">@dimen/home_card_radius</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="rippleColor">?attr/colorControlHighlight</item>
+    </style>
+
+    <style name="HomeNodeCard" parent="HomeInsetCard">
+        <item name="cardCornerRadius">12dp</item>
+    </style>
 </resources>
