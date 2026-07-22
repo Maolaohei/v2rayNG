@@ -195,6 +195,10 @@ object AppConfig {
     const val MSG_STATE_STOP = 4
     const val MSG_STATE_STOP_SUCCESS = 41
     const val MSG_STATE_RESTART = 5
+    /** Intent extra: soft-apply currently selected server when service re-enters live. */
+    const val EXTRA_SOFT_APPLY_SELECTED = "extra_soft_apply_selected"
+    /** Intent extra: force cold start even if a session looks live (recovery). */
+    const val EXTRA_FORCE_COLD_START = "extra_force_cold_start"
     const val MSG_MEASURE_DELAY = 6
     const val MSG_MEASURE_DELAY_SUCCESS = 61
     const val MSG_MEASURE_CONFIG_START = 7

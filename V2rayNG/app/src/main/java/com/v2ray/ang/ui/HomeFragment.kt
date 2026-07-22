@@ -187,6 +187,11 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
         mainViewModel.sessionReadyAction.observe(viewLifecycleOwner) {
             if (!isAdded || view == null) return@observe
+            // User intent to stop: never revive UI from a late soft-restart/start success.
+            if (uiConnecting && !binding.switchConnection.isChecked) {
+                LogUtil.i(AppConfig.TAG, "Home: ignore session-ready while user stopping")
+                return@observe
+            }
             // Guard against START_SUCCESS racing a user stop / mode hard-restart.
             val live = mainViewModel.isRunning.value == true ||
                 stickyRunning ||
@@ -461,10 +466,15 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         applyRunningState(isLoading = true, isRunning = false)
         if (!wantStart) {
             stickyRunning = false
+            cancelStopConfirm()
             CoreServiceManager.stopVService(requireContext())
+            // STOP is async across processes; keep a short timeout so UI cannot stick on Connecting
+            // if STOP_SUCCESS is delayed/lost.
+            armConnectingTimeout(timeoutMs = 8_000L)
             return
         }
-        armConnectingTimeout()
+        // Off->On after teardown can need longer than a cold start (VPN iface close is async).
+        armConnectingTimeout(timeoutMs = 15_000L)
         when (SettingsManager.getRunMode()) {
             AppConfig.VPN -> {
                 val intent = VpnService.prepare(requireContext())

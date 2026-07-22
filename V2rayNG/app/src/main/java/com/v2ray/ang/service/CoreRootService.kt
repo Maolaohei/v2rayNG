@@ -113,10 +113,29 @@ class CoreRootService : Service(), ServiceControl {
         // Re-entry that always called startDetailed() previously caused 1-3s blackholes and
         // "sometimes works" intermittency under memory pressure / task-manager thrash.
         val plane = RootDataPlanes.current()
+        val softApply = intent?.getBooleanExtra(AppConfig.EXTRA_SOFT_APPLY_SELECTED, false) == true
         val alreadyLive = CoreServiceManager.isRunning() || CoreServiceManager.hasLiveSession()
         if (alreadyLive) {
             setupJob?.cancel()
             setupJob = serviceScope.launch {
+                if (softApply) {
+                    if (CoreServiceManager.isSelectedConfigActive() &&
+                        CoreServiceManager.isRunning() &&
+                        !CoreServiceManager.isSoftRestarting()
+                    ) {
+                        LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-apply already active, skip rebuild")
+                        try {
+                            MessageUtil.sendMsg2UI(this@CoreRootService, AppConfig.MSG_STATE_RUNNING, "")
+                        } catch (_: Exception) {
+                        }
+                        startWatchdog()
+                        return@launch
+                    }
+                    LogUtil.i(AppConfig.TAG, "StartCore-Root: soft-apply selected server")
+                    CoreServiceManager.applySelectedServer(this@CoreRootService)
+                    startWatchdog()
+                    return@launch
+                }
                 if (plane.isHealthy(this@CoreRootService)) {
                     LogUtil.i(AppConfig.TAG, "StartCore-Root: re-entry while healthy, skip rebuild engine=${plane.engine}")
                     runCatching { RootConnectivitySmoke.maybeProbeAfterStart(force = false) }

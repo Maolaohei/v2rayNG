@@ -53,6 +53,9 @@ object CoreServiceManager {
     internal val coreController: CoreController = CoreNativeManager.newCoreController(CoreCallback())
     private val mMsgReceive = ReceiveMessageHandler()
     private var currentConfig: ProfileItem? = null
+    /** GUID last successfully started by doStartCoreLoop (daemon process). */
+    @Volatile
+    private var currentConfigGuid: String? = null
     private var processFinder: XrayProcessFinder? = null
     private var browserDialer: IDialerService? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -295,10 +298,22 @@ object CoreServiceManager {
         // Drop any in-flight latency test; home UI is managed by caller.
         cancelMeasureDelay("node switched", notifyUi = false)
         cancelBatchRealPing()
+
+        // Daemon process: serviceControl lives here — soft-restart in place.
         val control = serviceControl
         if (control != null) {
-            val liveCore = coreController.isRunning || softRestarting.get() || activeVpnInterface != null
+            val liveCore = coreController.isRunning || softRestarting.get() || activeVpnInterface != null || sessionActive.get()
             if (liveCore) {
+                val selected = MmkvManager.getSelectServer()
+                if (!selected.isNullOrEmpty() && selected == currentConfigGuid && coreController.isRunning && !softRestarting.get()) {
+                    LogUtil.i(AppConfig.TAG, "StartCore-Manager: applySelectedServer already active guid=$selected")
+                    val svc = control.getService()
+                    try {
+                        MessageUtil.sendMsg2UI(svc, AppConfig.MSG_STATE_RUNNING, "")
+                    } catch (_: Exception) {
+                    }
+                    return
+                }
                 if (!restartCoreLoop()) {
                     // Another soft-restart is in flight; re-apply when it finishes.
                     pendingSelectedApply = true
@@ -307,14 +322,26 @@ object CoreServiceManager {
                 // Service process still up but core is down: revive without new FGS start race.
                 LogUtil.i(AppConfig.TAG, "StartCore-Manager: revive core on existing service")
                 if (!startCoreLoop(activeVpnInterface)) {
-                    startVService(context)
+                    startContextService(context, softApplySelected = true)
                 }
             }
             return
         }
-        // Service not alive: cold start with the new selection.
-        startVService(context)
+
+        // Main process (or service not bound yet): cannot touch daemon coreController.
+        // Prefer soft-apply intent so a live FGS reloads config instead of SKIP_REBUILD no-op.
+        LogUtil.i(AppConfig.TAG, "StartCore-Manager: applySelectedServer via cross-process soft-apply")
+        startContextService(context, softApplySelected = true)
     }
+
+    /** True when the running core session matches the currently selected server GUID. */
+    fun isSelectedConfigActive(): Boolean {
+        val selected = MmkvManager.getSelectServer() ?: return false
+        val running = currentConfigGuid
+        return !selected.isEmpty() && selected == running && coreController.isRunning
+    }
+
+    fun getCurrentConfigGuid(): String? = currentConfigGuid
 
     /** Cancel in-flight measureDelay; optionally reset home test label. */
     fun cancelMeasureDelay(reason: String = "cancelled", notifyUi: Boolean = true) {
@@ -445,8 +472,11 @@ object CoreServiceManager {
      * @throws Exception if the foreground service fails to start.
      */
     @Throws(Exception::class)
-    private fun startContextService(context: Context) {
-        if (coreController.isRunning) {
+    private fun startContextService(context: Context, softApplySelected: Boolean = false) {
+        // Main process: coreController is never live (core is in :RunSoLibV2RayDaemon).
+        // Soft-apply always starts/re-enters the FGS with EXTRA_SOFT_APPLY_SELECTED so daemon
+        // reloads the selected profile instead of SKIP_REBUILD no-op.
+        if (coreController.isRunning && !softApplySelected) {
             // Defensive: if this process already owns a live core (rare for UI callers because
             // the core lives in :RunSoLibV2RayDaemon), treat as success instead of silent no-op.
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core already running")
@@ -491,10 +521,12 @@ object CoreServiceManager {
             context.toastError(R.string.toast_allow_insecure_deprecated)
         }
 
-        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING)) {
-            context.toast(R.string.toast_warning_pref_proxysharing_short)
-        } else {
-            context.toast(R.string.toast_services_start)
+        if (!softApplySelected) {
+            if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING)) {
+                context.toast(R.string.toast_warning_pref_proxysharing_short)
+            } else {
+                context.toast(R.string.toast_services_start)
+            }
         }
 
         // ROOT UI may be retired; isRootMode() already migrates sticky prefs.
@@ -505,14 +537,17 @@ object CoreServiceManager {
         }
 
         val intent = if (isRootMode) {
-            LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting Root service")
+            LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting Root service softApply=$softApplySelected")
             Intent(context.applicationContext, CoreRootService::class.java)
         } else if (SettingsManager.isVpnMode()) {
-            LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting VPN service")
+            LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting VPN service softApply=$softApplySelected")
             Intent(context.applicationContext, CoreVpnService::class.java)
         } else {
-            LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting Proxy service")
+            LogUtil.i(AppConfig.TAG, "StartCore-Manager: Starting Proxy service softApply=$softApplySelected")
             Intent(context.applicationContext, CoreProxyOnlyService::class.java)
+        }
+        if (softApplySelected) {
+            intent.putExtra(AppConfig.EXTRA_SOFT_APPLY_SELECTED, true)
         }
 
         try {
@@ -788,6 +823,7 @@ object CoreServiceManager {
         }
 
         currentConfig = config
+        currentConfigGuid = guid
         // TUN fd selection:
         // - VPN (non-hev): VpnService PFD
         // - ROOT xray_tun: root-created TUN fd owned by RootTun (same process as StartLoop)
@@ -920,6 +956,7 @@ object CoreServiceManager {
             activeVpnInterface = null
             serviceControl = null
             sessionActive.set(false)
+            currentConfigGuid = null
         }
 
         if (receiverRegistered && (clearVpnInterface || !softRestarting.get())) {

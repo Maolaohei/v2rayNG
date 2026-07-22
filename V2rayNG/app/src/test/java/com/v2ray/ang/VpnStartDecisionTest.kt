@@ -56,6 +56,63 @@ class VpnStartDecisionTest {
     }
 
     @Test
+    fun soft_apply_while_core_live_reloads_selected() {
+        // Cross-process node switch must NOT skip rebuild when selection may have changed.
+        val action = VpnStartDecision.decide(
+            interfaceOpen = true,
+            isRunningFlag = true,
+            coreRunning = true,
+            softRestarting = false,
+            hasLiveSession = true,
+            softApplySelected = true,
+            selectedConfigActive = false,
+        )
+        assertEquals(VpnStartDecision.Action.SOFT_APPLY_SELECTED, action)
+    }
+
+    @Test
+    fun soft_apply_same_config_already_active_skips() {
+        val action = VpnStartDecision.decide(
+            interfaceOpen = true,
+            isRunningFlag = true,
+            coreRunning = true,
+            softRestarting = false,
+            hasLiveSession = true,
+            softApplySelected = true,
+            selectedConfigActive = true,
+        )
+        assertEquals(VpnStartDecision.Action.SKIP_REBUILD_CORE_LIVE, action)
+    }
+
+    @Test
+    fun soft_apply_while_soft_restart_in_flight_queues() {
+        val action = VpnStartDecision.decide(
+            interfaceOpen = true,
+            isRunningFlag = true,
+            coreRunning = false,
+            softRestarting = true,
+            hasLiveSession = true,
+            softApplySelected = true,
+            selectedConfigActive = false,
+        )
+        assertEquals(VpnStartDecision.Action.KEEP_SOFT_RESTART, action)
+    }
+
+    @Test
+    fun soft_apply_when_fully_stopped_cold_starts() {
+        val action = VpnStartDecision.decide(
+            interfaceOpen = false,
+            isRunningFlag = false,
+            coreRunning = false,
+            softRestarting = false,
+            hasLiveSession = false,
+            softApplySelected = true,
+            selectedConfigActive = false,
+        )
+        assertEquals(VpnStartDecision.Action.COLD_SETUP, action)
+    }
+
+    @Test
     fun already_running_must_not_be_treated_as_fatal_false() {
         // Document the manager contract used by CoreVpnService.startService:
         // already-running => success (true), never stopAllService.

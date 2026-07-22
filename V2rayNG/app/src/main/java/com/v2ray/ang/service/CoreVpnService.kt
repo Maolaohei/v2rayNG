@@ -206,12 +206,15 @@ class CoreVpnService : VpnService(), ServiceControl {
             }
 
             val interfaceReady = interfaceOpen && ::mInterface.isInitialized
+            val softApply = intent?.getBooleanExtra(AppConfig.EXTRA_SOFT_APPLY_SELECTED, false) == true
             val action = VpnStartDecision.decide(
                 interfaceOpen = interfaceReady,
                 isRunningFlag = isRunning,
                 coreRunning = CoreServiceManager.isRunning(),
                 softRestarting = CoreServiceManager.isSoftRestarting(),
                 hasLiveSession = CoreServiceManager.hasLiveSession(),
+                softApplySelected = softApply,
+                selectedConfigActive = CoreServiceManager.isSelectedConfigActive(),
             )
 
             if (action != VpnStartDecision.Action.COLD_SETUP) {
@@ -233,9 +236,21 @@ class CoreVpnService : VpnService(), ServiceControl {
                         return START_STICKY
                     }
                     VpnStartDecision.Action.KEEP_SOFT_RESTART -> {
-                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: re-entry during soft-restart, keep session")
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: re-entry during soft-restart, queue soft-apply")
+                        if (softApply) {
+                            // Soft-restart already running; re-apply selected profile when it finishes.
+                            CoreServiceManager.applySelectedServer(this)
+                        }
                         isRunning = true
                         stopping.set(false)
+                        return START_STICKY
+                    }
+                    VpnStartDecision.Action.SOFT_APPLY_SELECTED -> {
+                        // Cross-process node switch: reload selected profile without tearing TUN/FGS.
+                        LogUtil.i(AppConfig.TAG, "StartCore-VPN: soft-apply selected server")
+                        stopping.set(false)
+                        isRunning = true
+                        CoreServiceManager.applySelectedServer(this)
                         return START_STICKY
                     }
                     VpnStartDecision.Action.REVIVE_CORE_ON_EXISTING_TUN -> {
