@@ -182,7 +182,15 @@ object SubscriptionUpdater {
             )
 
             LogUtil.i(AppConfig.TAG, "SubscriptionUpdater automatic update: ---${sub.subscription.remarks}")
-            AngConfigManager.updateConfigViaSub(sub)
+            // Manual update paths always download; auto jobs respect the optional gate.
+            if (MmkvManager.decodeSettingsBool(AppConfig.PREF_UPDATE_SUBSCRIPTION, true)) {
+                AngConfigManager.updateConfigViaSub(sub)
+            } else {
+                LogUtil.i(
+                    AppConfig.TAG,
+                    "SubscriptionUpdater: PREF_UPDATE_SUBSCRIPTION disabled, skip config download for $subId"
+                )
+            }
 
             // Clear notification
             NotificationHelper.cancel(NotificationChannelType.SUBSCRIPTION_UPDATE, applicationContext)

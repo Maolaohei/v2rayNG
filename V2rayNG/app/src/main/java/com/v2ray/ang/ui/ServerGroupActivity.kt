@@ -4,17 +4,22 @@ import android.os.Bundle
 import android.text.TextUtils
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AlertDialog
+import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.databinding.ActivityServerGroupBinding
 import com.v2ray.ang.dto.entities.ProfileItem
+import com.v2ray.ang.enums.BalancerStrategyType
 import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.extension.isNotNullEmpty
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
+import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.util.Utils
 
 class ServerGroupActivity : BaseActivity() {
@@ -30,20 +35,33 @@ class ServerGroupActivity : BaseActivity() {
         intent.getStringExtra("subscriptionId")
     }
     private val subIds = mutableListOf<String>()
+    private var fallbackSuggestions: List<String> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        //setContentView(binding.root)
         setContentViewWithToolbar(binding.root, showHomeAsUp = true, title = EConfigType.POLICYGROUP.toString())
 
         val config = MmkvManager.decodeServerConfig(editGuid)
         populateSubscriptionSpinner()
+        populateFallbackSuggestions()
+
+        binding.spPolicyGroupType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updateObservatoryUiVisibility()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+        binding.swPolicyGroupTestOutbounds.setOnCheckedChangeListener { _, _ ->
+            updateObservatoryUiVisibility()
+        }
 
         if (config != null) {
             bindingServer(config)
         } else {
             clearServer()
         }
+        updateObservatoryUiVisibility()
     }
 
     /**
@@ -53,11 +71,16 @@ class ServerGroupActivity : BaseActivity() {
         binding.etRemarks.text = Utils.getEditable(config.remarks)
         binding.etPolicyGroupFilter.text = Utils.getEditable(config.policyGroupFilter)
 
-        val type = config.policyGroupType?.toInt() ?: 0
+        val type = config.policyGroupType?.toIntOrNull() ?: 0
         binding.spPolicyGroupType.setSelection(type)
 
         val pos = subIds.indexOf(config.policyGroupSubscriptionId ?: "").let { if (it >= 0) it else 0 }
         binding.spPolicyGroupSubId.setSelection(pos)
+
+        val supportsObservatory = BalancerStrategyType.from(config.policyGroupType).supportsObservatory
+        binding.swPolicyGroupTestOutbounds.isChecked =
+            config.policyGroupTestOutbounds != false || !supportsObservatory
+        binding.etPolicyGroupFallback.setText(config.policyGroupFallbackTag.orEmpty())
 
         return true
     }
@@ -68,6 +91,8 @@ class ServerGroupActivity : BaseActivity() {
     private fun clearServer(): Boolean {
         binding.etRemarks.text = null
         binding.etPolicyGroupFilter.text = null
+        binding.swPolicyGroupTestOutbounds.isChecked = true
+        binding.etPolicyGroupFallback.setText("")
 
         if (subscriptionId.isNotNullEmpty()) {
             val pos = subIds.indexOf(subscriptionId).let { if (it >= 0) it else 0 }
@@ -93,6 +118,16 @@ class ServerGroupActivity : BaseActivity() {
 
         val selPos = binding.spPolicyGroupSubId.selectedItemPosition
         config.policyGroupSubscriptionId = if (selPos >= 0 && selPos < subIds.size) subIds[selPos] else null
+
+        val strategyType = BalancerStrategyType.from(config.policyGroupType)
+        if (strategyType.supportsObservatory) {
+            config.policyGroupTestOutbounds = binding.swPolicyGroupTestOutbounds.isChecked
+            config.policyGroupFallbackTag =
+                binding.etPolicyGroupFallback.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        } else {
+            config.policyGroupTestOutbounds = null
+            config.policyGroupFallbackTag = null
+        }
 
         if (config.subscriptionId.isEmpty() && !subscriptionId.isNullOrEmpty()) {
             config.subscriptionId = subscriptionId.orEmpty()
@@ -143,6 +178,26 @@ class ServerGroupActivity : BaseActivity() {
         val subAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, displayList)
         subAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spPolicyGroupSubId.adapter = subAdapter
+    }
+
+    private fun populateFallbackSuggestions() {
+        fallbackSuggestions = (
+            AppConfig.BUILTIN_OUTBOUND_TAGS + SettingsManager.getProfileRemarks(
+                excludeConfigTypes = setOf(EConfigType.CUSTOM, EConfigType.POLICYGROUP)
+            )
+        ).filter { it != AppConfig.TAG_PROXY }
+        val adapter = ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, fallbackSuggestions)
+        binding.etPolicyGroupFallback.setAdapter(adapter)
+    }
+
+    private fun updateObservatoryUiVisibility() {
+        val typeValue = binding.spPolicyGroupType.selectedItemPosition.toString()
+        val supportsObservatory = BalancerStrategyType.from(typeValue).supportsObservatory
+        binding.layoutPolicyGroupTestOutbounds.visibility =
+            if (supportsObservatory) View.VISIBLE else View.GONE
+        val showFallback = supportsObservatory && binding.swPolicyGroupTestOutbounds.isChecked
+        binding.layoutPolicyGroupFallback.visibility =
+            if (showFallback) View.VISIBLE else View.GONE
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {

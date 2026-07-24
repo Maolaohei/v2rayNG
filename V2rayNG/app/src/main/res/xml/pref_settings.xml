@@ -419,6 +419,12 @@
                     android:title="@string/title_pref_is_booted" />
 
                 <CheckBoxPreference
+                    android:key="pref_update_subscription"
+                    android:defaultValue="true"
+                    android:summary="@string/summary_pref_update_subscription_configs"
+                    android:title="@string/title_pref_update_subscription_configs" />
+
+                <CheckBoxPreference
                     android:key="pref_auto_remove_invalid_after_test"
                     android:defaultValue="false"
                     android:summary="@string/summary_pref_auto_remove_invalid_after_test"

@@ -188,6 +188,11 @@ class SubSettingFragment : BaseFragment<FragmentSubSettingBinding>() {
         R.id.import_manually_wireguard -> { importManually(EConfigType.WIREGUARD.value); true }
         R.id.import_manually_hysteria2 -> { importManually(EConfigType.HYSTERIA2.value); true }
         R.id.export_all -> { exportAll(); true }
+        R.id.tcp_ping_all -> {
+            requireContext().toast(getString(R.string.connection_test_testing_count, mainViewModel.serversCache.count()))
+            mainViewModel.testAllRealPing(onlyTcp = true)
+            true
+        }
         R.id.real_ping_all -> {
             requireContext().toast(getString(R.string.connection_test_testing_count, mainViewModel.serversCache.count()))
             mainViewModel.testAllRealPing()

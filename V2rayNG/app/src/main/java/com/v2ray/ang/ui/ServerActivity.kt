@@ -393,6 +393,7 @@ class ServerActivity : BaseActivity() {
                 config.localAddress ?: WIREGUARD_LOCAL_ADDRESS_V4
             )
             et_local_mtu?.text = Utils.getEditable(config.mtu?.toString() ?: WIREGUARD_LOCAL_MTU)
+            et_fm?.text = Utils.getEditable(config.finalMask)
         } else if (config.configType == EConfigType.HYSTERIA2) {
             et_obfs_password?.text = Utils.getEditable(config.obfsPassword)
             et_port_hop?.text = Utils.getEditable(config.portHopping)
@@ -575,6 +576,7 @@ class ServerActivity : BaseActivity() {
             config.reserved = et_reserved1?.text.toString().trim()
             config.localAddress = et_local_address?.text.toString().trim()
             config.mtu = Utils.parseInt(et_local_mtu?.text.toString())
+            config.finalMask = et_fm?.text?.toString()?.trim()?.nullIfBlank()
         } else if (config.configType == EConfigType.HYSTERIA2) {
             config.obfsPassword = et_obfs_password?.text?.toString()
             config.portHopping = et_port_hop?.text?.toString()

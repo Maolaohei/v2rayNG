@@ -78,11 +78,16 @@ class CoreTestService : Service() {
     private fun handleMeasureStart(message: TestServiceMessage, startId: Int) {
         LogUtil.i(AppConfig.TAG, "CoreTestService starting worker   subscription ${message.subscriptionId}")
 
+        val titleRes = if (message.onlyTcp) {
+            R.string.title_ping_all_server
+        } else {
+            R.string.title_real_ping_all_server
+        }
         NotificationHelper.startForeground(
             this,
             NotificationChannelType.CORE_TEST,
             getString(R.string.app_name),
-            getString(R.string.title_real_ping_all_server)
+            getString(titleRes)
         )
 
         val guidsList = when {
@@ -96,6 +101,7 @@ class CoreTestService : Service() {
             worker = RealPingWorkerService(
                 context = this,
                 guids = guidsList,
+                onlyTcp = message.onlyTcp,
                 onEvent = { event -> handleWorkerEvent(event) { activeWorkers.remove(worker) } }
             )
             activeWorkers.add(worker)

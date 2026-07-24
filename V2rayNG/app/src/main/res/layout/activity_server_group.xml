@@ -102,5 +102,46 @@
 
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/layout_policy_group_test_outbounds"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/padding_spacing_dp16"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/title_policy_group_test_outbounds" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/sw_policy_group_test_outbounds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layout_policy_group_fallback"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/padding_spacing_dp16"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/title_policy_group_fallback" />
+
+            <AutoCompleteTextView
+                android:id="@+id/et_policy_group_fallback"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:completionThreshold="1"
+                android:inputType="text" />
+        </LinearLayout>
+
     </LinearLayout>
 </ScrollView>

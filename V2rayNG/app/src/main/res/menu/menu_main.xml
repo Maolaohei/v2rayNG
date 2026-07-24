@@ -95,6 +95,10 @@
         android:title="@string/title_export_all"
         app:showAsAction="never" />
     <item
+        android:id="@+id/tcp_ping_all"
+        android:title="@string/title_ping_all_server"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/real_ping_all"
         android:title="@string/title_real_ping_all_server"
         app:showAsAction="never" />

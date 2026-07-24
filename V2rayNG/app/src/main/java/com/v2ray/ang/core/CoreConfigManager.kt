@@ -405,10 +405,23 @@ object CoreConfigManager {
         } else {
             "${AppConfig.TAG_BALANCER_PRE}-${resolvedOutbound.tag}"
         }
+        val strategyType = BalancerStrategyType.from(resolvedOutbound.profile.policyGroupType)
+        val fallbackTag = if (
+            strategyType.supportsObservatory && resolvedOutbound.profile.policyGroupTestOutbounds != false
+        ) {
+            resolvedOutbound.profile.policyGroupFallbackTag
+                ?.takeIf { it.isNotEmpty() && it != AppConfig.TAG_PROXY }
+                // Xray excludes dead random/roundRobin candidates only when fallbackTag is set;
+                // without this default, an enabled empty field creates no observatory.
+                ?: membersToAdd.first().tag
+        } else {
+            null
+        }
         val strategy = buildBalancerStrategy(
-            policyGroupType = resolvedOutbound.profile.policyGroupType,
+            strategyType = strategyType,
             selector = listOf(memberTagPrefix),
             balancerTag = balancerTag,
+            fallbackTag = fallbackTag,
         )
         val existingBalancers = v2rayConfig.routing.balancers?.toMutableList() ?: mutableListOf()
         if (existingBalancers.none { it.tag == balancerTag }) {
@@ -1093,9 +1106,10 @@ object CoreConfigManager {
      * Build balancer and probe settings from one policy-group strategy value.
      */
     private fun buildBalancerStrategy(
-        policyGroupType: String?,
+        strategyType: BalancerStrategyType,
         selector: List<String>,
         balancerTag: String = AppConfig.TAG_BALANCER,
+        fallbackTag: String? = null,
     ): BalancerStrategy {
         val probeUrl = MmkvManager.decodeSettingsString(AppConfig.PREF_DELAY_TEST_URL) ?: AppConfig.DELAY_TEST_URL
         val leastPingInterval = decodeObservatoryDuration(
@@ -1115,13 +1129,13 @@ object CoreConfigManager {
             AppConfig.PREF_OBSERVATORY_LEAST_LOAD_TIMEOUT,
             AppConfig.OBSERVATORY_LEAST_LOAD_TIMEOUT
         )
-        val strategyType = BalancerStrategyType.from(policyGroupType)
         val balancer = V2rayConfig.RoutingBean.BalancerBean(
             tag = balancerTag,
             selector = selector,
+            fallbackTag = fallbackTag,
             strategy = V2rayConfig.RoutingBean.StrategyObject(type = strategyType.policyGroupType)
         )
-        val observatory = if (strategyType.requiresObservatory) {
+        val observatory = if (strategyType.requiresObservatory || fallbackTag != null) {
             V2rayConfig.ObservatoryObject(
                 subjectSelector = selector,
                 probeUrl = probeUrl,
