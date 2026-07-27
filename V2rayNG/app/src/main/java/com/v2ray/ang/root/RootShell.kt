@@ -43,7 +43,9 @@ object RootShell {
         }
         // Prefer one-shot for long setup/teardown scripts: safer than feeding huge bodies
         // into a sticky shell, and still reuses session for later short probes.
-        return execOneShot("sh ${file.absolutePath}", timeoutSeconds = 45)
+        // Quote the path (V-001): a path containing a quote would otherwise break out of `sh`.
+        val safePath = file.absolutePath.replace("'", "'\\''")
+        return execOneShot("sh '$safePath'", timeoutSeconds = 45)
     }
 
     fun exec(command: String, timeoutSeconds: Long = 30): Result {
