@@ -192,6 +192,12 @@ class CoreVpnService : VpnService(), ServiceControl {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service command received")
+        // Always-on VPN restarts from OS deliver intent.action == SERVICE_INTERFACE or null intent.
+        // Reset any stuck teardown flag left by a killed process so setup can run again.
+        val isSystemVpnStart = intent == null || intent.action == SERVICE_INTERFACE
+        if (isSystemVpnStart) {
+            stopping.set(false)
+        }
         // FGS contract: promote first so re-entry / sticky restart cannot miss the timeout.
         NotificationManager.showNotification(null)
 
