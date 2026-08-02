@@ -10,6 +10,7 @@ import com.v2ray.ang.dto.RealPingEvent
 import com.v2ray.ang.dto.TestServiceMessage
 import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.extension.serializable
+import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
@@ -102,7 +103,7 @@ class CoreTestService : Service() {
                 context = this,
                 guids = guidsList,
                 onlyTcp = message.onlyTcp,
-                onEvent = { event -> handleWorkerEvent(event) { activeWorkers.remove(worker) } }
+                onEvent = { event -> handleWorkerEvent(event, message) { activeWorkers.remove(worker) } }
             )
             activeWorkers.add(worker)
             worker.start()
@@ -112,7 +113,7 @@ class CoreTestService : Service() {
         }
     }
 
-    private fun handleWorkerEvent(event: RealPingEvent, onWorkerDone: () -> Unit) {
+    private fun handleWorkerEvent(event: RealPingEvent, message: TestServiceMessage, onWorkerDone: () -> Unit) {
         when (event) {
             is RealPingEvent.Progress -> {
                 NotificationHelper.updateNotification(
@@ -129,6 +130,16 @@ class CoreTestService : Service() {
             }
 
             is RealPingEvent.Finish -> {
+                if (message.subscriptionId.isNotEmpty()) {
+                    if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_REMOVE_INVALID_AFTER_TEST, false)) {
+                        removeInvalidServersForSub(message.subscriptionId)
+                    }
+
+                    if (MmkvManager.decodeSettingsBool(AppConfig.PREF_AUTO_SORT_AFTER_TEST, false)) {
+                        sortByTestResultsForSub(message.subscriptionId)
+                    }
+                }
+
                 MessageUtil.sendMsg2UI(this, AppConfig.MSG_MEASURE_CONFIG_FINISH, event.status)
                 onWorkerDone()
                 if (activeWorkers.isEmpty()) {
@@ -137,6 +148,34 @@ class CoreTestService : Service() {
                 }
             }
         }
+    }
+
+    /**
+     * Removes every invalid server (testDelayMillis < 0) inside the given subscription.
+     * Mirrors the subscription-scoped removal upstream added for auto-cleanup after tests.
+     */
+    private fun removeInvalidServersForSub(subscriptionId: String) {
+        MmkvManager.decodeServerList(subscriptionId).forEach { guid ->
+            MmkvManager.removeInvalidServer(guid)
+        }
+    }
+
+    /**
+     * Sorts the servers of one subscription by their test delay (fastest first).
+     * Kept in sync with MainViewModel.sortByTestResultsForSub.
+     */
+    private fun sortByTestResultsForSub(subscriptionId: String) {
+        data class ServerDelay(val guid: String, val testDelayMillis: Long)
+
+        val serverDelays = mutableListOf<ServerDelay>()
+        MmkvManager.decodeServerList(subscriptionId).forEach { key ->
+            val delay = MmkvManager.decodeServerAffiliationInfo(key)?.testDelayMillis ?: 0L
+            serverDelays.add(ServerDelay(key, if (delay <= 0L) 999999 else delay))
+        }
+        serverDelays.sortBy { it.testDelayMillis }
+
+        val sortedServerList = serverDelays.map { it.guid }.toMutableList()
+        MmkvManager.encodeServerList(sortedServerList, subscriptionId)
     }
 
     private fun handleMeasureCancel() {
