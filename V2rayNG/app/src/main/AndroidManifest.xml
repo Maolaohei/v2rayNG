@@ -253,6 +253,7 @@
         </receiver>
         <receiver
             android:name=".receiver.BootReceiver"
+            android:directBootAware="true"
             android:exported="true"
             android:label="BootReceiver">
             <intent-filter>

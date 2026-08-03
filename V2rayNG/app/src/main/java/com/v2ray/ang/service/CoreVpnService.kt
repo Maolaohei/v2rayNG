@@ -192,12 +192,6 @@ class CoreVpnService : VpnService(), ServiceControl {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service command received")
-        // Always-on VPN restarts from OS deliver intent.action == SERVICE_INTERFACE or null intent.
-        // Reset any stuck teardown flag left by a killed process so setup can run again.
-        val isSystemVpnStart = intent == null || intent.action == SERVICE_INTERFACE
-        if (isSystemVpnStart) {
-            stopping.set(false)
-        }
         // FGS contract: promote first so re-entry / sticky restart cannot miss the timeout.
         NotificationManager.showNotification(null)
 
@@ -205,6 +199,14 @@ class CoreVpnService : VpnService(), ServiceControl {
         // VPN session. Closing TUN then hitting "core already running" used to call stopAllService
         // and force users to toggle multiple times before traffic recovered.
         synchronized(lifecycleLock) {
+            // Always-on VPN restarts from OS deliver intent.action == SERVICE_INTERFACE or null intent.
+            // Reset any stuck teardown flag left by a killed process so setup can run again.
+            // Must be inside lifecycleLock: clearing it outside could race an in-flight teardown
+            // that set it under the same lock and still relies on it.
+            val isSystemVpnStart = intent == null || intent.action == SERVICE_INTERFACE
+            if (isSystemVpnStart) {
+                stopping.set(false)
+            }
             // If a start arrives while stopAllService holds/just set this flag, we still proceed
             // after acquiring lifecycleLock (stop finishes first). Clear the flag for cold start.
             if (stopping.get()) {

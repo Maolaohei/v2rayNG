@@ -519,7 +519,7 @@ object CoreServiceManager {
 
         if (config.insecure == true && config.pinnedCA256.isNullOrEmpty()) {
             context.toastError(R.string.toast_allow_insecure_deprecated)
-            Utils.setClipboard(context,context.getString(R.string.toast_allow_insecure_deprecated))
+            Utils.setClipboard(context, context.getString(R.string.toast_allow_insecure_deprecated))
         }
 
         if (!softApplySelected) {
