@@ -645,6 +645,7 @@ object CoreServiceManager {
         if (coreController.isRunning) {
             if (softRestarting.get()) {
                 LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core still running during soft-restart start")
+                startingSession.set(false)
                 return false
             }
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core already running")
@@ -664,6 +665,7 @@ object CoreServiceManager {
         val service = getService()
         if (service == null) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: Service is null")
+            startingSession.set(false)
             return false
         }
 

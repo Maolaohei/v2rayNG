@@ -171,6 +171,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * A message was dropped as stale inside the intent window. The flip may have come from
+     * another entry point (widget / QS tile, which only write MMKV and cannot update this
+     * VM's flip timestamp), so the dropped message may have been real. Re-confirm the actual
+     * daemon state and correct an optimistic UI instead of leaving it stuck.
+     */
+    private fun confirmStateAfterStaleDrop() {
+        if (stateQueryJob?.isActive == true) return // a query is already in flight
+        queryDaemonState { running ->
+            if (!running && uiIntentRunning && isRunning.value == true) {
+                LogUtil.w(AppConfig.TAG, "MainViewModel: stale-drop query confirmed stopped, correcting UI")
+                uiIntentRunning = false
+                MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
+                isRunning.value = false
+            }
+        }
+    }
+
+    /**
      * Called when the ViewModel is cleared.
      */
     override fun onCleared() {
@@ -553,6 +571,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // A late RUNNING from a previous start must not revive a user's stop.
                     if (isStaleForIntent(runningMessage = true)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale RUNNING after intent flip")
+                        confirmStateAfterStaleDrop()
                         return
                     }
                     stateQueryListener = null
@@ -593,6 +612,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // A late START_SUCCESS from a previous start must not revive a user's stop.
                     if (isStaleForIntent(runningMessage = true)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale START_SUCCESS after intent flip")
+                        confirmStateAfterStaleDrop()
                         return
                     }
                     stateQueryListener = null
@@ -638,6 +658,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // A late STOP_SUCCESS from a previous stop must not kill a fresh start.
                     if (isStaleForIntent(runningMessage = false)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale STOP_SUCCESS after intent flip")
+                        confirmStateAfterStaleDrop()
                         return
                     }
                     stateQueryListener = null
