@@ -178,14 +178,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun confirmStateAfterStaleDrop() {
         if (stateQueryJob?.isActive == true) return // a query is already in flight
+        val intentAtQuery = uiIntentRunning
         queryDaemonState { running ->
-            if (!running && uiIntentRunning && isRunning.value == true) {
+            if (running) return@queryDaemonState
+            // The user may have flipped the intent again while the query was in flight;
+            // only correct the UI when the intent is still what we snapshot at query time.
+            if (uiIntentRunning != intentAtQuery) return@queryDaemonState
+            if (isRunning.value == true) {
                 LogUtil.w(AppConfig.TAG, "MainViewModel: stale-drop query confirmed stopped, correcting UI")
-                uiIntentRunning = false
-                MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
-                isRunning.value = false
+                applyStoppedState(null)
             }
         }
+    }
+
+    /** Applies a confirmed live session (RUNNING / START_SUCCESS) and reports query results. */
+    private fun applyLiveState(queryListener: ((Boolean) -> Unit)?) {
+        stateQueryListener = null
+        stateQueryJob?.cancel()
+        uiIntentRunning = true
+        MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, true)
+        isRunning.value = true
+        onLiveConfirmed()
+        // Always notify: soft-restart keeps isRunning=true so LiveData alone won't refresh UI.
+        notifySessionReady()
+        queryListener?.invoke(true)
+    }
+
+    /** Applies a confirmed stopped session and reports query results. */
+    private fun applyStoppedState(queryListener: ((Boolean) -> Unit)?) {
+        stateQueryListener = null
+        stateQueryJob?.cancel()
+        uiIntentRunning = false
+        MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
+        isRunning.value = false
+        queryListener?.invoke(false)
     }
 
     /**
@@ -566,22 +592,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val mMsgReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
             val queryListener = stateQueryListener
+            // While a state query is in flight, every state message is treated as the
+            // authoritative reply and skips stale arbitration - otherwise the very message
+            // meant to correct the UI would be swallowed by the same arbitration again
+            // (e.g. widget start after a home stop: the START_SUCCESS/RUNNING reply must
+            // reach the UI even though it contradicts the home intent).
+            val queryInFlight = stateQueryJob?.isActive == true || queryListener != null
             when (intent?.getIntExtra("key", 0)) {
                 AppConfig.MSG_STATE_RUNNING -> {
                     // A late RUNNING from a previous start must not revive a user's stop.
-                    if (isStaleForIntent(runningMessage = true)) {
+                    if (!queryInFlight && isStaleForIntent(runningMessage = true)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale RUNNING after intent flip")
                         confirmStateAfterStaleDrop()
                         return
                     }
-                    stateQueryListener = null
-                    stateQueryJob?.cancel()
-                    uiIntentRunning = true
-                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, true)
-                    isRunning.value = true
-                    onLiveConfirmed()
-                    notifySessionReady()
-                    queryListener?.invoke(true)
+                    applyLiveState(queryListener)
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
@@ -599,51 +624,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         // keep isRunning=true; Home confirm-stop owns deferred clear. If this was
                         // an optimistic init restore, armInitProbe() clears it when nothing confirms.
                     } else {
-                        stateQueryListener = null
-                        stateQueryJob?.cancel()
-                        uiIntentRunning = false
-                        MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
-                        isRunning.value = false
-                        queryListener?.invoke(false)
+                        applyStoppedState(queryListener)
                     }
                 }
 
                 AppConfig.MSG_STATE_START_SUCCESS -> {
                     // A late START_SUCCESS from a previous start must not revive a user's stop.
-                    if (isStaleForIntent(runningMessage = true)) {
+                    if (!queryInFlight && isStaleForIntent(runningMessage = true)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale START_SUCCESS after intent flip")
                         confirmStateAfterStaleDrop()
                         return
                     }
-                    stateQueryListener = null
-                    stateQueryJob?.cancel()
                     // Soft node-switch restarts should not spam "service started" toasts.
                     val content = intent.getStringExtra("content")
                     if (content != AppConfig.MSG_CONTENT_SOFT_START) {
                         getApplication<AngApplication>().toastSuccess(R.string.toast_services_success)
                     }
-                    uiIntentRunning = true
-                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, true)
-                    isRunning.value = true
-                    onLiveConfirmed()
-                    // Always notify: soft-restart keeps isRunning=true so LiveData alone won't refresh UI.
-                    notifySessionReady()
-                    queryListener?.invoke(true)
+                    applyLiveState(queryListener)
                 }
 
                 AppConfig.MSG_STATE_START_FAILURE -> {
-                    stateQueryListener = null
-                    stateQueryJob?.cancel()
                     val errorMessage = intent.getStringExtra("content")
                     val msg = errorMessage?.takeIf { it.isNotBlank() }
                         ?: getApplication<AngApplication>().getString(R.string.toast_services_failure)
                     // Toast kept as light feedback; home shows actionable dialog when visible.
                     getApplication<AngApplication>().toastError(msg)
-                    uiIntentRunning = false
-                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
-                    isRunning.value = false
+                    applyStoppedState(queryListener)
                     startFailureAction.value = msg
-                    queryListener?.invoke(false)
                 }
 
                 AppConfig.MSG_STATE_NETWORK_RECOVERING -> {
@@ -656,17 +663,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 AppConfig.MSG_STATE_STOP_SUCCESS -> {
                     // A late STOP_SUCCESS from a previous stop must not kill a fresh start.
-                    if (isStaleForIntent(runningMessage = false)) {
+                    if (!queryInFlight && isStaleForIntent(runningMessage = false)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale STOP_SUCCESS after intent flip")
                         confirmStateAfterStaleDrop()
                         return
                     }
-                    stateQueryListener = null
-                    stateQueryJob?.cancel()
-                    uiIntentRunning = false
-                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
-                    isRunning.value = false
-                    queryListener?.invoke(false)
+                    applyStoppedState(queryListener)
                 }
 
                 AppConfig.MSG_MEASURE_DELAY_SUCCESS -> {
