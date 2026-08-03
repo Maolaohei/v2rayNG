@@ -592,11 +592,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val mMsgReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
             val queryListener = stateQueryListener
-            // While a state query is in flight, every state message is treated as the
-            // authoritative reply and skips stale arbitration - otherwise the very message
+            // While a state query is in flight, RUNNING/NOT_RUNNING are treated as the
+            // authoritative reply and skip stale arbitration - otherwise the very message
             // meant to correct the UI would be swallowed by the same arbitration again
-            // (e.g. widget start after a home stop: the START_SUCCESS/RUNNING reply must
-            // reach the UI even though it contradicts the home intent).
+            // (e.g. widget start after a home stop: the RUNNING reply must reach the UI
+            // even though it contradicts the home intent). START_SUCCESS/STOP_SUCCESS are
+            // never REGISTER replies and keep full arbitration.
             val queryInFlight = stateQueryJob?.isActive == true || queryListener != null
             when (intent?.getIntExtra("key", 0)) {
                 AppConfig.MSG_STATE_RUNNING -> {
@@ -610,6 +611,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
+                    // While a query is in flight this IS the authoritative reply (the daemon
+                    // already applied its sticky checks before answering NOT_RUNNING).
+                    if (queryInFlight) {
+                        applyStoppedState(queryListener)
+                        return
+                    }
                     // Multi-process REGISTER races are common. Never flash Stopped while:
                     // - soft-restart is in flight, or
                     // - a live session/core is still observed.
@@ -630,7 +637,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 AppConfig.MSG_STATE_START_SUCCESS -> {
                     // A late START_SUCCESS from a previous start must not revive a user's stop.
-                    if (!queryInFlight && isStaleForIntent(runningMessage = true)) {
+                    if (isStaleForIntent(runningMessage = true)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale START_SUCCESS after intent flip")
                         confirmStateAfterStaleDrop()
                         return
@@ -663,7 +670,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 AppConfig.MSG_STATE_STOP_SUCCESS -> {
                     // A late STOP_SUCCESS from a previous stop must not kill a fresh start.
-                    if (!queryInFlight && isStaleForIntent(runningMessage = false)) {
+                    if (isStaleForIntent(runningMessage = false)) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale STOP_SUCCESS after intent flip")
                         confirmStateAfterStaleDrop()
                         return
