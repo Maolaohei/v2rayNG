@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
@@ -38,15 +39,26 @@ class QSTileService : TileService() {
         tile.updateTile()
     }
 
-    /** Daemon-process live check; sticky against flaky REGISTER races. */
+    /**
+     * Session state: daemon-process singletons are authoritative while this service's
+     * process is alive; the persisted UI intent covers the process-recreated case.
+     */
     fun isSessionLive(): Boolean {
         return try {
             CoreServiceManager.hasLiveSession() ||
                 CoreServiceManager.isRunning() ||
                 CoreServiceManager.isSoftRestarting() ||
-                CoreServiceManager.serviceControl != null
+                CoreServiceManager.serviceControl != null ||
+                MmkvManager.decodeSettingsBool(AppConfig.PREF_UI_INTENT_RUNNING, false)
         } catch (_: Throwable) {
             false
+        }
+    }
+
+    private fun persistSessionIntent(running: Boolean) {
+        try {
+            MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, running)
+        } catch (_: Throwable) {
         }
     }
 
@@ -98,9 +110,11 @@ class QSTileService : TileService() {
         super.onClick()
         // Prefer live session over visual tile state (visual can lag / race).
         if (isSessionLive()) {
+            persistSessionIntent(false)
             CoreServiceManager.stopVService(this)
             setState(Tile.STATE_INACTIVE)
         } else {
+            persistSessionIntent(true)
             CoreServiceManager.startVServiceFromToggle(this)
             // Connecting: keep inactive until START_SUCCESS/RUNNING arrives.
             setState(Tile.STATE_INACTIVE)
@@ -116,12 +130,14 @@ class QSTileService : TileService() {
                 AppConfig.MSG_STATE_START_SUCCESS,
                 AppConfig.MSG_STATE_NETWORK_RECOVERED,
                 -> {
+                    context.persistSessionIntent(true)
                     context.setState(Tile.STATE_ACTIVE)
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
                     // Sticky: REGISTER races / soft-restart can emit NOT_RUNNING
-                    // while core is still up. Re-check before dimming.
+                    // while core is still up. Keep the persisted intent until an
+                    // explicit STOP_SUCCESS / START_FAILURE confirms otherwise.
                     if (context.isSessionLive()) {
                         context.setState(Tile.STATE_ACTIVE)
                     } else {
@@ -132,11 +148,8 @@ class QSTileService : TileService() {
                 AppConfig.MSG_STATE_START_FAILURE,
                 AppConfig.MSG_STATE_STOP_SUCCESS,
                 -> {
-                    if (context.isSessionLive()) {
-                        context.setState(Tile.STATE_ACTIVE)
-                    } else {
-                        context.setState(Tile.STATE_INACTIVE)
-                    }
+                    context.persistSessionIntent(false)
+                    context.setState(Tile.STATE_INACTIVE)
                 }
 
                 AppConfig.MSG_STATE_NETWORK_RECOVERING -> {

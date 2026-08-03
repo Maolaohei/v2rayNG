@@ -10,6 +10,7 @@ import android.widget.RemoteViews
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.handler.MmkvManager
 
 class WidgetProvider : AppWidgetProvider() {
     /**
@@ -64,14 +65,26 @@ class WidgetProvider : AppWidgetProvider() {
      * @param context The Context in which the receiver is running.
      * @param intent The Intent being received.
      */
+    /**
+     * Session state: daemon-process singletons are authoritative while this receiver's
+     * process is alive; the persisted UI intent covers the process-recreated case.
+     */
     private fun isSessionLive(): Boolean {
         return try {
             CoreServiceManager.hasLiveSession() ||
                 CoreServiceManager.isRunning() ||
                 CoreServiceManager.isSoftRestarting() ||
-                CoreServiceManager.serviceControl != null
+                CoreServiceManager.serviceControl != null ||
+                MmkvManager.decodeSettingsBool(AppConfig.PREF_UI_INTENT_RUNNING, false)
         } catch (_: Throwable) {
             false
+        }
+    }
+
+    private fun persistSessionIntent(running: Boolean) {
+        try {
+            MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, running)
+        } catch (_: Throwable) {
         }
     }
 
@@ -79,14 +92,17 @@ class WidgetProvider : AppWidgetProvider() {
         super.onReceive(context, intent)
         if (AppConfig.BROADCAST_ACTION_WIDGET_CLICK == intent.action) {
             if (isSessionLive()) {
+                persistSessionIntent(false)
                 CoreServiceManager.stopVService(context)
             } else {
+                persistSessionIntent(true)
                 CoreServiceManager.startVServiceFromToggle(context)
             }
         } else if (AppConfig.BROADCAST_ACTION_ACTIVITY == intent.action) {
             AppWidgetManager.getInstance(context)?.let { manager ->
                 when (intent.getIntExtra("key", 0)) {
                     AppConfig.MSG_STATE_RUNNING, AppConfig.MSG_STATE_START_SUCCESS -> {
+                        persistSessionIntent(true)
                         updateWidgetBackground(
                             context, manager, manager.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java)),
                             true
@@ -95,6 +111,8 @@ class WidgetProvider : AppWidgetProvider() {
 
                     AppConfig.MSG_STATE_NOT_RUNNING -> {
                         // Sticky: REGISTER races can report not-running while session is live.
+                        // Keep showing the persisted intent (it is only cleared by explicit
+                        // START_FAILURE / STOP_SUCCESS or by the home screen confirming stop).
                         updateWidgetBackground(
                             context, manager, manager.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java)),
                             isSessionLive(),
@@ -102,6 +120,7 @@ class WidgetProvider : AppWidgetProvider() {
                     }
 
                     AppConfig.MSG_STATE_START_FAILURE, AppConfig.MSG_STATE_STOP_SUCCESS -> {
+                        persistSessionIntent(false)
                         updateWidgetBackground(
                             context, manager, manager.getAppWidgetIds(ComponentName(context, WidgetProvider::class.java)),
                             false,

@@ -461,6 +461,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private fun handleConnectionToggle(wantStart: Boolean) {
         // Visual intent: starting keeps switch ON; stopping keeps OFF while disabled.
+        mainViewModel.setUiIntent(wantStart)
         switchReady = false
         binding.switchConnection.isChecked = wantStart
         applyRunningState(isLoading = true, isRunning = false)
@@ -581,11 +582,12 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             if (!isAdded || view == null) return@launch
             // No START_SUCCESS/FAILURE arrived; recover switch so UI cannot stick forever.
             if (uiConnecting || !binding.switchConnection.isEnabled) {
-                val running = stickyRunning ||
-                    mainViewModel.isRunning.value == true ||
-                    CoreServiceManager.isRunning() ||
-                    CoreServiceManager.hasLiveSession()
-                applyRunningState(isLoading = false, isRunning = running)
+                // Main-process singletons are always false (core runs in the daemon process),
+                // so ask the daemon for the real state instead of guessing from stale flags.
+                mainViewModel.queryDaemonState { running ->
+                    if (!isAdded || view == null) return@queryDaemonState
+                    applyRunningState(isLoading = false, isRunning = running)
+                }
             }
         }
     }

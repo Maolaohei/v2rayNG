@@ -65,6 +65,9 @@ object CoreServiceManager {
     private val intentionalStopEpoch = AtomicLong(0)
     /** True while we intentionally stop the core only to restart it in-place. */
     private val softRestarting = AtomicBoolean(false)
+    /** True from cold-start entry until START_SUCCESS/FAILURE, so REGISTER probes can
+     *  distinguish "starting up" from "not running" across processes. */
+    private val startingSession = AtomicBoolean(false)
     /** True after successful core start until full stop. Survives brief core flaps. */
     private val sessionActive = AtomicBoolean(false)
     /** Bumped on user/full stop so in-flight soft-restarts cannot revive the session. */
@@ -629,6 +632,8 @@ object CoreServiceManager {
         } else {
             clearUserStopGate()
         }
+        // REGISTER probes from the UI report this session as live while it comes up.
+        startingSession.set(true)
 
         if (vpnInterface != null && SettingsManager.isVpnMode()) {
             activeVpnInterface = vpnInterface
@@ -643,6 +648,7 @@ object CoreServiceManager {
                 return false
             }
             LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core already running")
+            startingSession.set(false)
             sessionActive.set(true)
             val service = getService()
             if (service != null) {
@@ -668,6 +674,7 @@ object CoreServiceManager {
         } catch (e: Exception) {
             val message = e.message?.takeUnless { it.isBlank() } ?: e.javaClass.simpleName
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: $message", e)
+            startingSession.set(false)
             if (!softRestarting.get()) {
                 MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_FAILURE, message)
                 TrafficStatsManager.stopServiceTracking()
@@ -888,6 +895,7 @@ object CoreServiceManager {
 
         val startContent = if (softRestarting.get()) AppConfig.MSG_CONTENT_SOFT_START else ""
         sessionActive.set(true)
+        startingSession.set(false)
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, startContent)
         TrafficStatsManager.startServiceTracking()
         NotificationManager.startSpeedNotification()
@@ -957,6 +965,7 @@ object CoreServiceManager {
             activeVpnInterface = null
             serviceControl = null
             sessionActive.set(false)
+            startingSession.set(false)
             currentConfigGuid = null
         }
 
@@ -1213,7 +1222,8 @@ object CoreServiceManager {
                     // Soft-restart may briefly report core not running while the foreground
                     // service is still the active session. Prefer RUNNING only for real live
                     // sessions - never solely because the ROOT preference is selected.
-                    if (hasLiveSession()) {
+                    // startingSession covers the cold-start window (service up, core not yet live).
+                    if (hasLiveSession() || startingSession.get()) {
                         MessageUtil.sendMsg2UI(serviceControl.getService(), AppConfig.MSG_STATE_RUNNING, "")
                     } else {
                         MessageUtil.sendMsg2UI(serviceControl.getService(), AppConfig.MSG_STATE_NOT_RUNNING, "")

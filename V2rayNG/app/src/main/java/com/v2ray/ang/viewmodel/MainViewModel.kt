@@ -31,6 +31,8 @@ import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.MessageUtil
 import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Collections
@@ -55,6 +57,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var broadcastRegistered: Boolean = false
 
     /**
+     * Last UI-observed session intent, persisted across process death (PREF_UI_INTENT_RUNNING).
+     * Drives initial switch state and stale-message arbitration on the main thread.
+     */
+    @Volatile
+    private var uiIntentRunning: Boolean = false
+
+    /** Wall-clock of the last user intent flip; used to ignore late cross-process messages. */
+    @Volatile
+    private var lastIntentFlipAtMs: Long = 0L
+
+    /** Set once a live RUNNING/START_SUCCESS arrived since the last init probe. */
+    private var sawLiveConfirm: Boolean = false
+
+    /** One-shot daemon state query (REGISTER) pending result callback. */
+    private var stateQueryListener: ((Boolean) -> Unit)? = null
+    private var stateQueryJob: Job? = null
+
+    /** Initialization probe: if REGISTER gets no live confirmation, drop the optimistic state. */
+    private var initProbeJob: Job? = null
+
+    private companion object {
+        /** Late START/STOP messages arriving inside this window after an intent flip are stale. */
+        const val STALE_MSG_WINDOW_MS = 3_000L
+        /** How long the init probe waits for a live confirmation before showing Stopped. */
+        const val INIT_PROBE_TIMEOUT_MS = 3_500L
+        /** How long a daemon state query waits for the REGISTER reply. */
+        const val STATE_QUERY_TIMEOUT_MS = 2_500L
+    }
+
+    init {
+        uiIntentRunning = MmkvManager.decodeSettingsBool(AppConfig.PREF_UI_INTENT_RUNNING, false)
+    }
+
+    /**
      * Refer to the official documentation for [registerReceiver](https://developer.android.com/reference/androidx/core/content/ContextCompat#registerReceiver(android.content.Context,android.content.BroadcastReceiver,android.content.IntentFilter,int):
      * `registerReceiver(Context, BroadcastReceiver, IntentFilter, int)`.
      */
@@ -63,13 +99,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val mFilter = IntentFilter(AppConfig.BROADCAST_ACTION_ACTIVITY)
             ContextCompat.registerReceiver(getApplication(), mMsgReceiver, mFilter, Utils.receiverFlags())
             broadcastRegistered = true
-            // Only reset on first registration. Re-entry while service is already up
-            // must not flash the home switch to Stopped before MSG_STATE_RUNNING arrives.
+            // First registration only. Restore the last observed intent instead of flashing
+            // Stopped: if the session really is down, the REGISTER reply (or init probe) will
+            // correct it; if it is up (UI process was killed, service kept running), no flash.
             if (isRunning.value == null) {
-                isRunning.value = false
+                isRunning.value = uiIntentRunning
+                sawLiveConfirm = false
+                if (uiIntentRunning) {
+                    armInitProbe()
+                }
             }
         }
         MessageUtil.sendMsg2Service(getApplication(), AppConfig.MSG_REGISTER_CLIENT, "")
+    }
+
+    /**
+     * Records a user intent flip (home switch / widget toggle). Persisted so a restarted UI
+     * process can restore the switch; also seeds the stale-message arbitration window.
+     */
+    fun setUiIntent(running: Boolean) {
+        uiIntentRunning = running
+        lastIntentFlipAtMs = System.currentTimeMillis()
+        MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, running)
+    }
+
+    /**
+     * Queries the daemon for the real session state (REGISTER round-trip) and reports the
+     * result on the main thread. Falls back to false after [STATE_QUERY_TIMEOUT_MS] when the
+     * daemon is unreachable. Used by timeouts that must not trust main-process singletons.
+     */
+    fun queryDaemonState(onResult: (Boolean) -> Unit) {
+        stateQueryListener = onResult
+        stateQueryJob?.cancel()
+        stateQueryJob = viewModelScope.launch {
+            MessageUtil.sendMsg2Service(getApplication(), AppConfig.MSG_REGISTER_CLIENT, "")
+            delay(STATE_QUERY_TIMEOUT_MS)
+            val listener = stateQueryListener
+            stateQueryListener = null
+            listener?.invoke(false)
+        }
+    }
+
+    /** While an init probe is pending, a live confirmation retires it early. */
+    private fun onLiveConfirmed() {
+        sawLiveConfirm = true
+        initProbeJob?.cancel()
+        initProbeJob = null
+    }
+
+    /**
+     * Optimistic-running safety valve: if the daemon never confirms the session after a UI
+     * restart, drop back to Stopped instead of showing a phantom Running state.
+     */
+    private fun armInitProbe() {
+        initProbeJob?.cancel()
+        initProbeJob = viewModelScope.launch {
+            delay(INIT_PROBE_TIMEOUT_MS)
+            if (!sawLiveConfirm && uiIntentRunning && isRunning.value == true) {
+                LogUtil.w(AppConfig.TAG, "MainViewModel: init probe timed out, session not confirmed")
+                uiIntentRunning = false
+                MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
+                isRunning.value = false
+            }
+        }
+    }
+
+    /** True when a late message contradicts an intent flip made within the stale window. */
+    private fun isStaleForIntent(runningMessage: Boolean): Boolean {
+        if (System.currentTimeMillis() - lastIntentFlipAtMs >= STALE_MSG_WINDOW_MS) return false
+        return runningMessage != uiIntentRunning
     }
 
     /**
@@ -449,10 +547,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val mMsgReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
+            val queryListener = stateQueryListener
             when (intent?.getIntExtra("key", 0)) {
                 AppConfig.MSG_STATE_RUNNING -> {
+                    // A late RUNNING from a previous start must not revive a user's stop.
+                    if (isStaleForIntent(runningMessage = true)) {
+                        LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale RUNNING after intent flip")
+                        return
+                    }
+                    stateQueryListener = null
+                    stateQueryJob?.cancel()
+                    uiIntentRunning = true
+                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, true)
                     isRunning.value = true
+                    onLiveConfirmed()
                     notifySessionReady()
+                    queryListener?.invoke(true)
                 }
 
                 AppConfig.MSG_STATE_NOT_RUNNING -> {
@@ -467,31 +577,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isRunning.value = true
                     } else if (isRunning.value == true) {
                         LogUtil.i(AppConfig.TAG, "MainViewModel: ignore NOT_RUNNING while UI thinks running")
-                        // keep isRunning=true; Home confirm-stop owns deferred clear
+                        // keep isRunning=true; Home confirm-stop owns deferred clear. If this was
+                        // an optimistic init restore, armInitProbe() clears it when nothing confirms.
                     } else {
+                        stateQueryListener = null
+                        stateQueryJob?.cancel()
+                        uiIntentRunning = false
+                        MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
                         isRunning.value = false
+                        queryListener?.invoke(false)
                     }
                 }
 
                 AppConfig.MSG_STATE_START_SUCCESS -> {
+                    // A late START_SUCCESS from a previous start must not revive a user's stop.
+                    if (isStaleForIntent(runningMessage = true)) {
+                        LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale START_SUCCESS after intent flip")
+                        return
+                    }
+                    stateQueryListener = null
+                    stateQueryJob?.cancel()
                     // Soft node-switch restarts should not spam "service started" toasts.
                     val content = intent.getStringExtra("content")
                     if (content != AppConfig.MSG_CONTENT_SOFT_START) {
                         getApplication<AngApplication>().toastSuccess(R.string.toast_services_success)
                     }
+                    uiIntentRunning = true
+                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, true)
                     isRunning.value = true
+                    onLiveConfirmed()
                     // Always notify: soft-restart keeps isRunning=true so LiveData alone won't refresh UI.
                     notifySessionReady()
+                    queryListener?.invoke(true)
                 }
 
                 AppConfig.MSG_STATE_START_FAILURE -> {
+                    stateQueryListener = null
+                    stateQueryJob?.cancel()
                     val errorMessage = intent.getStringExtra("content")
                     val msg = errorMessage?.takeIf { it.isNotBlank() }
                         ?: getApplication<AngApplication>().getString(R.string.toast_services_failure)
                     // Toast kept as light feedback; home shows actionable dialog when visible.
                     getApplication<AngApplication>().toastError(msg)
+                    uiIntentRunning = false
+                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
                     isRunning.value = false
                     startFailureAction.value = msg
+                    queryListener?.invoke(false)
                 }
 
                 AppConfig.MSG_STATE_NETWORK_RECOVERING -> {
@@ -503,7 +635,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_STATE_STOP_SUCCESS -> {
+                    // A late STOP_SUCCESS from a previous stop must not kill a fresh start.
+                    if (isStaleForIntent(runningMessage = false)) {
+                        LogUtil.i(AppConfig.TAG, "MainViewModel: ignore stale STOP_SUCCESS after intent flip")
+                        return
+                    }
+                    stateQueryListener = null
+                    stateQueryJob?.cancel()
+                    uiIntentRunning = false
+                    MmkvManager.encodeSettings(AppConfig.PREF_UI_INTENT_RUNNING, false)
                     isRunning.value = false
+                    queryListener?.invoke(false)
                 }
 
                 AppConfig.MSG_MEASURE_DELAY_SUCCESS -> {

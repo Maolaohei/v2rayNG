@@ -578,7 +578,8 @@ class SettingsActivity : BaseActivity(), PreferenceFragmentCompat.OnPreferenceSt
         private fun isCoreLikelyRunning(context: Context, detection: DetectionResult): Boolean {
             if (CoreServiceManager.isRunning() ||
                 CoreServiceManager.hasLiveSession() ||
-                CoreServiceManager.serviceControl != null
+                CoreServiceManager.serviceControl != null ||
+                MmkvManager.decodeSettingsBool(AppConfig.PREF_UI_INTENT_RUNNING, false)
             ) {
                 return true
             }

@@ -707,6 +707,14 @@ class CoreVpnService : VpnService(), ServiceControl {
                 LogUtil.w(AppConfig.TAG, "StartCore-VPN: stopCoreLoop failed", e)
             }
 
+            // Emit STOP_SUCCESS before stopSelf(): stopSelf may destroy the process right away,
+            // and a broadcast emitted after it can be dropped, leaving the UI stuck on "Running".
+            try {
+                MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: failed to emit STOP_SUCCESS after teardown", e)
+            }
+
             if (isForced) {
                 // stopSelf ahead of mInterface.close so core can release ports before TUN dies.
                 stopSelf()
@@ -728,12 +736,6 @@ class CoreVpnService : VpnService(), ServiceControl {
                     LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to close interface", e)
                 }
                 interfaceOpen = false
-            }
-
-            try {
-                MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_STOP_SUCCESS, "")
-            } catch (e: Exception) {
-                LogUtil.w(AppConfig.TAG, "StartCore-VPN: failed to emit STOP_SUCCESS after teardown", e)
             }
             // Keep stopping=true until destroy finishes; onCreate/onStart of a new instance
             // starts with a fresh object so the next cold start is not blocked.
