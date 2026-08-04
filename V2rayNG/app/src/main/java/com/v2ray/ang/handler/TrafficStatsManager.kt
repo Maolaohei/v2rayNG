@@ -122,7 +122,9 @@ object TrafficStatsManager {
         var down = 0L
         try {
             CoreServiceManager.queryAllOutboundTrafficStats().forEach { stat ->
-                if (stat.tag.startsWith(AppConfig.TAG_PROXY)) {
+                // Accumulate all proxy outbounds, including custom subscription tags that
+                // do not use the TAG_PROXY prefix (upstream #5990: they reported 0 B/s).
+                if (stat.tag != AppConfig.TAG_BLOCKED && stat.tag != AppConfig.TAG_DIRECT) {
                     when (stat.direction) {
                         AppConfig.UPLINK -> up += stat.value
                         AppConfig.DOWNLINK -> down += stat.value
