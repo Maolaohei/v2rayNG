@@ -23,6 +23,9 @@ object RootManager {
     /** Last known result without probing. Defaults to false when never probed. */
     fun cachedRoot(): Boolean = cached ?: false
 
+    /** True once a probe result is cached; a fresh process starts unprobed (cached == null). */
+    fun hasProbed(): Boolean = cached != null
+
     /**
      * Returns whether root is available, probing once if unknown.
      * May block while `su` is spawned; avoid calling on the main thread before a probe.

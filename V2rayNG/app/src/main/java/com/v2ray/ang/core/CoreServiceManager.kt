@@ -535,7 +535,10 @@ object CoreServiceManager {
 
         // ROOT UI may be retired; isRootMode() already migrates sticky prefs.
         val isRootMode = AppConfig.ROOT_MODE_UI_ENABLED && SettingsManager.isRootMode()
-        if (isRootMode && !RootManager.isRootAvailable()) {
+        // Only trust a cached probe here: probing `su` on the main thread (BootReceiver,
+        // widget / QS-tile first start) would block and can ANR. CoreRootService verifies
+        // root itself during startup and fails with a friendly message when unavailable.
+        if (isRootMode && RootManager.hasProbed() && !RootManager.cachedRoot()) {
             LogUtil.e(AppConfig.TAG, "StartCore-Manager: root mode requires root but none available")
             error(context.getString(R.string.toast_root_mode_unavailable))
         }

@@ -384,7 +384,13 @@ class CoreRootService : Service(), ServiceControl {
         // Remove routing rules BEFORE stopping the core so traffic is never redirected
         // to a dead listener. Synchronous on purpose - leaving rules behind breaks the net.
         RootDataPlanes.current().stop(this)
-        CoreServiceManager.stopCoreLoop()
+        // STOP_SUCCESS was already emitted in stopService(); avoid a duplicate broadcast.
+        CoreServiceManager.stopCoreLoop(
+            notifyUi = false,
+            cancelNotification = true,
+            stopWatchdog = true,
+            clearVpnInterface = true,
+        )
         // Bray-Core Android TUN does not close the external fd; Kotlin owns it.
         com.v2ray.ang.root.RootTun.close()
     }
@@ -396,6 +402,14 @@ class CoreRootService : Service(), ServiceControl {
     }
 
     override fun stopService() {
+        // Emit STOP_SUCCESS before stopSelf(): stopSelf may let the process be reclaimed
+        // before onDestroy runs stopCoreLoop(), dropping the broadcast and leaving the UI,
+        // widget and QS tile stuck on "running". Same ordering as CoreVpnService.
+        try {
+            MessageUtil.sendMsg2UI(this, AppConfig.MSG_STATE_STOP_SUCCESS, "")
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "StartCore-Root: failed to emit STOP_SUCCESS before stopSelf", e)
+        }
         stopSelf()
     }
 
