@@ -239,12 +239,12 @@ object AppConfig {
      * Master switch for ROOT/VPN-hide feature availability.
      * When false, force VPN/Proxy-only and hide all privilege UI.
      */
-    const val ROOT_MODE_UI_ENABLED = false
+    const val ROOT_MODE_UI_ENABLED = true
     /**
      * When false, home keeps only Proxy/VPN chips. ROOT (VPN-hide) is controlled
      * from Settings > Privilege enhancement (SFA-style privileged TUN without VpnService icon).
      */
-    const val ROOT_MODE_HOME_BUTTON_ENABLED = false
+    const val ROOT_MODE_HOME_BUTTON_ENABLED = true
     const val VPN_MTU = 1500
 
     /** Root (system-wide) mode runtime constants. */
