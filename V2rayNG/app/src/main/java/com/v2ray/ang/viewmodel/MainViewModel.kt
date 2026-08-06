@@ -694,10 +694,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 AppConfig.MSG_MEASURE_CONFIG_FINISH -> {
-                    val content = intent.getStringExtra("content")
-                    if (content == "0") {
-                        onTestsFinished()
-                    }
+                    // Always refresh the list: the batch finished either by completing or by
+                    // being cancelled (cancel now sends finish with "0" too, upstream #6009).
+                    onTestsFinished()
                 }
             }
         }
