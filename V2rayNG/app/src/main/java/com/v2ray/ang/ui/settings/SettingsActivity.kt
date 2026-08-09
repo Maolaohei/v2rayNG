@@ -48,6 +48,8 @@ import com.v2ray.ang.ui.userasset.UserAssetActivity
 import com.v2ray.ang.ui.compose.AppDivider
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
+import com.v2ray.ang.handler.AppLocaleManager
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.MmkvManager.rememberMmkvBool
 import com.v2ray.ang.handler.MmkvManager.rememberMmkvString
 import com.v2ray.ang.handler.MmkvManager
@@ -164,7 +166,11 @@ fun SettingsScreen(
     var confirmRemove by rememberMmkvBool(AppConfig.PREF_CONFIRM_REMOVE, false)
     var doubleColumnDisplay by rememberMmkvBool(AppConfig.PREF_DOUBLE_COLUMN_DISPLAY, false)
     var groupAllDisplay by rememberMmkvBool(AppConfig.PREF_GROUP_ALL_DISPLAY, false)
-    var language by rememberMmkvString(AppConfig.PREF_LANGUAGE, "auto")
+    var language by remember {
+        mutableStateOf(
+            MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE, "auto") ?: "auto"
+        )
+    }
     var uiModeNight by rememberMmkvString(AppConfig.PREF_UI_MODE_NIGHT, "0")
 
     var ipv6Enabled by rememberMmkvBool(AppConfig.PREF_IPV6_ENABLED, false)
@@ -374,7 +380,10 @@ fun SettingsScreen(
                     entries = languageEntries,
                     values = languageValues,
                     selectedValue = language,
-                    onSelected = { language = it }
+                    onSelected = {
+                        language = it
+                        AppLocaleManager.setApplicationLanguage(it)
+                    }
                 )
                 SettingsListItem(
                     title = stringResource(R.string.title_pref_ui_mode_night),

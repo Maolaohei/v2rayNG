@@ -66,6 +66,15 @@
             android:name="xposedscope"
             android:resource="@array/xposed_scope" />
 
+        <service
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data
+                android:name="autoStoreLocales"
+                android:value="true" />
+        </service>
+
         <activity
             android:name=".ui.main.MainActivity"
             android:exported="true"
