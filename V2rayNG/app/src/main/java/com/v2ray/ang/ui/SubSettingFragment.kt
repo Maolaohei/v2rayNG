@@ -13,6 +13,7 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.databinding.FragmentSubSettingBinding
+import com.v2ray.ang.dto.GroupMapItem
 import com.v2ray.ang.enums.EConfigType
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
@@ -69,9 +70,24 @@ class SubSettingFragment : BaseFragment<FragmentSubSettingBinding>() {
         }
     }
 
+    private var lastTabSignature: String? = null
+
     fun setupGroupTab() {
         if (!isAdded || view == null) return
         val groups = mainViewModel.getSubscriptions(requireContext())
+        val signature = buildString {
+            groups.forEach { append(it.id).append(':').append(it.remarks).append(';') }
+        }
+        if (signature == lastTabSignature && this::groupPagerAdapter.isInitialized) {
+            // Subscriptions unchanged (tab switch / rotation): skip the full JSON re-decode
+            // and TabLayoutMediator rebuild; just re-align and refresh node counts (M2).
+            alignTabToCurrent(groups)
+            refreshGroupTabTitles(true)
+            binding.tabGroup.isVisible = groups.isNotEmpty()
+            refreshNodesCount()
+            return
+        }
+        lastTabSignature = signature
         groupPagerAdapter.update(groups)
 
         tabMediator?.detach()
@@ -82,15 +98,19 @@ class SubSettingFragment : BaseFragment<FragmentSubSettingBinding>() {
             }
         }.also { it.attach() }
 
-        val targetIndex = groups.indexOfFirst { it.id == mainViewModel.subscriptionId }.takeIf { it >= 0 }
-            ?: (groups.size - 1).coerceAtLeast(0)
-        if (groups.isNotEmpty()) {
-            binding.viewPager.setCurrentItem(targetIndex, false)
-        }
+        alignTabToCurrent(groups)
 
         binding.tabGroup.isVisible = groups.isNotEmpty()
         refreshGroupTabTitles(true)
         refreshNodesCount()
+    }
+
+    private fun alignTabToCurrent(groups: List<GroupMapItem>) {
+        val targetIndex = groups.indexOfFirst { it.id == mainViewModel.subscriptionId }.takeIf { it >= 0 }
+            ?: (groups.size - 1).coerceAtLeast(0)
+        if (groups.isNotEmpty() && binding.viewPager.currentItem != targetIndex) {
+            binding.viewPager.setCurrentItem(targetIndex, false)
+        }
     }
 
     fun refreshGroupTabTitles(refreshAll: Boolean = false) {

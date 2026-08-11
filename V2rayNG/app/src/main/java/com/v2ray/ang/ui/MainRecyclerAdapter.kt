@@ -36,11 +36,20 @@ class MainRecyclerAdapter(
     private var data: List<ServersCache> = emptyList()
     private var selectedGuid: String? = null
 
+    /**
+     * subscriptionId -> remarks, filled lazily per row. Avoids a MMKV read + JSON parse on
+     * every bind in the "all" group (H1): with hundreds of rows sharing few subscriptions
+     * this turns O(rows) decodes into O(distinct subscriptions). Cleared whenever the data
+     * set is refreshed so a subscription update is picked up.
+     */
+    private val subRemarksCache = HashMap<String, String>()
+
     fun setData(newData: List<ServersCache>?, position: Int = -1) {
         val oldData = data
         val updatedData = newData?.toList() ?: emptyList()
         data = updatedData
         selectedGuid = mainViewModel.getSelectedServer()
+        subRemarksCache.clear()
 
         if (position >= 0 && position in data.indices) {
             notifyItemChanged(position)
@@ -134,12 +143,11 @@ class MainRecyclerAdapter(
     }
 
     private fun getSubscriptionRemarks(profile: ProfileItem): String {
-        val subRemarks =
-            if (mainViewModel.subscriptionId.isEmpty())
-                MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()
-            else
-                null
-        return subRemarks?.toString() ?: ""
+        // Only needed in the "all" group; per-subscription views already scope by subscription.
+        if (mainViewModel.subscriptionId.isNotEmpty()) return ""
+        return subRemarksCache.getOrPut(profile.subscriptionId) {
+            MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()?.toString() ?: ""
+        }
     }
 
     private fun getProtocolDescription(profile: ProfileItem): String {
@@ -175,8 +183,9 @@ class MainRecyclerAdapter(
         if (idx >= 0) {
             mutable.removeAt(idx)
             data = mutable
+            // Remaining rows keep their content (guid-bound), so a full tail re-bind is
+            // wasteful; RecyclerView shifts them automatically (M1).
             notifyItemRemoved(idx)
-            notifyItemRangeChanged(idx, data.size - idx)
             ensureSelectedIndicator()
         }
     }

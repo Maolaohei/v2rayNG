@@ -84,6 +84,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val INIT_PROBE_TIMEOUT_MS = 3_500L
         /** How long a daemon state query waits for the REGISTER reply. */
         const val STATE_QUERY_TIMEOUT_MS = 2_500L
+        /** Debounce window for bursty batch-test result broadcasts (H2). */
+        const val MEASURE_DEBOUNCE_MS = 300L
     }
 
     init {
@@ -238,6 +240,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             updateCache()
+            serverListLoaded = true
             withContext(Dispatchers.Main) {
                 updateListAction.value = -1
             }
@@ -254,6 +257,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val index = getPosition(guid)
         if (index >= 0) {
             serversCache.removeAt(index)
+            rebuildGuidIndex()
         }
     }
 
@@ -269,6 +273,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         Collections.swap(serverList, fromPosition, toPosition)
         Collections.swap(serversCache, fromPosition, toPosition)
+        rebuildGuidIndex()
 
         MmkvManager.encodeServerList(serverList, subscriptionId)
     }
@@ -306,6 +311,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 serversCache.add(ServersCache(guid, profile, testDelay))
             }
         }
+        rebuildGuidIndex()
     }
 
     /**
@@ -387,9 +393,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (subscriptionId != id) {
             subscriptionId = id
             MmkvManager.encodeSettings(AppConfig.CACHE_SUBSCRIPTION_ID, subscriptionId)
+            reloadServerList()
+        } else if (!serverListLoaded) {
+            reloadServerList()
+        } else {
+            // Same subscription re-entered (tab switch / rotation) with the cache still
+            // valid: skip the full MMKV re-decode and just re-dispatch the current list.
+            // The value is made unique so LiveData observers fire even on repeat entries.
+            updateListAction.value = -1 - (++listRefreshSeq)
         }
-        reloadServerList()
     }
+
+    /** True once [reloadServerList] populated the cache for the current subscription. */
+    @Volatile
+    private var serverListLoaded = false
+    private var listRefreshSeq = 0
+
+    /** Batch-test result indices awaiting a debounced list refresh (H2). */
+    private val batchMeasureIndices = mutableListOf<Int>()
+    private var measureDebounceJob: Job? = null
 
     /**
      * Gets the subscriptions.
@@ -437,11 +459,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * @return The position of the server.
      */
     fun getPosition(guid: String): Int {
-        serversCache.forEachIndexed { index, it ->
-            if (it.guid == guid)
-                return index
-        }
-        return -1
+        return guidToPosition[guid] ?: -1
+    }
+
+    /** guid -> position index, kept in sync with [serversCache] (H2: O(1) lookups). */
+    private val guidToPosition = HashMap<String, Int>()
+
+    private fun rebuildGuidIndex() {
+        guidToPosition.clear()
+        serversCache.forEachIndexed { index, item -> guidToPosition[item.guid] = index }
     }
 
     /**
@@ -684,7 +710,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 AppConfig.MSG_MEASURE_CONFIG_SUCCESS -> {
                     val content = intent.getStringExtra("content")
-                    updateListAction.value = getPosition(content ?: "")
+                    val index = getPosition(content ?: "")
+                    if (index >= 0) {
+                        batchMeasureIndices.add(index)
+                    }
+                    // Batch tests fire one broadcast per node at high concurrency; debounce
+                    // the burst into a single list refresh per window (H2). One result ->
+                    // precise single-row update; several -> one full DiffUtil pass.
+                    measureDebounceJob?.cancel()
+                    measureDebounceJob = viewModelScope.launch {
+                        delay(MEASURE_DEBOUNCE_MS)
+                        val indices = batchMeasureIndices
+                        batchMeasureIndices = mutableListOf()
+                        updateListAction.value =
+                            if (indices.size == 1) indices.first()
+                            else -1 - (++listRefreshSeq)
+                    }
                 }
 
                 AppConfig.MSG_MEASURE_CONFIG_NOTIFY -> {
