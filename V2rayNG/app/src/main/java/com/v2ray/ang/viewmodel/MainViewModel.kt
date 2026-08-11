@@ -737,8 +737,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     measureDebounceJob?.cancel()
                     measureDebounceJob = viewModelScope.launch {
                         delay(MEASURE_DEBOUNCE_MS)
-                        val indices = batchMeasureIndices
-                        batchMeasureIndices = mutableListOf()
+                        val indices = batchMeasureIndices.toList()
+                        batchMeasureIndices.clear()
                         if (indices.isNotEmpty()) {
                             updateListAction.value =
                                 if (indices.size == 1) indices.first()
