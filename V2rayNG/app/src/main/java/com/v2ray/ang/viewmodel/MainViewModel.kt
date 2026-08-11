@@ -40,6 +40,7 @@ import java.util.regex.PatternSyntaxException
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var serverList = mutableListOf<String>() // MmkvManager.decodeServerList()
+    @Volatile
     var subscriptionId: String = MmkvManager.decodeSettingsString(AppConfig.CACHE_SUBSCRIPTION_ID, "").orEmpty()
     var keywordFilter = ""
     val serversCache = mutableListOf<ServersCache>()
@@ -232,13 +233,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Reloads the server list based on current subscription filter.
      */
     fun reloadServerList() {
+        val requestedSubId = subscriptionId
         viewModelScope.launch(Dispatchers.IO) {
-            serverList = if (subscriptionId.isEmpty()) {
+            val loaded = if (requestedSubId.isEmpty()) {
                 MmkvManager.decodeAllServerList()
             } else {
-                MmkvManager.decodeServerList(subscriptionId)
+                MmkvManager.decodeServerList(requestedSubId)
             }
 
+            // The user may have switched subscriptions while this reload was in flight;
+            // committing it would clobber the new subscription's cache and its refresh
+            // signal could be deduped by LiveData. Drop stale results (b).
+            if (subscriptionId != requestedSubId) {
+                LogUtil.d(AppConfig.TAG, "MainViewModel: drop stale reload for sub=$requestedSubId")
+                return@launch
+            }
+
+            serverList = loaded
             updateCache()
             serverListLoaded = true
             withContext(Dispatchers.Main) {
@@ -462,12 +473,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return guidToPosition[guid] ?: -1
     }
 
-    /** guid -> position index, kept in sync with [serversCache] (H2: O(1) lookups). */
-    private val guidToPosition = HashMap<String, Int>()
+    /**
+     * guid -> position index, kept in sync with [serversCache] (H2: O(1) lookups).
+     * Built on the IO thread but published via a volatile reference swap so the main
+     * thread always reads a complete old-or-new map, never a half-mutated one.
+     */
+    @Volatile
+    private var guidToPosition: Map<String, Int> = emptyMap()
 
     private fun rebuildGuidIndex() {
-        guidToPosition.clear()
-        serversCache.forEachIndexed { index, item -> guidToPosition[item.guid] = index }
+        val newMap = HashMap<String, Int>(serversCache.size)
+        serversCache.forEachIndexed { index, item -> newMap[item.guid] = index }
+        guidToPosition = newMap
     }
 
     /**
@@ -722,9 +739,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         delay(MEASURE_DEBOUNCE_MS)
                         val indices = batchMeasureIndices
                         batchMeasureIndices = mutableListOf()
-                        updateListAction.value =
-                            if (indices.size == 1) indices.first()
-                            else -1 - (++listRefreshSeq)
+                        if (indices.isNotEmpty()) {
+                            updateListAction.value =
+                                if (indices.size == 1) indices.first()
+                                else -1 - (++listRefreshSeq)
+                        }
                     }
                 }
 
