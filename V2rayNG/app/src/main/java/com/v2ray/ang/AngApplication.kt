@@ -8,6 +8,7 @@ import com.tencent.mmkv.MMKV
 import com.v2ray.ang.AppConfig.ANG_PACKAGE
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.ui.compose.ThemeManager
+import com.v2ray.ang.xposed.PrivilegeSettingsClient
 
 class AngApplication : Application() {
     companion object {
@@ -43,5 +44,9 @@ class AngApplication : Application() {
 
         // Initialize theme state from MMKV
         ThemeManager.refresh()
+
+        // Register hidevpn settings bridge (no-op if LSPosed module inactive)
+        runCatching { PrivilegeSettingsClient.register(this) }
+            .onFailure { com.v2ray.ang.util.LogUtil.w(AppConfig.TAG, "hidevpn register failed: ${it.message}") }
     }
 }
