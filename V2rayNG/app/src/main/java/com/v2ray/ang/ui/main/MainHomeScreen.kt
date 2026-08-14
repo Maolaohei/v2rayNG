@@ -92,7 +92,7 @@ fun MainHomeScreen(
     }
 
     val statusColor = when {
-        isRunning -> Color(0xFF4CAF50)
+        isRunning -> Color(0xFF009966) // fork colorPing
         else -> MaterialTheme.colorScheme.outline
     }
     val statusTitle = when {
@@ -174,6 +174,7 @@ fun MainHomeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainer) // fork: gray page bg
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
     ) {
@@ -216,8 +217,8 @@ fun MainHomeScreen(
         // ---- VPN switch card ----
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Row(
                 modifier = Modifier
@@ -227,7 +228,7 @@ fun MainHomeScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(10.dp)
+                        .size(8.dp)
                         .background(statusColor, CircleShape)
                 )
                 Spacer(Modifier.width(12.dp))
@@ -270,8 +271,8 @@ fun MainHomeScreen(
         Spacer(Modifier.height(8.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Row(
                 modifier = Modifier
@@ -331,8 +332,8 @@ fun MainHomeScreen(
         Spacer(Modifier.height(8.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Row(
                 modifier = Modifier
@@ -380,8 +381,8 @@ fun MainHomeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onOpenSubscriptions),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Row(
                 modifier = Modifier
@@ -455,7 +456,7 @@ private fun ModeButton(
         onClick = onClick,
         modifier = modifier,
         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
             contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
         ),
         border = if (selected) {
