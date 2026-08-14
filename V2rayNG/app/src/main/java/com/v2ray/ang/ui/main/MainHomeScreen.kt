@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -359,17 +358,20 @@ fun MainHomeScreen(
                 ModeButton(
                     label = stringResource(R.string.home_mode_proxy),
                     selected = currentMode == AppConfig.MODE_PROXY_ONLY,
-                    onClick = { onModeClick(AppConfig.MODE_PROXY_ONLY) }
+                    onClick = { onModeClick(AppConfig.MODE_PROXY_ONLY) },
+                    modifier = Modifier.weight(1f)
                 )
                 ModeButton(
                     label = stringResource(R.string.home_mode_vpn),
                     selected = currentMode == AppConfig.VPN,
-                    onClick = { onModeClick(AppConfig.VPN) }
+                    onClick = { onModeClick(AppConfig.VPN) },
+                    modifier = Modifier.weight(1f)
                 )
                 ModeButton(
                     label = stringResource(R.string.home_mode_root),
                     selected = currentMode == AppConfig.MODE_ROOT,
-                    onClick = { onModeClick(AppConfig.MODE_ROOT) }
+                    onClick = { onModeClick(AppConfig.MODE_ROOT) },
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
@@ -458,10 +460,15 @@ private fun HomeMetric(label: String, value: String, valueColor: Color) {
 }
 
 @Composable
-private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun ModeButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     OutlinedButton(
         onClick = onClick,
-        modifier = Modifier.weight(1f),
+        modifier = modifier,
         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
             containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
             contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
