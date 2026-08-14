@@ -4,10 +4,12 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -199,7 +201,8 @@ fun RoutingSettingScreen(
     onImportPredefined: (RoutingType) -> Unit,
     onImportClipboard: () -> Unit,
     onImportQRcode: () -> Unit,
-    onExportClipboard: () -> Unit
+    onExportClipboard: () -> Unit,
+    showTopBar: Boolean = true
 ) {
     val rulesets by viewModel.rulesetsFlow.collectAsStateWithLifecycle()
     val domainStrategy by domainStrategyState.collectAsState()
@@ -216,43 +219,49 @@ fun RoutingSettingScreen(
     }
 
     Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = if (showTopBar) {
+            ScaffoldDefaults.contentWindowInsets
+        } else {
+            WindowInsets(0, 0, 0, 0) // embedded in Main tab: outer Scaffold already applies insets
+        },
         topBar = {
-            AppTopBar(
-                title = stringResource(R.string.routing_settings_title),
-                onBackClick = onBackClick,
-                actions = {
-                    IconButton(onClick = onAddRule) {
-                        Icon(
-                            painterResource(R.drawable.ic_add_24dp),
-                            contentDescription = stringResource(R.string.acc_add_rule)
-                        )
-                    }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
+            if (showTopBar) {
+                AppTopBar(
+                    title = stringResource(R.string.routing_settings_title),
+                    onBackClick = onBackClick,
+                    actions = {
+                        IconButton(onClick = onAddRule) {
                             Icon(
-                                painterResource(R.drawable.ic_more_vert_24dp),
-                                contentDescription = null
+                                painterResource(R.drawable.ic_add_24dp),
+                                contentDescription = stringResource(R.string.acc_add_rule)
                             )
                         }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ) {
-                            AppDropdownMenuItems(RoutingMenuAction.entries, { it.labelRes }) { action ->
-                                showMenu = false
-                                when (action) {
-                                    RoutingMenuAction.ImportPredefined -> showPresetDialog = true
-                                    RoutingMenuAction.ImportClipboard -> onImportClipboard()
-                                    RoutingMenuAction.ImportQRCode -> onImportQRcode()
-                                    RoutingMenuAction.ExportClipboard -> onExportClipboard()
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_more_vert_24dp),
+                                    contentDescription = null
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ) {
+                                AppDropdownMenuItems(RoutingMenuAction.entries, { it.labelRes }) { action ->
+                                    showMenu = false
+                                    when (action) {
+                                        RoutingMenuAction.ImportPredefined -> showPresetDialog = true
+                                        RoutingMenuAction.ImportClipboard -> onImportClipboard()
+                                        RoutingMenuAction.ImportQRCode -> onImportQRcode()
+                                        RoutingMenuAction.ExportClipboard -> onExportClipboard()
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            )
+                )
+            }
         }
     ) { innerPadding ->
         LazyColumn(
@@ -262,6 +271,48 @@ fun RoutingSettingScreen(
                 .padding(innerPadding)
                 .verticalScrollbar(lazyListState)
         ) {
+            if (!showTopBar) {
+                // Embedded in Main tab: keep add/import actions reachable
+                item(key = "actions") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onAddRule) {
+                            Icon(
+                                painterResource(R.drawable.ic_add_24dp),
+                                contentDescription = stringResource(R.string.acc_add_rule)
+                            )
+                        }
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    painterResource(R.drawable.ic_more_vert_24dp),
+                                    contentDescription = null
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ) {
+                                AppDropdownMenuItems(RoutingMenuAction.entries, { it.labelRes }) { action ->
+                                    showMenu = false
+                                    when (action) {
+                                        RoutingMenuAction.ImportPredefined -> showPresetDialog = true
+                                        RoutingMenuAction.ImportClipboard -> onImportClipboard()
+                                        RoutingMenuAction.ImportQRCode -> onImportQRcode()
+                                        RoutingMenuAction.ExportClipboard -> onExportClipboard()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             item(key = "domain_strategy") {
                 SettingsListItem(
                     title = stringResource(R.string.routing_settings_domain_strategy),

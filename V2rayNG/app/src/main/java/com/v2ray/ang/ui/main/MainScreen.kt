@@ -367,7 +367,8 @@ fun MainScreen(
                     RoutingTab(
                         context = context,
                         scope = scope,
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        showTopBar = false
                     )
                 }
                 MainTab.More -> {
@@ -389,6 +390,7 @@ private fun RoutingTab(
     context: android.content.Context,
     scope: kotlinx.coroutines.CoroutineScope,
     modifier: Modifier = Modifier,
+    showTopBar: Boolean = true,
 ) {
     val routingViewModel: RoutingSettingsViewModel = viewModel()
     val domainStrategyState = remember { MutableStateFlow(getDomainStrategy(context)) }
@@ -399,6 +401,7 @@ private fun RoutingTab(
         viewModel = routingViewModel,
         domainStrategyState = domainStrategyState,
         onBackClick = {},
+        showTopBar = showTopBar,
         onAddRule = {
             context.startActivity(Intent(context, RoutingEditActivity::class.java))
         },

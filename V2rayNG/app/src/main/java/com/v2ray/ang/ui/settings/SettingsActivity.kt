@@ -239,9 +239,10 @@ fun SettingsScreen(
             WindowInsets(0, 0, 0, 0) // embedded in Main tab: outer Scaffold already applies insets
         },
         topBar = {
-            // Sub pages always show a back+title bar; the category list only when
-            // hosted standalone (embedded in More tab it inherits MainTopBar).
-            if (selectedCategory != -1 || showTopBar) {
+            // Top bar only when hosted standalone (embedded in More tab it
+            // inherits MainTopBar for both the list and sub pages; back key
+            // pops sub pages via BackHandler).
+            if (showTopBar) {
                 AppTopBar(
                     title = stringResource(categoryTitleRes(selectedCategory)),
                     onBackClick = if (selectedCategory == -1) {
