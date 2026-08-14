@@ -284,7 +284,14 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.outline
                             )
                         },
-                        modifier = Modifier.clickable { selectedCategory = category }
+                        modifier = Modifier.clickable {
+                            if (category == 9) {
+                                // About is a direct page (peer of Advanced/Observatory)
+                                context.startActivity(Intent(context, AboutActivity::class.java))
+                            } else {
+                                selectedCategory = category
+                            }
+                        }
                     )
                 }
                 // Maintenance / tools entries (fork: title_settings_tools_core)
@@ -693,6 +700,12 @@ fun SettingsScreen(
                     value = ipApiUrl,
                     onValueChanged = { ipApiUrl = it }
                 )
+                SettingsMenuItem(
+                    title = stringResource(R.string.per_app_proxy_settings),
+                    onClick = {
+                        context.startActivity(Intent(context, PerAppProxyActivity::class.java))
+                    }
+                )
             }
 
             if (selectedCategory == 1) {
@@ -896,17 +909,16 @@ private val settingsCategories = listOf(
     R.string.title_mux_settings to 5,
     R.string.title_fragment_settings to 6,
     R.string.title_observatory_settings to 7,
-    R.string.title_advanced to 8
+    R.string.title_advanced to 8,
+    R.string.title_about to 9
 )
 
 // Maintenance / tools entries (fork: pref_entry_* bound activities)
 private val maintenanceEntries = listOf(
-    R.string.per_app_proxy_settings to PerAppProxyActivity::class.java,
     R.string.title_user_asset_setting to UserAssetActivity::class.java,
     R.string.title_logcat to LogcatActivity::class.java,
     R.string.update_check_for_update to CheckUpdateActivity::class.java,
-    R.string.title_configuration_backup_restore to BackupActivity::class.java,
-    R.string.title_about to AboutActivity::class.java
+    R.string.title_configuration_backup_restore to BackupActivity::class.java
 )
 
 @StringRes
