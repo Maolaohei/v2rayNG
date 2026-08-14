@@ -202,7 +202,8 @@ fun RoutingSettingScreen(
     onImportClipboard: () -> Unit,
     onImportQRcode: () -> Unit,
     onExportClipboard: () -> Unit,
-    showTopBar: Boolean = true
+    showTopBar: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     val rulesets by viewModel.rulesetsFlow.collectAsStateWithLifecycle()
     val domainStrategy by domainStrategyState.collectAsState()
@@ -219,6 +220,7 @@ fun RoutingSettingScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         contentWindowInsets = if (showTopBar) {
             ScaffoldDefaults.contentWindowInsets
         } else {

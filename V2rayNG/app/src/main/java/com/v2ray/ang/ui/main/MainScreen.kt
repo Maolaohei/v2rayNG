@@ -403,6 +403,7 @@ private fun RoutingTab(
         domainStrategyState = domainStrategyState,
         onBackClick = {},
         showTopBar = showTopBar,
+        modifier = modifier,
         onAddRule = {
             context.startActivity(Intent(context, RoutingEditActivity::class.java))
         },
