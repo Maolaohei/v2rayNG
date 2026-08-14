@@ -9,10 +9,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -27,8 +31,10 @@ import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
 import com.v2ray.ang.handler.MmkvManager.rememberMmkvBool
 import com.v2ray.ang.handler.MmkvManager.rememberMmkvString
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.root.RootManager
+import com.v2ray.ang.ui.apppicker.AppPickerActivity
 import com.v2ray.ang.ui.base.BaseComponentActivity
 import com.v2ray.ang.ui.compose.AppTopBar
 import com.v2ray.ang.ui.compose.CollapsiblePreferenceGroupHeader
@@ -39,6 +45,17 @@ import com.v2ray.ang.ui.compose.SettingsSwitchItem
 import com.v2ray.ang.ui.compose.ThemeManager
 import com.v2ray.ang.ui.compose.verticalScrollbar
 import com.v2ray.ang.util.Utils
+import com.v2ray.ang.xposed.PrivilegePortsManager
+import com.v2ray.ang.xposed.PrivilegeSettingsClient
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsActivity : BaseComponentActivity() {
 
@@ -104,6 +121,19 @@ fun SettingsScreen(
     var enableRootMode by rememberMmkvBool(AppConfig.PREF_ROOT_MODE_ENABLE, false)
     var lanSharing by rememberMmkvBool(AppConfig.PREF_ROOT_LAN_SHARING, false)
 
+    // Privilege (hidevpn) settings
+    var privilegeExpanded by rememberSaveable { mutableStateOf(false) }
+    var privilegeHideVpn by rememberMmkvBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false)
+    var privilegeHideSelfPackage by rememberMmkvBool(AppConfig.PREF_PRIVILEGE_HIDE_SELF_PACKAGE, false)
+    var privilegePorts by rememberMmkvBool(AppConfig.PREF_PRIVILEGE_PORTS, false)
+    var privilegeTargetsCount by remember {
+        mutableIntStateOf(MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.size ?: 0)
+    }
+    var privilegeModuleSummary by remember { mutableStateOf("") }
+    var privilegeSelfTestUi by remember { mutableStateOf<PrivilegeSelfTestUi?>(null) }
+    var privilegeSelfTestError by remember { mutableStateOf<String?>(null) }
+    var privilegeSelfTestRunning by remember { mutableStateOf(false) }
+
     var hevTunLogLevel by rememberMmkvString(AppConfig.PREF_HEV_TUNNEL_LOGLEVEL, "warning")
     var hevTunRwTimeout by rememberMmkvString(AppConfig.PREF_HEV_TUNNEL_RW_TIMEOUT, "")
     var useHevTun by rememberMmkvBool(AppConfig.PREF_USE_HEV_TUNNEL, true)
@@ -166,6 +196,32 @@ fun SettingsScreen(
     val observatoryLeastLoadMethodValues = stringArrayResource(R.array.observatory_least_load_method).toList()
     val modeEntries = stringArrayResource(R.array.mode_entries).toList()
     val modeValues = stringArrayResource(R.array.mode_value).toList()
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        privilegeModuleSummary = moduleStatusSummary(context)
+    }
+    val privilegePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val selected = AppPickerActivity.getSelectedPackages(result.data)
+        MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS, selected.toMutableSet())
+        runCatching { PrivilegeSettingsClient.sync() }
+        privilegeTargetsCount = selected.size
+        privilegeModuleSummary = moduleStatusSummary(context)
+    }
+    fun addSelfToHideTargets() {
+        val pkg = context.packageName
+        val set = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.toMutableSet()
+            ?: mutableSetOf()
+        if (set.add(pkg)) {
+            MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS, set)
+        }
+        runCatching { PrivilegeSettingsClient.sync() }
+        privilegeTargetsCount = set.size
+        Toast.makeText(context, R.string.toast_privilege_add_self_ok, Toast.LENGTH_SHORT).show()
+    }
 
     Scaffold(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
@@ -645,7 +701,157 @@ fun SettingsScreen(
                 )
             }
 
+            CollapsiblePreferenceGroupHeader(
+                title = stringResource(R.string.title_privilege_settings),
+                expanded = privilegeExpanded,
+                onExpandedChange = { privilegeExpanded = it }
+            )
+            if (privilegeExpanded) {
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_privilege_hide_vpn),
+                    summary = stringResource(R.string.summary_pref_privilege_hide_vpn),
+                    checked = privilegeHideVpn,
+                    onCheckedChange = { newValue ->
+                        privilegeHideVpn = newValue
+                        if (newValue && (MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.size ?: 0) == 0) {
+                            Toast.makeText(context, R.string.privilege_empty_target_warning, Toast.LENGTH_LONG).show()
+                        }
+                        val ok = runCatching { PrivilegeSettingsClient.sync() }.getOrDefault(false)
+                        Toast.makeText(
+                            context,
+                            if (ok) R.string.toast_privilege_sync_ok else R.string.toast_privilege_sync_fail,
+                            if (ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                        ).show()
+                        privilegeModuleSummary = moduleStatusSummary(context)
+                    }
+                )
+                SettingsMenuItem(
+                    title = stringResource(R.string.title_pref_privilege_manage_apps),
+                    subtitle = if (privilegeTargetsCount > 0) {
+                        context.getString(R.string.summary_pref_privilege_manage_apps_count, privilegeTargetsCount)
+                    } else {
+                        context.getString(R.string.summary_pref_privilege_manage_apps)
+                    },
+                    onClick = {
+                        val selected = MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS).orEmpty()
+                        privilegePickerLauncher.launch(
+                            AppPickerActivity.createIntent(
+                                context,
+                                selected,
+                                context.getString(R.string.title_privilege_hide_vpn_apps)
+                            )
+                        )
+                    }
+                )
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_privilege_hide_self_package),
+                    summary = stringResource(R.string.summary_pref_privilege_hide_self_package),
+                    checked = privilegeHideSelfPackage,
+                    onCheckedChange = { newValue ->
+                        privilegeHideSelfPackage = newValue
+                        runCatching { PrivilegeSettingsClient.sync() }
+                        privilegeModuleSummary = moduleStatusSummary(context)
+                    }
+                )
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_privilege_ports),
+                    summary = stringResource(R.string.summary_pref_privilege_ports),
+                    checked = privilegePorts,
+                    onCheckedChange = { newValue ->
+                        privilegePorts = newValue
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                PrivilegePortsManager.applyFromPrefs(context.applicationContext)
+                            }
+                            val msg = when {
+                                !newValue && ok -> R.string.toast_privilege_ports_cleared
+                                newValue && ok -> R.string.toast_privilege_ports_applied
+                                else -> R.string.toast_privilege_ports_failed
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                SettingsMenuItem(
+                    title = stringResource(R.string.title_pref_privilege_module_status),
+                    subtitle = privilegeModuleSummary,
+                    onClick = {
+                        val probe = PrivilegeSettingsClient.refresh()
+                        val msg = when (probe.result) {
+                            PrivilegeSettingsClient.ProbeResult.ACTIVE ->
+                                R.string.toast_privilege_module_active
+                            PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
+                                R.string.toast_privilege_module_loaded_inactive
+                            PrivilegeSettingsClient.ProbeResult.TRANSACTION_UNHANDLED ->
+                                R.string.toast_privilege_module_unhandled
+                            PrivilegeSettingsClient.ProbeResult.UNAUTHORIZED ->
+                                R.string.toast_privilege_module_unauthorized
+                            PrivilegeSettingsClient.ProbeResult.BINDER_UNAVAILABLE ->
+                                R.string.toast_privilege_module_binder
+                            PrivilegeSettingsClient.ProbeResult.ERROR ->
+                                context.getString(R.string.toast_privilege_module_error, probe.detail ?: "unknown")
+                        }
+                        Toast.makeText(context, if (msg is Int) msg else 0, Toast.LENGTH_LONG).apply {
+                            if (msg !is Int) setText(msg)
+                        }.show()
+                        runCatching { PrivilegeSettingsClient.sync() }
+                        privilegeModuleSummary = moduleStatusSummary(context)
+                    }
+                )
+                SettingsMenuItem(
+                    title = stringResource(R.string.title_pref_privilege_self_test),
+                    subtitle = if (privilegeSelfTestRunning) {
+                        stringResource(R.string.summary_pref_privilege_self_test_running)
+                    } else {
+                        stringResource(R.string.summary_pref_privilege_self_test)
+                    },
+                    onClick = {
+                        if (privilegeSelfTestRunning) return@SettingsMenuItem
+                        privilegeSelfTestRunning = true
+                        runPrivilegeSelfTest(context, scope) { ui, errorMessage ->
+                            privilegeSelfTestRunning = false
+                            if (ui != null) {
+                                privilegeSelfTestUi = ui
+                            } else {
+                                privilegeSelfTestError = errorMessage ?: "unknown"
+                            }
+                        }
+                    }
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    privilegeSelfTestUi?.let { ui ->
+        PrivilegeSelfTestDialog(
+            ui = ui,
+            onCopy = {
+                Utils.setClipboard(context, ui.copyText)
+                Toast.makeText(context, R.string.toast_privilege_self_test_copied, Toast.LENGTH_SHORT).show()
+            },
+            onAddSelf = if (ui.selfMissing) {
+                {
+                    addSelfToHideTargets()
+                    privilegeSelfTestUi = null
+                }
+            } else null,
+            onDismiss = { privilegeSelfTestUi = null }
+        )
+    }
+    privilegeSelfTestError?.let { errorMessage ->
+        AlertDialog(
+            onDismissRequest = { privilegeSelfTestError = null },
+            title = { Text(stringResource(R.string.title_privilege_self_test_result)) },
+            text = {
+                Text(context.getString(R.string.summary_pref_privilege_self_test_error, errorMessage))
+            },
+            confirmButton = {
+                TextButton(onClick = { privilegeSelfTestError = null }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            }
+        )
     }
 }
