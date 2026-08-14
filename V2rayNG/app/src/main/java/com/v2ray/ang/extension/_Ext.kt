@@ -76,19 +76,3 @@ fun EConfigType.isGroupType(): Boolean {
 fun EConfigType.isComplexType(): Boolean {
     return this == EConfigType.CUSTOM || this == EConfigType.POLICYGROUP || this == EConfigType.PROXYCHAIN
 }
-
-/**
- * Converts a Long value to a traffic string (ported from fork).
- *
- * @return The traffic string.
- */
-fun Long.toTrafficString(): String {
-    val units = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
-    var size = this.toDouble()
-    var unitIndex = 0
-    while (size >= 1000L && unitIndex < units.size - 1) {
-        size /= 1024.0
-        unitIndex++
-    }
-    return String.format(java.util.Locale.getDefault(), "%.1f %s", size, units[unitIndex])
-}
