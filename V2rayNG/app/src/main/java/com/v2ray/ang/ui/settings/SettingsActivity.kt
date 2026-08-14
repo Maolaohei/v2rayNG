@@ -1,7 +1,12 @@
 package com.v2ray.ang.ui.settings
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.viewModels
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +16,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
@@ -18,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.AppConfig
+import com.v2ray.ang.ui.compose.AppDivider
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
 import com.v2ray.ang.handler.MmkvManager.rememberMmkvBool
@@ -85,14 +94,7 @@ fun SettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
-    var uiSettingsExpanded by rememberSaveable { mutableStateOf(true) }
-    var vpnSettingsExpanded by rememberSaveable { mutableStateOf(true) }
-    var coreSettingsExpanded by rememberSaveable { mutableStateOf(true) }
-    var muxSettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    var fragmentSettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    var observatorySettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    var advancedSettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    var modeSettingsExpanded by rememberSaveable { mutableStateOf(false) }
+    var selectedCategory by rememberSaveable { mutableIntStateOf(-1) }
 
     var localDns by rememberMmkvBool(AppConfig.PREF_LOCAL_DNS_ENABLED, false)
     var fakeDns by rememberMmkvBool(AppConfig.PREF_FAKE_DNS_ENABLED, false)
@@ -123,7 +125,6 @@ fun SettingsScreen(
     var lanSharing by rememberMmkvBool(AppConfig.PREF_ROOT_LAN_SHARING, false)
 
     // Privilege (hidevpn) settings
-    var privilegeExpanded by rememberSaveable { mutableStateOf(false) }
     var privilegeHideVpn by rememberMmkvBool(AppConfig.PREF_PRIVILEGE_HIDE_VPN, false)
     var privilegeHideSelfPackage by rememberMmkvBool(AppConfig.PREF_PRIVILEGE_HIDE_SELF_PACKAGE, false)
     var privilegePorts by rememberMmkvBool(AppConfig.PREF_PRIVILEGE_PORTS, false)
@@ -228,8 +229,12 @@ fun SettingsScreen(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
         topBar = {
             AppTopBar(
-                title = stringResource(R.string.title_settings),
-                onBackClick = onBackClick,
+                title = stringResource(categoryTitleRes(selectedCategory)),
+                onBackClick = if (selectedCategory == -1) {
+                    onBackClick
+                } else {
+                    { selectedCategory = -1 }
+                },
                 isLoading = isLoading
             )
         }
@@ -241,12 +246,29 @@ fun SettingsScreen(
                 .verticalScrollbar(scrollState)
                 .verticalScroll(scrollState)
         ) {
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_ui_settings),
-                expanded = uiSettingsExpanded,
-                onExpandedChange = { uiSettingsExpanded = it }
-            )
-            if (uiSettingsExpanded) {
+            if (selectedCategory == -1) {
+                // Category list (fork settings layout)
+                settingsCategories.forEach { (res, category) ->
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = stringResource(res),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        },
+                        trailingContent = {
+                            Text(
+                                text = "›",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        },
+                        modifier = Modifier.clickable { selectedCategory = category }
+                    )
+                    AppDivider()
+                }
+            } else {
+            if (selectedCategory == 0) {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_speed_enabled),
                     summary = stringResource(R.string.summary_pref_speed_enabled),
@@ -296,12 +318,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_vpn_settings),
-                expanded = vpnSettingsExpanded,
-                onExpandedChange = { vpnSettingsExpanded = it }
-            )
-            if (vpnSettingsExpanded) {
+            if (selectedCategory == 3) {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_ipv6_enabled),
                     summary = stringResource(R.string.summary_pref_ipv6_enabled),
@@ -393,12 +410,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_core_settings),
-                expanded = coreSettingsExpanded,
-                onExpandedChange = { coreSettingsExpanded = it }
-            )
-            if (coreSettingsExpanded) {
+            if (selectedCategory == 4) {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_sniffing_enabled),
                     summary = stringResource(R.string.summary_pref_sniffing_enabled),
@@ -497,12 +509,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_mux_settings),
-                expanded = muxSettingsExpanded,
-                onExpandedChange = { muxSettingsExpanded = it }
-            )
-            if (muxSettingsExpanded) {
+            if (selectedCategory == 5) {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_mux_enabled),
                     summary = stringResource(R.string.summary_pref_mux_enabled),
@@ -533,12 +540,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_fragment_settings),
-                expanded = fragmentSettingsExpanded,
-                onExpandedChange = { fragmentSettingsExpanded = it }
-            )
-            if (fragmentSettingsExpanded) {
+            if (selectedCategory == 6) {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_fragment_enabled),
                     checked = fragment,
@@ -573,12 +575,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_observatory_settings),
-                expanded = observatorySettingsExpanded,
-                onExpandedChange = { observatorySettingsExpanded = it }
-            )
-            if (observatorySettingsExpanded) {
+            if (selectedCategory == 7) {
                 SettingsEditItem(
                     title = stringResource(R.string.title_pref_observatory_least_ping_interval),
                     value = observatoryLeastPingInterval,
@@ -625,12 +622,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_advanced),
-                expanded = advancedSettingsExpanded,
-                onExpandedChange = { advancedSettingsExpanded = it }
-            )
-            if (advancedSettingsExpanded) {
+            if (selectedCategory == 8) {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_is_booted),
                     summary = stringResource(R.string.summary_pref_is_booted),
@@ -655,12 +647,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_mode_settings),
-                expanded = modeSettingsExpanded,
-                onExpandedChange = { modeSettingsExpanded = it }
-            )
-            if (modeSettingsExpanded) {
+            if (selectedCategory == 1) {
                 SettingsListItem(
                     title = stringResource(R.string.title_mode),
                     entries = modeEntries,
@@ -702,12 +689,7 @@ fun SettingsScreen(
                 )
             }
 
-            CollapsiblePreferenceGroupHeader(
-                title = stringResource(R.string.title_privilege_settings),
-                expanded = privilegeExpanded,
-                onExpandedChange = { privilegeExpanded = it }
-            )
-            if (privilegeExpanded) {
+            if (selectedCategory == 2) {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_privilege_hide_vpn),
                     summary = stringResource(R.string.summary_pref_privilege_hide_vpn),
@@ -820,6 +802,7 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+            }
         }
     }
 
@@ -853,4 +836,22 @@ fun SettingsScreen(
             }
         )
     }
+}
+
+// Settings category list (fork layout: category entries -> sub pages)
+private val settingsCategories = listOf(
+    R.string.title_ui_settings to 0,
+    R.string.title_mode_settings to 1,
+    R.string.title_privilege_settings to 2,
+    R.string.title_vpn_settings to 3,
+    R.string.title_core_settings to 4,
+    R.string.title_mux_settings to 5,
+    R.string.title_fragment_settings to 6,
+    R.string.title_observatory_settings to 7,
+    R.string.title_advanced to 8
+)
+
+@StringRes
+private fun categoryTitleRes(category: Int): Int {
+    return settingsCategories.firstOrNull { it.second == category }?.first ?: R.string.title_settings
 }
