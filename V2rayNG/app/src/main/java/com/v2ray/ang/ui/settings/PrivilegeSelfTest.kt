@@ -22,10 +22,10 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.xposed.DetectionResult
 import com.v2ray.ang.xposed.PrivilegePortsManager
 import com.v2ray.ang.xposed.PrivilegeSettingsClient
 import com.v2ray.ang.xposed.VpnDetectionTest
-import com.v2ray.ang.xposed.VpnDetectionTest.DetectionResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
