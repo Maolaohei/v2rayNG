@@ -268,32 +268,27 @@ fun SettingsScreen(
                 .verticalScroll(scrollState)
         ) {
             if (selectedCategory == -1) {
-                // Category list (fork settings layout)
-                settingsCategories.forEach { (res, category) ->
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                text = stringResource(res),
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        },
-                        trailingContent = {
-                            Text(
-                                text = "›",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        },
-                        modifier = Modifier.clickable {
-                            if (category == 9) {
-                                // About is a direct page (peer of Advanced/Observatory)
-                                context.startActivity(Intent(context, AboutActivity::class.java))
-                            } else {
-                                selectedCategory = category
-                            }
-                        }
-                    )
-                }
+                // Category list (fork settings layout); About is last, after Maintenance
+                settingsCategories
+                    .filter { it.second != 9 }
+                    .forEach { (res, category) ->
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    text = stringResource(res),
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            },
+                            trailingContent = {
+                                Text(
+                                    text = "›",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            },
+                            modifier = Modifier.clickable { selectedCategory = category }
+                        )
+                    }
                 // Maintenance / tools entries (fork: title_settings_tools_core)
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -322,6 +317,25 @@ fun SettingsScreen(
                         }
                     )
                 }
+                // About (last, opens the details page directly)
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.title_about),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    },
+                    trailingContent = {
+                        Text(
+                            text = "›",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        context.startActivity(Intent(context, AboutActivity::class.java))
+                    }
+                )
             } else {
             if (selectedCategory == 0) {
                 SettingsSwitchItem(
