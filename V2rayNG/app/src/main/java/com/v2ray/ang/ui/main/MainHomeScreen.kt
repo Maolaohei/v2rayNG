@@ -83,6 +83,12 @@ fun MainHomeScreen(
         }
     }
 
+    // Region from test result content "(CC) x.x.x.x" (fork logic; upstream
+    // CoreServiceManager appends "(country) ip" to the delay result)
+    val regionText = remember(statusText) {
+        parseRegionFromContent(statusText)
+    }
+
     // 24h traffic (fork TrafficStatsManager, single polling owner)
     var dayTraffic by remember { mutableLongStateOf(0L) }
     DisposableEffect(Unit) {
@@ -282,7 +288,7 @@ fun MainHomeScreen(
             ) {
                 HomeMetric(
                     label = stringResource(R.string.home_metric_region),
-                    value = nodeRemarks.ifBlank { stringResource(R.string.home_metric_region_unknown) },
+                    value = regionText ?: stringResource(R.string.home_metric_region_unknown),
                     valueColor = MaterialTheme.colorScheme.onSurface
                 )
                 VerticalDivider(
@@ -477,4 +483,14 @@ private fun formatBytes(bytes: Long): String {
     if (mb < 1024.0) return String.format("%.1f MB", mb)
     val gb = mb / 1024.0
     return String.format("%.2f GB", gb)
+}
+
+/** Extracts "(CC) x.x.x.x" country code from delay-test result content (fork logic). */
+private fun parseRegionFromContent(content: String?): String? {
+    if (content.isNullOrBlank()) return null
+    val regionMatch = Regex("""\(([A-Za-z]{2}|[^)\n]{1,24})\)\s*\S+""")
+        .findAll(content)
+        .lastOrNull()
+    val region = regionMatch?.groupValues?.getOrNull(1)?.trim()
+    return region?.takeIf { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }?.uppercase()
 }

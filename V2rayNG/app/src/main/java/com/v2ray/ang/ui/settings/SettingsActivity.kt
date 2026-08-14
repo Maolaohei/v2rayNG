@@ -10,6 +10,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -232,7 +233,11 @@ fun SettingsScreen(
 
     Scaffold(
         modifier = modifier,
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
+        contentWindowInsets = if (showTopBar) {
+            ScaffoldDefaults.contentWindowInsets
+        } else {
+            WindowInsets(0, 0, 0, 0) // embedded in Main tab: outer Scaffold already applies insets
+        },
         topBar = {
             // Sub pages always show a back+title bar; the category list only when
             // hosted standalone (embedded in More tab it inherits MainTopBar).
