@@ -89,6 +89,11 @@ fun MainHomeScreen(
         parseRegionFromContent(statusText)
     }
 
+    // Status detail line: latency + masked IP (no full IP exposure)
+    val detailText = remember(statusText) {
+        parseStatusDetail(statusText)
+    }
+
     // 24h traffic (fork TrafficStatsManager, single polling owner)
     var dayTraffic by remember { mutableLongStateOf(0L) }
     DisposableEffect(Unit) {
@@ -188,22 +193,18 @@ fun MainHomeScreen(
 
         // ---- Connection status header ----
         Text(
-            text = stringResource(R.string.home_connection_status),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
             text = statusTitle,
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = statusColor
         )
-        Text(
-            text = statusText.ifBlank { "" },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (detailText.isNotEmpty()) {
+            Text(
+                text = detailText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             text = if (isTesting) {
@@ -493,4 +494,27 @@ private fun parseRegionFromContent(content: String?): String? {
         .lastOrNull()
     val region = regionMatch?.groupValues?.getOrNull(1)?.trim()
     return region?.takeIf { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }?.uppercase()
+}
+
+/** Status detail line: latency + masked IP (e.g. "123ms · (US) 1.2.***.***"). */
+private fun parseStatusDetail(content: String?): String {
+    if (content.isNullOrBlank()) return ""
+    val latency = Regex("""(?i)(?:took|latency|delay|延时|延迟)\s*(\d+)\s*(?:ms|毫秒)?|(\d+)\s*ms\b""")
+        .find(content)
+        ?.groupValues
+        ?.drop(1)
+        ?.firstOrNull { it.isNotBlank() }
+    val masked = content.replace(Regex("""\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b""")) { m ->
+        val p = m.value.split(".")
+        "${p[0]}.${p[1]}.***.***"
+    }
+    val region = parseRegionFromContent(masked)?.let { "($it)" } ?: ""
+    return buildString {
+        latency?.let { append("${it}ms") }
+        if (region.isNotEmpty()) {
+            if (isNotEmpty()) append(" · ")
+            append(region)
+        }
+        if (isEmpty()) append(masked.trim())
+    }
 }

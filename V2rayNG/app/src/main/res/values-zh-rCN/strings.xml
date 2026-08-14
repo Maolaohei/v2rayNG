@@ -585,8 +585,8 @@
     <string name="home_status_detail_fail">无法访问外网 · 点状态复测或换节点</string>
     <string name="home_status_detail_ok">外网正常 · 点状态可复测</string>
     <string name="home_status_reconnecting">网络切换，重连中…</string>
-    <string name="home_status_running">已连接</string>
-    <string name="home_status_stopped">未连接</string>
+    <string name="home_status_running">CONNECTED</string>
+    <string name="home_status_stopped">NOT CONNECTED</string>
     <string name="home_status_unreachable">已连接但不可上网</string>
     <string name="home_switch_footer">开启后将通过所选节点建立系统隧道。</string>
     <string name="home_switch_footer_running">点状态可复测连通性。关闭开关即断开。</string>

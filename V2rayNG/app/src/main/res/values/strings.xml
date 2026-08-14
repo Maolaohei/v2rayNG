@@ -542,8 +542,8 @@
     <string name="xposed_description">VPN detection hardening (LSPosed) for v2rayNG</string>
     <string name="toast_root_mode_unavailable">No root access. Grant su or use VPN / Proxy only.</string>
     <string name="title_privilege_settings">Privilege enhancement</string>
-    <string name="home_status_stopped">Not Connected</string>
-    <string name="home_status_running">Connected</string>
+    <string name="home_status_stopped">NOT CONNECTED</string>
+    <string name="home_status_running">CONNECTED</string>
     <string name="home_status_connecting">Connecting…</string>
     <string name="home_status_unreachable">Connected, no internet</string>
     <string name="home_status_checking">Checking connection...</string>
