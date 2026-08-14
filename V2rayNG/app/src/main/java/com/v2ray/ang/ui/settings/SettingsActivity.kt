@@ -1,5 +1,6 @@
 package com.v2ray.ang.ui.settings
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
