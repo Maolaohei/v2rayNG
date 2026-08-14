@@ -4,6 +4,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -412,13 +413,15 @@ fun PrivilegeSelfTestDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.ok)) }
         },
-        neutralButton = {
-            TextButton(onClick = onCopy) { Text(stringResource(R.string.summary_pref_privilege_self_test_copy)) }
-        },
-        dismissButton = onAddSelf?.let { addSelf ->
-            {
-                TextButton(onClick = addSelf) {
-                    Text(stringResource(R.string.action_privilege_add_self), color = Color.Unspecified)
+        dismissButton = {
+            Row {
+                TextButton(onClick = onCopy) {
+                    Text(stringResource(R.string.summary_pref_privilege_self_test_copy))
+                }
+                onAddSelf?.let { addSelf ->
+                    TextButton(onClick = addSelf) {
+                        Text(stringResource(R.string.action_privilege_add_self))
+                    }
                 }
             }
         }
