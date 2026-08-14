@@ -21,6 +21,7 @@ import com.v2ray.ang.extension.isNotNullEmpty
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.NotificationManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.service.DialerNativeService
@@ -151,6 +152,7 @@ object CoreServiceManager {
         if (!isRunning()) {
             error("Core failed to start")
         }
+        TrafficStatsManager.startServiceTracking()
 
         if (browserDialer != null) {
             browserDialer!!.stop()
@@ -185,6 +187,7 @@ object CoreServiceManager {
     fun stopCoreLoop(): Boolean {
         val service = getService() ?: return false
 
+        TrafficStatsManager.stopServiceTracking()
         networkMonitor?.unregister()
         networkMonitor = null
         currentVpnInterface = null

@@ -25,6 +25,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -41,9 +42,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
-import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.extension.toTrafficString
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.root.RootManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -81,23 +83,12 @@ fun MainHomeScreen(
         }
     }
 
-    // Session traffic (polled while running)
-    var uplink by remember { mutableLongStateOf(0L) }
-    var downlink by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(isRunning) {
-        while (isRunning) {
-            var up = 0L
-            var down = 0L
-            CoreServiceManager.queryAllOutboundTrafficStats().forEach { stat ->
-                when (stat.direction) {
-                    AppConfig.UPLINK -> up += stat.value
-                    AppConfig.DOWNLINK -> down += stat.value
-                }
-            }
-            uplink = up
-            downlink = down
-            delay(3000L)
-        }
+    // 24h traffic (fork TrafficStatsManager, single polling owner)
+    var dayTraffic by remember { mutableLongStateOf(0L) }
+    DisposableEffect(Unit) {
+        val listener: (Long) -> Unit = { dayTraffic = it }
+        TrafficStatsManager.addDayTrafficListener(listener)
+        onDispose { TrafficStatsManager.removeDayTrafficListener(listener) }
     }
 
     val statusColor = when {
@@ -320,13 +311,7 @@ fun MainHomeScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "↓ ${formatBytes(downlink)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "↑ ${formatBytes(uplink)}",
+                        text = dayTraffic.toTrafficString(),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
