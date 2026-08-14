@@ -39,6 +39,8 @@ import com.v2ray.ang.ui.routing.RoutingSettingScreen
 import com.v2ray.ang.ui.routing.RoutingSettingsViewModel
 import com.v2ray.ang.enums.RoutingType
 import com.v2ray.ang.ui.ScannerActivity
+import com.v2ray.ang.ui.settings.SettingsScreen
+import com.v2ray.ang.ui.settings.SettingsViewModel
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.Utils
 import android.content.Intent
@@ -225,7 +227,6 @@ fun MainScreen(
                     showSearch = false
                 },
                 onSearchToggle = { show: Boolean -> showSearch = show },
-                onMenuClick = { selectedTab = MainTab.More },
                     onAction = onAction,
                     onMoreMenuAction = { action ->
                         when (action) {
@@ -332,10 +333,11 @@ fun MainScreen(
                     )
                 }
                 MainTab.More -> {
-                    MoreScreen(
-                        onNavigate = { destination ->
-                            onNavigate(destination)
-                        },
+                    // Fork layout: More tab hosts the settings page
+                    SettingsScreen(
+                        viewModel = viewModel(),
+                        onBackClick = {},
+                        onModeHelpClicked = { Utils.openUri(context, AppConfig.APP_WIKI_MODE) },
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -351,6 +353,9 @@ private fun RoutingTab(
 ) {
     val routingViewModel: RoutingSettingsViewModel = viewModel()
     val domainStrategyState = remember { MutableStateFlow(getDomainStrategy(context)) }
+    LaunchedEffect(Unit) {
+        routingViewModel.reload()
+    }
     RoutingSettingScreen(
         viewModel = routingViewModel,
         domainStrategyState = domainStrategyState,
