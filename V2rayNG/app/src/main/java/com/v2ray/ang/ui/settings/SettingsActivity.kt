@@ -39,11 +39,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.ui.AboutActivity
-import com.v2ray.ang.ui.BackupActivity
-import com.v2ray.ang.ui.CheckUpdateActivity
-import com.v2ray.ang.ui.LogcatActivity
-import com.v2ray.ang.ui.PerAppProxyActivity
-import com.v2ray.ang.ui.UserAssetActivity
+import com.v2ray.ang.ui.backup.BackupActivity
+import com.v2ray.ang.ui.checkupdate.CheckUpdateActivity
+import com.v2ray.ang.ui.logcat.LogcatActivity
+import com.v2ray.ang.ui.perappproxy.PerAppProxyActivity
+import com.v2ray.ang.ui.userasset.UserAssetActivity
 import com.v2ray.ang.ui.compose.AppDivider
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
