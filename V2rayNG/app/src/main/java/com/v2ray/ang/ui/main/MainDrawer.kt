@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
@@ -21,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.Font
@@ -60,6 +62,29 @@ private val drawerItems = primaryDrawerItems + listOf(
     MainDestination.BackupRestore,
     MainDestination.About
 )
+
+@Composable
+fun MoreScreen(
+    onNavigate: (MainDestination) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val drawerScrollState = rememberScrollState()
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(drawerScrollState)
+            .verticalScrollbar(drawerScrollState)
+    ) {
+        drawerItems.forEachIndexed { index, item ->
+            if (index == primaryDrawerItems.size) AppDivider()
+            ListItem(
+                headlineContent = { Text(stringResource(item.labelRes)) },
+                leadingContent = { Icon(painterResource(item.iconRes), contentDescription = null) },
+                modifier = Modifier.clickable { onNavigate(item) }
+            )
+        }
+    }
+}
 
 @Composable
 fun MainDrawerContent(drawerState: DrawerState, onNavigate: (MainDestination) -> Unit) {

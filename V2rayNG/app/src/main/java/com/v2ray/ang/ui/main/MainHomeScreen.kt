@@ -20,26 +20,35 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.core.CoreServiceManager
+import com.v2ray.ang.extension.toast
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.root.RootManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Home connection page (fork layout re-created in Compose).
@@ -53,12 +62,16 @@ fun MainHomeScreen(
     selectedGuid: String?,
     onAction: (MainAction) -> Unit,
     onOpenSubscriptions: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // Selected node remarks
     var nodeRemarks by remember { mutableStateOf("") }
     LaunchedEffect(selectedGuid) {
         nodeRemarks = selectedGuid?.let { MmkvManager.decodeServerConfig(it)?.remarks.orEmpty() } ?: ""
     }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // Cached latency from last test
     var latencyMs by remember { mutableStateOf<Long?>(null) }
@@ -100,8 +113,75 @@ fun MainHomeScreen(
         else -> stringResource(R.string.home_status_stopped)
     }
 
+    // Run mode (Proxy / VPN; ROOT button hidden like fork's retired home toggle)
+    var rootEnabled by remember {
+        mutableStateOf(MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_MODE_ENABLE, false))
+    }
+    var prefMode by remember {
+        mutableStateOf(MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN)
+    }
+    val currentMode = when {
+        rootEnabled -> AppConfig.MODE_ROOT
+        prefMode == AppConfig.MODE_PROXY_ONLY -> AppConfig.MODE_PROXY_ONLY
+        else -> AppConfig.VPN
+    }
+    val modeHint = when (currentMode) {
+        AppConfig.MODE_PROXY_ONLY -> stringResource(R.string.home_mode_hint_proxy)
+        AppConfig.MODE_ROOT -> stringResource(R.string.home_mode_hint_root)
+        else -> stringResource(R.string.home_mode_hint_vpn)
+    }
+    fun switchMode(next: String) {
+        val changed = when (next) {
+            AppConfig.MODE_PROXY_ONLY -> {
+                val wasRoot = rootEnabled
+                val was = prefMode
+                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+                if (was != AppConfig.MODE_PROXY_ONLY) {
+                    MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.MODE_PROXY_ONLY)
+                }
+                (was != AppConfig.MODE_PROXY_ONLY || wasRoot)
+            }
+            AppConfig.VPN -> {
+                val wasRoot = rootEnabled
+                val was = prefMode
+                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+                if (was != AppConfig.VPN) {
+                    MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.VPN)
+                }
+                (was != AppConfig.VPN || wasRoot)
+            }
+            AppConfig.MODE_ROOT -> {
+                val wasRoot = rootEnabled
+                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, true)
+                !wasRoot
+            }
+            else -> false
+        }
+        rootEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_MODE_ENABLE, false)
+        prefMode = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN
+        if (changed && isRunning) {
+            context.toast(R.string.home_mode_switch_restart)
+            onAction(MainAction.RestartService)
+        }
+    }
+
+    fun onModeClick(next: String) {
+        if (next == AppConfig.MODE_ROOT) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) { RootManager.refresh() }
+                if (ok) {
+                    switchMode(AppConfig.MODE_ROOT)
+                } else {
+                    context.toast(R.string.toast_root_mode_unavailable)
+                }
+            }
+        } else {
+            switchMode(next)
+        }
+    }
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
@@ -213,6 +293,10 @@ fun MainHomeScreen(
                     value = nodeRemarks.ifBlank { stringResource(R.string.home_metric_region_unknown) },
                     valueColor = MaterialTheme.colorScheme.onSurface
                 )
+                VerticalDivider(
+                    modifier = Modifier.height(40.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
                 HomeMetric(
                     label = stringResource(R.string.home_metric_latency),
                     value = latencyMs?.let {
@@ -223,6 +307,10 @@ fun MainHomeScreen(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     }
+                )
+                VerticalDivider(
+                    modifier = Modifier.height(40.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
                 )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -246,6 +334,50 @@ fun MainHomeScreen(
                 }
             }
         }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---- Run mode ----
+        Text(
+            text = stringResource(R.string.home_mode_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ModeButton(
+                    label = stringResource(R.string.home_mode_proxy),
+                    selected = currentMode == AppConfig.MODE_PROXY_ONLY,
+                    onClick = { onModeClick(AppConfig.MODE_PROXY_ONLY) }
+                )
+                ModeButton(
+                    label = stringResource(R.string.home_mode_vpn),
+                    selected = currentMode == AppConfig.VPN,
+                    onClick = { onModeClick(AppConfig.VPN) }
+                )
+                ModeButton(
+                    label = stringResource(R.string.home_mode_root),
+                    selected = currentMode == AppConfig.MODE_ROOT,
+                    onClick = { onModeClick(AppConfig.MODE_ROOT) }
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = modeHint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Spacer(Modifier.height(20.dp))
 
@@ -279,13 +411,26 @@ fun MainHomeScreen(
                     Text(
                         text = nodeRemarks.ifBlank { stringResource(R.string.home_select_node_hint) },
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2
+                    )
+                    Text(
+                        text = stringResource(R.string.home_goto_subscription_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
                 }
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = stringResource(R.string.home_change_node),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "›",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
         }
@@ -308,6 +453,25 @@ private fun HomeMetric(label: String, value: String, valueColor: Color) {
             fontWeight = FontWeight.Medium,
             color = valueColor
         )
+    }
+}
+
+@Composable
+private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.weight(1f),
+        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+        ),
+        border = if (selected) {
+            androidx.compose.foundation.BorderStroke(0.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            androidx.compose.material3.ButtonDefaults.outlinedButtonBorder
+        }
+    ) {
+        Text(text = label)
     }
 }
 
