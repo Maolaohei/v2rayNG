@@ -230,6 +230,7 @@ fun MainScreen(
                     MainTab.More -> stringResource(R.string.home_nav_more)
                 },
                 isLoading = isLoading,
+                showActions = selectedTab == MainTab.Subscription,
                 showSearch = showSearch,
                 searchQuery = searchQuery,
                 onSearchQueryChange = { query: String ->
