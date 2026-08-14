@@ -67,7 +67,7 @@ fun MainScreen(
 
     val pagerState = rememberPagerState(
         initialPage = 0,
-        pageCount = { groups.size.coerceAtLeast(1) }
+        pageCount = { groups.size + 1 }
     )
 
     val lazyListStates = remember { mutableStateMapOf<String, LazyListState>() }
@@ -87,8 +87,9 @@ fun MainScreen(
         if (groups.isEmpty()) return@LaunchedEffect
         val selectedIndex = groups.indexOfFirst { it.id == uiState.selectedGroupId }
             .takeIf { it >= 0 } ?: 0
-        if (!pagerState.isScrollInProgress && pagerState.settledPage != selectedIndex) {
-            pagerState.scrollToPage(selectedIndex)
+        val targetPage = selectedIndex + 1 // page 0 = home
+        if (!pagerState.isScrollInProgress && pagerState.settledPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
         }
     }
 
@@ -100,24 +101,26 @@ fun MainScreen(
             .distinctUntilChanged()
             .collect { page ->
                 val currentGroups = latestGroups
-                if (!latestLocateInProgress && page in currentGroups.indices) {
-                    onAction(MainAction.SelectGroup(currentGroups[page].id))
+                // Page 0 is the home page; group pages start at 1.
+                if (!latestLocateInProgress && page > 0 && page - 1 in currentGroups.indices) {
+                    onAction(MainAction.SelectGroup(currentGroups[page - 1].id))
                 }
             }
     }
 
     LaunchedEffect(uiState.locateTarget) {
         val target = uiState.locateTarget ?: return@LaunchedEffect
-        if (target.groupIndex !in 0 until pagerState.pageCount) {
+        if (target.groupIndex !in 0 until (pagerState.pageCount - 1)) {
             mainViewModel.onAction(MainAction.LocateHandled(target))
             return@LaunchedEffect
         }
 
         locateInProgress = true
         try {
-            if (pagerState.settledPage != target.groupIndex) {
+            val targetPage = target.groupIndex + 1 // page 0 = home
+            if (pagerState.settledPage != targetPage) {
                 pagerState.navigateToPageOptimized(
-                    targetPage = target.groupIndex,
+                    targetPage = targetPage,
                     animateAdjacentPage = false
                 )
             }
@@ -244,63 +247,83 @@ fun MainScreen(
         ) { innerPadding ->
             val layoutDirection = LocalLayoutDirection.current
 
-            if (groups.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    if (groups.size > 1) {
-                        GroupTabBar(
-                            groups = groups,
-                            selectedTabIndex = pagerState.currentPage.coerceIn(0, groups.lastIndex),
-                            mainViewModel = mainViewModel,
-                            onTabClick = { targetIndex ->
-                                scope.launch {
-                                    pagerState.navigateToPageOptimized(
-                                        targetPage = targetIndex,
-                                        animateAdjacentPage = true
-                                    )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                GroupTabBar(
+                    groups = groups,
+                    selectedTabIndex = pagerState.currentPage.coerceIn(0, groups.size),
+                    mainViewModel = mainViewModel,
+                    homeTab = true,
+                    onTabClick = { targetIndex ->
+                        scope.launch {
+                            pagerState.navigateToPageOptimized(
+                                targetPage = targetIndex,
+                                animateAdjacentPage = true
+                            )
+                        }
+                    }
+                )
+
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = true,
+                    beyondViewportPageCount = 1,
+                    key = { page ->
+                        if (page == 0) "home-page" else groups.getOrNull(page - 1)?.id ?: "group-page-$page"
+                    }
+                ) { page ->
+                    if (page == 0) {
+                        MainHomeScreen(
+                            isRunning = isRunning,
+                            isTesting = isTesting,
+                            statusText = displayText,
+                            selectedGuid = selectedGuid,
+                            onAction = onAction,
+                            onOpenSubscriptions = {
+                                if (groups.isNotEmpty()) {
+                                    scope.launch {
+                                        pagerState.navigateToPageOptimized(
+                                            targetPage = 1,
+                                            animateAdjacentPage = true
+                                        )
+                                    }
                                 }
                             }
                         )
+                        return@HorizontalPager
                     }
 
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        userScrollEnabled = true,
-                        beyondViewportPageCount = 1,
-                        key = { page -> groups.getOrNull(page)?.id ?: "group-page-$page" }
-                    ) { page ->
-                        val group = groups.getOrNull(page) ?: return@HorizontalPager
+                    val group = groups.getOrNull(page - 1) ?: return@HorizontalPager
 
-                        GroupPagerPage(
-                            groupId = group.id,
-                            mainViewModel = mainViewModel,
-                            selectedGuid = selectedGuid,
-                            doubleColumnDisplay = doubleColumnDisplay,
-                            confirmRemove = confirmRemove,
-                            searchQuery = searchQuery,
-                            lazyListStates = lazyListStates,
-                            lazyGridStates = lazyGridStates,
-                            onSelectServer = { guid -> onAction(MainAction.SelectServer(guid)) },
-                            onEditServer = { guid, profile -> onAction(MainAction.EditServer(guid, profile)) },
-                            onShareServer = { guid, profile ->
-                                shareTarget = Triple(guid, profile, false)
-                            },
-                            onMoreServer = { guid, profile ->
-                                shareTarget = Triple(guid, profile, true)
-                            },
-                            onRemoveServer = removeServer,
-                            contentPadding = PaddingValues(
-                                start = 0.dp,
-                                top = 0.dp,
-                                end = 0.dp,
-                                bottom = 80.dp
-                            )
+                    GroupPagerPage(
+                        groupId = group.id,
+                        mainViewModel = mainViewModel,
+                        selectedGuid = selectedGuid,
+                        doubleColumnDisplay = doubleColumnDisplay,
+                        confirmRemove = confirmRemove,
+                        searchQuery = searchQuery,
+                        lazyListStates = lazyListStates,
+                        lazyGridStates = lazyGridStates,
+                        onSelectServer = { guid -> onAction(MainAction.SelectServer(guid)) },
+                        onEditServer = { guid, profile -> onAction(MainAction.EditServer(guid, profile)) },
+                        onShareServer = { guid, profile ->
+                            shareTarget = Triple(guid, profile, false)
+                        },
+                        onMoreServer = { guid, profile ->
+                            shareTarget = Triple(guid, profile, true)
+                        },
+                        onRemoveServer = removeServer,
+                        contentPadding = PaddingValues(
+                            start = 0.dp,
+                            top = 0.dp,
+                            end = 0.dp,
+                            bottom = 80.dp
                         )
-                    }
+                    )
                 }
             }
         }
