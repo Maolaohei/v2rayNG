@@ -729,5 +729,6 @@
     <string name="toast_privilege_sync_fail">同步失败（模块未激活或事务被拒绝）</string>
     <string name="toast_privilege_sync_ok">隐藏设置已同步到 system_server</string>
     <string name="toast_root_mode_unavailable">无 Root 权限。请授权 su，或改用 VPN / 仅代理</string>
+    <string name="title_settings_tools_core">维护与关于</string>
     <string name="xposed_description">v2rayNG 的 VPN 检测加固（LSPosed）</string>
 </resources>

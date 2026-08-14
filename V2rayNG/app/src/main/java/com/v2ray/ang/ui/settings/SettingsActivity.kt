@@ -38,6 +38,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.AppConfig
+import com.v2ray.ang.ui.AboutActivity
+import com.v2ray.ang.ui.BackupActivity
+import com.v2ray.ang.ui.CheckUpdateActivity
+import com.v2ray.ang.ui.LogcatActivity
+import com.v2ray.ang.ui.PerAppProxyActivity
+import com.v2ray.ang.ui.UserAssetActivity
 import com.v2ray.ang.ui.compose.AppDivider
 import com.v2ray.ang.AppConfig.VPN
 import com.v2ray.ang.R
@@ -59,7 +65,6 @@ import com.v2ray.ang.ui.compose.verticalScrollbar
 import com.v2ray.ang.util.Utils
 import com.v2ray.ang.xposed.PrivilegePortsManager
 import com.v2ray.ang.xposed.PrivilegeSettingsClient
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
@@ -280,6 +285,34 @@ fun SettingsScreen(
                             )
                         },
                         modifier = Modifier.clickable { selectedCategory = category }
+                    )
+                }
+                // Maintenance / tools entries (fork: title_settings_tools_core)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = stringResource(R.string.title_settings_tools_core),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                maintenanceEntries.forEach { (labelRes, activityClass) ->
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = stringResource(labelRes),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        },
+                        trailingContent = {
+                            Text(
+                                text = "›",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        },
+                        modifier = Modifier.clickable {
+                            context.startActivity(Intent(context, activityClass))
+                        }
                     )
                 }
             } else {
@@ -864,6 +897,16 @@ private val settingsCategories = listOf(
     R.string.title_fragment_settings to 6,
     R.string.title_observatory_settings to 7,
     R.string.title_advanced to 8
+)
+
+// Maintenance / tools entries (fork: pref_entry_* bound activities)
+private val maintenanceEntries = listOf(
+    R.string.per_app_proxy_settings to PerAppProxyActivity::class.java,
+    R.string.title_user_asset_setting to UserAssetActivity::class.java,
+    R.string.title_logcat to LogcatActivity::class.java,
+    R.string.update_check_for_update to CheckUpdateActivity::class.java,
+    R.string.title_configuration_backup_restore to BackupActivity::class.java,
+    R.string.title_about to AboutActivity::class.java
 )
 
 @StringRes
