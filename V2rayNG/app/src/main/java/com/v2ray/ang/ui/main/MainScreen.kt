@@ -40,7 +40,7 @@ import com.v2ray.ang.ui.compose.QRCodeDialog
 import com.v2ray.ang.ui.routing.RoutingEditActivity
 import com.v2ray.ang.ui.routing.RoutingSettingScreen
 import com.v2ray.ang.ui.routing.RoutingSettingsViewModel
-import com.v2ray.ang.ui.routing.RoutingType
+import com.v2ray.ang.enums.RoutingType
 import com.v2ray.ang.ui.ScannerActivity
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.Utils

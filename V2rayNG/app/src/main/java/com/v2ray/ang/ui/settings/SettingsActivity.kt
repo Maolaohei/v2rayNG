@@ -778,23 +778,21 @@ fun SettingsScreen(
                     subtitle = privilegeModuleSummary,
                     onClick = {
                         val probe = PrivilegeSettingsClient.refresh()
-                        val msg = when (probe.result) {
+                        val toastText = when (probe.result) {
                             PrivilegeSettingsClient.ProbeResult.ACTIVE ->
-                                R.string.toast_privilege_module_active
+                                context.getString(R.string.toast_privilege_module_active)
                             PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
-                                R.string.toast_privilege_module_loaded_inactive
+                                context.getString(R.string.toast_privilege_module_loaded_inactive)
                             PrivilegeSettingsClient.ProbeResult.TRANSACTION_UNHANDLED ->
-                                R.string.toast_privilege_module_unhandled
+                                context.getString(R.string.toast_privilege_module_unhandled)
                             PrivilegeSettingsClient.ProbeResult.UNAUTHORIZED ->
-                                R.string.toast_privilege_module_unauthorized
+                                context.getString(R.string.toast_privilege_module_unauthorized)
                             PrivilegeSettingsClient.ProbeResult.BINDER_UNAVAILABLE ->
-                                R.string.toast_privilege_module_binder
+                                context.getString(R.string.toast_privilege_module_binder)
                             PrivilegeSettingsClient.ProbeResult.ERROR ->
                                 context.getString(R.string.toast_privilege_module_error, probe.detail ?: "unknown")
                         }
-                        Toast.makeText(context, if (msg is Int) msg else 0, Toast.LENGTH_LONG).apply {
-                            if (msg !is Int) setText(msg)
-                        }.show()
+                        Toast.makeText(context, toastText, Toast.LENGTH_LONG).show()
                         runCatching { PrivilegeSettingsClient.sync() }
                         privilegeModuleSummary = moduleStatusSummary(context)
                     }
