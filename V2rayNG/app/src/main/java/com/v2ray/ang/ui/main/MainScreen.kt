@@ -223,6 +223,12 @@ fun MainScreen(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
         topBar = {
             MainTopBar(
+                title = when (selectedTab) {
+                    MainTab.Home -> stringResource(R.string.home_nav_home)
+                    MainTab.Subscription -> stringResource(R.string.home_nav_subscription)
+                    MainTab.Routing -> stringResource(R.string.home_nav_routing)
+                    MainTab.More -> stringResource(R.string.home_nav_more)
+                },
                 isLoading = isLoading,
                 showSearch = showSearch,
                 searchQuery = searchQuery,
@@ -370,6 +376,7 @@ fun MainScreen(
                         viewModel = viewModel(),
                         onBackClick = {},
                         onModeHelpClicked = { Utils.openUri(context, AppConfig.APP_WIKI_MODE) },
+                        showTopBar = false,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }

@@ -2,6 +2,7 @@ package com.v2ray.ang.ui.settings
 
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.viewModels
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -89,10 +90,16 @@ fun SettingsScreen(
     onBackClick: () -> Unit,
     onModeHelpClicked: () -> Unit,
     modifier: Modifier = Modifier,
+    showTopBar: Boolean = true,
 ) {
     val scrollState = rememberScrollState()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     var selectedCategory by rememberSaveable { mutableIntStateOf(-1) }
+
+    // Back key pops sub pages first (fork MoreFragment back-stack behavior)
+    BackHandler(enabled = selectedCategory != -1) {
+        selectedCategory = -1
+    }
 
     var localDns by rememberMmkvBool(AppConfig.PREF_LOCAL_DNS_ENABLED, false)
     var fakeDns by rememberMmkvBool(AppConfig.PREF_FAKE_DNS_ENABLED, false)
@@ -227,15 +234,19 @@ fun SettingsScreen(
         modifier = modifier,
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
         topBar = {
-            AppTopBar(
-                title = stringResource(categoryTitleRes(selectedCategory)),
-                onBackClick = if (selectedCategory == -1) {
-                    onBackClick
-                } else {
-                    { selectedCategory = -1 }
-                },
-                isLoading = isLoading
-            )
+            // Sub pages always show a back+title bar; the category list only when
+            // hosted standalone (embedded in More tab it inherits MainTopBar).
+            if (selectedCategory != -1 || showTopBar) {
+                AppTopBar(
+                    title = stringResource(categoryTitleRes(selectedCategory)),
+                    onBackClick = if (selectedCategory == -1) {
+                        onBackClick
+                    } else {
+                        { selectedCategory = -1 }
+                    },
+                    isLoading = isLoading
+                )
+            }
         }
     ) { innerPadding ->
         Column(
@@ -264,7 +275,6 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.clickable { selectedCategory = category }
                     )
-                    AppDivider()
                 }
             } else {
             if (selectedCategory == 0) {
