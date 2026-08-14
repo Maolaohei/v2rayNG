@@ -713,7 +713,7 @@
     <string name="title_privilege_add_self">将本应用加入隐藏名单</string>
     <string name="title_privilege_hide_vpn_apps">隐藏 VPN 目标应用</string>
     <string name="title_privilege_self_test_result">HideVPN 诊断</string>
-    <string name="title_privilege_settings">特权增强</string>
+    <string name="title_privilege_settings">LSP隐藏设置</string>
     <string name="toast_privilege_add_self_ok">已加入隐藏目标并同步</string>
     <string name="toast_privilege_module_active">LSPosed hidevpn 模块已激活</string>
     <string name="toast_privilege_module_binder">无法连接 Connectivity 服务</string>
