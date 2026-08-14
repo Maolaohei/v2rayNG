@@ -223,6 +223,7 @@ fun SubEditScreen(
                 enabled = autoUpdate
             )
 
+<<<<<<< HEAD
             // ---- Advanced (collapsed by default) ----
             var showAdvanced by rememberSaveable { mutableStateOf(false) }
             Row(
@@ -258,7 +259,8 @@ fun SubEditScreen(
                     value = prevProfile,
                     options = profileSuggestions,
                     onValueChange = { prevProfile = it },
-                    editable = true
+                    editable = true,
+                    supportingText = stringResource(R.string.sub_setting_entry_proxy_tip)
                 )
                 FormDropdownField(
                     label = stringResource(R.string.sub_setting_next_profile),
@@ -266,7 +268,8 @@ fun SubEditScreen(
                     value = nextProfile,
                     options = profileSuggestions,
                     onValueChange = { nextProfile = it },
-                    editable = true
+                    editable = true,
+                    supportingText = stringResource(R.string.sub_setting_exit_proxy_tip)
                 )
             }
         }
