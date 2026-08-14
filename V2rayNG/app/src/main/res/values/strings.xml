@@ -539,5 +539,6 @@
     <string name="tasker_blurb_stop">Stop %1$s</string>
     <string name="connection_test_empty_message">no details available</string>
     <string name="value_unknown">unknown</string>
+    <string name="xposed_description">VPN detection hardening (LSPosed) for v2rayNG</string>
 
 </resources>

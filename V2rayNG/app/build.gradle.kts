@@ -184,6 +184,10 @@ dependencies {
     // Reorderable list
     implementation(libs.reorderable)
 
+    // Xposed / hidevpn (compileOnly: provided by LSPosed at runtime)
+    compileOnly("de.robv.android.xposed:api:82")
+    compileOnly(project(":libxposed-api"))
+
     // Testing Libraries
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

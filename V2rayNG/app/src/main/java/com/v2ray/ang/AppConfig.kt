@@ -76,6 +76,15 @@ object AppConfig {
     const val PREF_MODE = "pref_mode"
     const val PREF_ROOT_MODE_ENABLE = "pref_root_mode_enabled"
     const val PREF_ROOT_LAN_SHARING = "pref_root_lan_sharing"
+    /** LSPosed hidevpn: sanitize VPN detection for selected apps (SFA-style). */
+    const val PREF_PRIVILEGE_HIDE_VPN = "pref_privilege_hide_vpn"
+    const val PREF_PRIVILEGE_HIDE_VPN_APPS = "pref_privilege_hide_vpn_apps"
+    const val PREF_PRIVILEGE_IFACE_RENAME = "pref_privilege_iface_rename"
+    const val PREF_PRIVILEGE_IFACE_PREFIX = "pref_privilege_iface_prefix"
+    /** Hide this client package from hide-target observers (Apps role, default off). */
+    const val PREF_PRIVILEGE_HIDE_SELF_PACKAGE = "pref_privilege_hide_self_package"
+    /** Root: block hide targets from 127.0.0.0/8 and ::1 (vpnhide-ports style). */
+    const val PREF_PRIVILEGE_PORTS = "pref_privilege_ports"
     const val PREF_IS_BOOTED = "pref_is_booted"
     const val PREF_CHECK_UPDATE_PRE_RELEASE = "pref_check_update_pre_release"
     const val PREF_GEO_FILES_SOURCES = "pref_geo_files_sources"
