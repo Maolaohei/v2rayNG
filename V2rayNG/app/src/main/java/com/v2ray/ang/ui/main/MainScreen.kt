@@ -83,8 +83,15 @@ fun MainScreen(
 
     val latestDoubleColumnDisplay by rememberUpdatedState(doubleColumnDisplay)
 
+    var groupsInitialized by remember { mutableStateOf(false) }
+
     LaunchedEffect(groups, uiState.selectedGroupId) {
         if (groups.isEmpty()) return@LaunchedEffect
+        // First load: stay on the home page (page 0); later group changes scroll to selection.
+        if (!groupsInitialized) {
+            groupsInitialized = true
+            return@LaunchedEffect
+        }
         val selectedIndex = groups.indexOfFirst { it.id == uiState.selectedGroupId }
             .takeIf { it >= 0 } ?: 0
         val targetPage = selectedIndex + 1 // page 0 = home
