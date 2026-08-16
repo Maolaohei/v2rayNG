@@ -43,6 +43,7 @@ import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.ui.compose.QRCodeDialog
+import com.v2ray.ang.extension.delay
 import com.v2ray.ang.ui.routing.RoutingEditActivity
 import com.v2ray.ang.ui.routing.RoutingSettingScreen
 import com.v2ray.ang.ui.routing.RoutingSettingsViewModel
@@ -164,7 +165,7 @@ fun MainScreen(
                     lazyListStates[target.groupId] != null
                 }
                 if (ready) return@repeat
-                delay(16L)
+                delay(16)
             }
 
             if (latestDoubleColumnDisplay) {
@@ -183,7 +184,7 @@ fun MainScreen(
                 }
             }
         } finally {
-            delay(32L)
+            delay(32)
             locateInProgress = false
             mainViewModel.onAction(MainAction.LocateHandled(target))
         }
