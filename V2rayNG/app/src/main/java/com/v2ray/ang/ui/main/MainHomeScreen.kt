@@ -1,6 +1,7 @@
 package com.v2ray.ang.ui.main
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +47,7 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.root.RootManager
+import com.v2ray.ang.ui.compose.extendedColors
 
 /**
  * Home connection page (fork layout re-created in Compose).
@@ -96,10 +98,14 @@ fun MainHomeScreen(
         onDispose { TrafficStatsManager.removeDayTrafficListener(listener) }
     }
 
-    val statusColor = when {
-        isRunning -> Color(0xFF009966) // fork colorPing
-        else -> MaterialTheme.colorScheme.outline
-    }
+    val ext = extendedColors()
+    val statusColor by animateColorAsState(
+        targetValue = when {
+            isRunning -> ext.running
+            else -> MaterialTheme.colorScheme.outline
+        },
+        label = "statusColor"
+    )
     val statusTitle = when {
         isRunning -> stringResource(R.string.home_status_running)
         else -> stringResource(R.string.home_status_stopped)

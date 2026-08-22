@@ -5,6 +5,10 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -28,18 +32,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 private val LightColor = lightColorScheme(
-    primary = Color(0xFF000000), // Black
-    onPrimary = Color(0xFFFFFFFF), // White
-    primaryContainer = Color(0xFFE0E0E0), // Light Gray
-    onPrimaryContainer = Color(0xFF000000), // Black
-    secondary = Color(0xFFf97910), // Orange
-    onSecondary = Color(0xFFFFFFFF), // White
-    secondaryContainer = Color(0xFFFFE8D6), // Pale Orange
-    onSecondaryContainer = Color(0xFF2B1700), // Dark Brown
-    tertiary = Color(0xFF009966), // Green
-    onTertiary = Color(0xFFFFFFFF), // White
-    tertiaryContainer = Color(0xFFA0F2D0), // Light Green
-    onTertiaryContainer = Color(0xFF00201A), // Dark Teal
+    primary = Color(0xFF007A52), // Brand green (fork identity, "connected" semantics)
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFB8F2D4), // Light Green
+    onPrimaryContainer = Color(0xFF00201A),
+    secondary = Color(0xFFf97910), // Orange (kept as accent)
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFFFE8D6),
+    onSecondaryContainer = Color(0xFF2B1700),
+    tertiary = Color(0xFF009966), // Bright green
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFA0F2D0),
+    onTertiaryContainer = Color(0xFF00201A),
     error = Color(0xFFBA1A1A), // Red
     errorContainer = Color(0xFFFFDAD6), // Light Red
     onError = Color(0xFFFFFFFF), // White
@@ -65,18 +69,18 @@ private val LightColor = lightColorScheme(
 )
 
 private val DarkColor = darkColorScheme(
-    primary = Color(0xFFC0C0C0), // Silver Gray
-    onPrimary = Color(0xFF303030), // Dark Gray
-    primaryContainer = Color(0xFF474747), // Gray
-    onPrimaryContainer = Color(0xFFE0E0E0), // Light Gray
+    primary = Color(0xFF7DDCB0), // Brand green (dark)
+    onPrimary = Color(0xFF003826),
+    primaryContainer = Color(0xFF005143),
+    onPrimaryContainer = Color(0xFFA0F2D0),
     secondary = Color(0xFFf97910), // Orange
-    onSecondary = Color(0xFF4E2600), // Dark Brown
-    secondaryContainer = Color(0xFF6F3800), // Brown
-    onSecondaryContainer = Color(0xFFFFE8D6), // Pale Orange
+    onSecondary = Color(0xFF4E2600),
+    secondaryContainer = Color(0xFF6F3800),
+    onSecondaryContainer = Color(0xFFFFE8D6),
     tertiary = Color(0xFF83D6B5), // Mint Green
-    onTertiary = Color(0xFF00382E), // Dark Teal
-    tertiaryContainer = Color(0xFF005143), // Teal
-    onTertiaryContainer = Color(0xFFA0F2D0), // Light Green
+    onTertiary = Color(0xFF00382E),
+    tertiaryContainer = Color(0xFF005143),
+    onTertiaryContainer = Color(0xFFA0F2D0),
     error = Color(0xFFFFB4AB), // Light Red
     errorContainer = Color(0xFF93000A), // Dark Red
     onError = Color(0xFF690005), // Deep Red
@@ -119,6 +123,28 @@ val toastErrorBg = Color(0xB3D50000) // Red
 val toastInfoBg = Color(0xB33F51B5) // Indigo Blue
 val toastIconCircleBg = Color(0x33FFFFFF) // Semi-transparent White
 val toastTextColor = Color.White // White
+
+// ---- Unified shape scheme (P0) ----
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(20.dp)
+)
+
+// Semantic status colors resolved from the active scheme (P0: replaces hardcoded greens/reds)
+data class ExtendedColors(val success: Color, val onErrorSuccess: Color, val running: Color)
+val LocalExtendedColors = staticCompositionLocalOf {
+    ExtendedColors(Color(0xFF009966), Color.White, Color(0xFF009966))
+}
+
+@Composable
+fun extendedColors(): ExtendedColors = if (LocalDarkTheme.current) {
+    ExtendedColors(Color(0xFF83D6B5), Color(0xFF00382E), Color(0xFF83D6B5))
+} else {
+    ExtendedColors(Color(0xFF009966), Color.White, Color(0xFF009966))
+}
 
 object ThemeManager {
     private val _themeMode = MutableStateFlow(
@@ -191,10 +217,13 @@ fun AppTheme(
 
     CompositionLocalProvider(
         LocalDarkTheme provides darkTheme,
-        LocalAppSnackbar provides snackbarController
+        LocalAppSnackbar provides snackbarController,
+        LocalExtendedColors provides extendedColors()
     ) {
         MaterialTheme(
-            colorScheme = colorScheme
+            colorScheme = colorScheme,
+            typography = AppTypography,
+            shapes = AppShapes
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 AppSnackbarBridge(controller = snackbarController)

@@ -9,7 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.ui.text.font.FontWeight
-import com.v2ray.ang.ui.compose.colorPing
+import com.v2ray.ang.ui.compose.extendedColors
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -64,7 +64,6 @@ import com.v2ray.ang.ui.compose.ItemDivider
 import com.v2ray.ang.ui.compose.ReorderableListItem
 import com.v2ray.ang.ui.compose.SelectListDialog
 import com.v2ray.ang.ui.compose.SettingsListItem
-import com.v2ray.ang.ui.compose.colorPing
 import com.v2ray.ang.ui.compose.colorFabActive
 import com.v2ray.ang.ui.compose.verticalScrollbar
 import com.v2ray.ang.util.JsonUtil
@@ -382,9 +381,10 @@ private fun RoutingRulesetItem(
     onEdit: () -> Unit,
     onEnabledChange: (Boolean) -> Unit
 ) {
+    val ext = extendedColors()
     val tagColor = when (ruleset.outboundTag) {
         "block" -> MaterialTheme.colorScheme.error
-        "direct" -> colorPing
+        "direct" -> ext.success
         "proxy" -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }

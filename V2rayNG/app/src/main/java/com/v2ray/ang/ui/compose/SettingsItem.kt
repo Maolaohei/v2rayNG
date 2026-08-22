@@ -1,5 +1,9 @@
 package com.v2ray.ang.ui.compose
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +44,33 @@ fun PreferenceGroupHeader(title: String, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
     )
+}
+
+/**
+ * Rounded grouped card that hosts a section of settings rows (P1).
+ * Rows placed inside get edge-to-edge-in-card layout with dividers handled by callers.
+ */
+@Composable
+fun SettingsGroupCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(),
+            content = content
+        )
+    }
 }
 
 @Composable

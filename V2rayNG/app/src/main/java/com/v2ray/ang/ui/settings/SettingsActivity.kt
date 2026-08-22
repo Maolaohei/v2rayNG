@@ -60,6 +60,7 @@ import com.v2ray.ang.ui.base.BaseComponentActivity
 import com.v2ray.ang.ui.compose.AppTopBar
 import com.v2ray.ang.ui.compose.CollapsiblePreferenceGroupHeader
 import com.v2ray.ang.ui.compose.SettingsEditItem
+import com.v2ray.ang.ui.compose.SettingsGroupCard
 import com.v2ray.ang.ui.compose.SettingsListItem
 import com.v2ray.ang.ui.compose.SettingsMenuItem
 import com.v2ray.ang.ui.compose.SettingsSwitchItem
@@ -354,6 +355,7 @@ fun SettingsScreen(
                 )
             } else {
             if (selectedCategory == 0) {
+            SettingsGroupCard {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_double_column_display),
                     summary = stringResource(R.string.summary_pref_double_column_display),
@@ -403,8 +405,10 @@ fun SettingsScreen(
                     }
                 )
             }
+            }
 
             if (selectedCategory == 3) {
+            SettingsGroupCard {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_ipv6_enabled),
                     summary = stringResource(R.string.summary_pref_ipv6_enabled),
@@ -448,8 +452,10 @@ fun SettingsScreen(
                     onValueChanged = { vpnMtu = it }
                 )
             }
+            }
 
             if (selectedCategory == 4) {
+            SettingsGroupCard {
                 // Traffic handling
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_sniffing_enabled),
@@ -577,8 +583,10 @@ fun SettingsScreen(
                     onSelected = { coreLogLevel = it }
                 )
             }
+            }
 
             if (selectedCategory == 5) {
+            SettingsGroupCard {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_mux_enabled),
                     summary = stringResource(R.string.summary_pref_mux_enabled),
@@ -608,8 +616,10 @@ fun SettingsScreen(
                     onSelected = { muxXudpQuic = it }
                 )
             }
+            }
 
             if (selectedCategory == 6) {
+            SettingsGroupCard {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_fragment_enabled),
                     checked = fragment,
@@ -643,8 +653,10 @@ fun SettingsScreen(
                     onValueChanged = { fragmentMaxSplit = it }
                 )
             }
+            }
 
             if (selectedCategory == 7) {
+            SettingsGroupCard {
                 SettingsEditItem(
                     title = stringResource(R.string.title_pref_observatory_least_ping_interval),
                     value = observatoryLeastPingInterval,
@@ -690,8 +702,10 @@ fun SettingsScreen(
                     }
                 )
             }
+            }
 
             if (selectedCategory == 8) {
+            SettingsGroupCard {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_is_booted),
                     summary = stringResource(R.string.summary_pref_is_booted),
@@ -733,8 +747,10 @@ fun SettingsScreen(
                     }
                 )
             }
+            }
 
             if (selectedCategory == 1) {
+            SettingsGroupCard {
                 SettingsListItem(
                     title = stringResource(R.string.title_mode),
                     entries = modeEntries,
@@ -775,8 +791,10 @@ fun SettingsScreen(
                     }
                 )
             }
+            }
 
             if (selectedCategory == 2) {
+            SettingsGroupCard {
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_privilege_hide_vpn),
                     summary = stringResource(R.string.summary_pref_privilege_hide_vpn),
@@ -886,6 +904,7 @@ fun SettingsScreen(
                         }
                     }
                 )
+            }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
