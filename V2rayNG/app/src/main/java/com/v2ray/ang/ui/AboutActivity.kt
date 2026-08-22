@@ -54,7 +54,7 @@ fun AboutScreen(onBackClick: () -> Unit) {
     var showOssDialog by remember { mutableStateOf(false) }
 
     val libVersion = CoreNativeManager.getLibVersion()
-    val versionText = "v${BuildConfig.VERSION_NAME} ($libVersion)"
+    val versionText = "v${BuildConfig.VERSION_NAME} (Bray-Core $libVersion)"
     val appIdText = BuildConfig.APPLICATION_ID
 
     Scaffold(
