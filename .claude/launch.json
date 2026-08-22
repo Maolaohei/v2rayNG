@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "apple-design-review",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "docs/apple-design-review", "-p", "5179", "-L"],
+      "port": 5179
+    }
+  ]
+}

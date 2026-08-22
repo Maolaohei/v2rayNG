@@ -1,0 +1,2 @@
+[permissions]
+allow = ["Bash=git remote -v && echo \"---\" && git branch -vv && echo \"---\" && git status -sb", "Bash=git log --oneline HEAD..upstream/master | head -60 && echo \"--- count: $(git rev-list --count HEAD..upstream/master)\""]

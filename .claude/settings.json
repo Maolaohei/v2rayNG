@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tasklist *)",
+      "Bash(git rev-list *)",
+      "Bash(git fetch *)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)",
+      "mcp__Claude_Browser__preview_list",
+      "mcp__Claude_Browser__preview_screenshot",
+      "mcp__Claude_Browser__preview_snapshot",
+      "mcp__Claude_Browser__preview_console_logs",
+      "mcp__Claude_Browser__preview_logs",
+      "mcp__Claude_Browser__preview_inspect",
+      "mcp__Claude_Browser__preview_network",
+      "mcp__ccd_session_mgmt__list_sessions",
+      "mcp__ccd_session_mgmt__search_session_transcripts",
+      "mcp__ccd_session_mgmt__list_events",
+      "mcp__ccd_session_mgmt__get_session"
+    ]
+  }
+}

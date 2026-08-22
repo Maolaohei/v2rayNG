@@ -355,18 +355,6 @@ fun SettingsScreen(
             } else {
             if (selectedCategory == 0) {
                 SettingsSwitchItem(
-                    title = stringResource(R.string.title_pref_speed_enabled),
-                    summary = stringResource(R.string.summary_pref_speed_enabled),
-                    checked = speedEnabled,
-                    onCheckedChange = { speedEnabled = it }
-                )
-                SettingsSwitchItem(
-                    title = stringResource(R.string.title_pref_confirm_remove),
-                    summary = stringResource(R.string.summary_pref_confirm_remove),
-                    checked = confirmRemove,
-                    onCheckedChange = { confirmRemove = it }
-                )
-                SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_double_column_display),
                     summary = stringResource(R.string.summary_pref_double_column_display),
                     checked = doubleColumnDisplay,
@@ -430,26 +418,6 @@ fun SettingsScreen(
                     onCheckedChange = { preferIpv6 = it }
                 )
                 SettingsSwitchItem(
-                    title = stringResource(R.string.title_pref_local_dns_enabled),
-                    summary = stringResource(R.string.summary_pref_local_dns_enabled),
-                    checked = localDns,
-                    enabled = isVpn,
-                    onCheckedChange = { localDns = it }
-                )
-                SettingsSwitchItem(
-                    title = stringResource(R.string.title_pref_fake_dns_enabled),
-                    summary = stringResource(R.string.summary_pref_fake_dns_enabled),
-                    checked = fakeDns,
-                    enabled = isVpn && localDns,
-                    onCheckedChange = { fakeDns = it }
-                )
-                SettingsEditItem(
-                    title = stringResource(R.string.title_pref_vpn_dns),
-                    value = vpnDns,
-                    enabled = isVpn && !localDns,
-                    onValueChanged = { vpnDns = it }
-                )
-                SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_append_http_proxy),
                     summary = stringResource(R.string.summary_pref_append_http_proxy),
                     checked = appendHttpProxy,
@@ -479,6 +447,30 @@ fun SettingsScreen(
                     keyboardNumber = true,
                     onValueChanged = { vpnMtu = it }
                 )
+            }
+
+            if (selectedCategory == 4) {
+                // Traffic handling
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_sniffing_enabled),
+                    summary = stringResource(R.string.summary_pref_sniffing_enabled),
+                    checked = sniffingEnabled,
+                    onCheckedChange = { sniffingEnabled = it }
+                )
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_route_only_enabled),
+                    summary = stringResource(R.string.summary_pref_route_only_enabled),
+                    checked = routeOnlyEnabled,
+                    onCheckedChange = { routeOnlyEnabled = it }
+                )
+                SettingsListItem(
+                    title = stringResource(R.string.title_outbound_domain_resolve_method),
+                    entries = outboundResolveEntries,
+                    values = outboundResolveValues,
+                    selectedValue = outboundResolveMethod,
+                    onSelected = { outboundResolveMethod = it }
+                )
+                // TUN engine
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_use_hev_tunnel),
                     summary = stringResource(R.string.summary_pref_use_hev_tunnel),
@@ -506,21 +498,7 @@ fun SettingsScreen(
                     keyboardNumber = true,
                     onValueChanged = { hevTunRwTimeout = it }
                 )
-            }
-
-            if (selectedCategory == 4) {
-                SettingsSwitchItem(
-                    title = stringResource(R.string.title_pref_sniffing_enabled),
-                    summary = stringResource(R.string.summary_pref_sniffing_enabled),
-                    checked = sniffingEnabled,
-                    onCheckedChange = { sniffingEnabled = it }
-                )
-                SettingsSwitchItem(
-                    title = stringResource(R.string.title_pref_route_only_enabled),
-                    summary = stringResource(R.string.summary_pref_route_only_enabled),
-                    checked = routeOnlyEnabled,
-                    onCheckedChange = { routeOnlyEnabled = it }
-                )
+                // Local proxy
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_enable_local_proxy),
                     summary = stringResource(R.string.summary_pref_enable_local_proxy),
@@ -597,13 +575,6 @@ fun SettingsScreen(
                     values = coreLogLevelValues,
                     selectedValue = coreLogLevel,
                     onSelected = { coreLogLevel = it }
-                )
-                SettingsListItem(
-                    title = stringResource(R.string.title_outbound_domain_resolve_method),
-                    entries = outboundResolveEntries,
-                    values = outboundResolveValues,
-                    selectedValue = outboundResolveMethod,
-                    onSelected = { outboundResolveMethod = it }
                 )
             }
 
@@ -726,6 +697,18 @@ fun SettingsScreen(
                     summary = stringResource(R.string.summary_pref_is_booted),
                     checked = isBooted,
                     onCheckedChange = { isBooted = it }
+                )
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_speed_enabled),
+                    summary = stringResource(R.string.summary_pref_speed_enabled),
+                    checked = speedEnabled,
+                    onCheckedChange = { speedEnabled = it }
+                )
+                SettingsSwitchItem(
+                    title = stringResource(R.string.title_pref_confirm_remove),
+                    summary = stringResource(R.string.summary_pref_confirm_remove),
+                    checked = confirmRemove,
+                    onCheckedChange = { confirmRemove = it }
                 )
                 SettingsEditItem(
                     title = stringResource(R.string.title_pref_delay_test_url),

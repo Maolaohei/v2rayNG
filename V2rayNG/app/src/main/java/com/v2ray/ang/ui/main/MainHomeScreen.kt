@@ -31,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,10 +46,6 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.TrafficStatsManager
 import com.v2ray.ang.root.RootManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Home connection page (fork layout re-created in Compose).
@@ -73,7 +68,6 @@ fun MainHomeScreen(
     }
 
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     // Cached latency from last test
     var latencyMs by remember { mutableStateOf<Long?>(null) }
@@ -115,51 +109,35 @@ fun MainHomeScreen(
         else -> stringResource(R.string.home_status_stopped)
     }
 
-    // Run mode (Proxy / VPN; ROOT button hidden like fork's retired home toggle)
-    var rootEnabled by remember {
-        mutableStateOf(MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_MODE_ENABLE, false))
-    }
+    // Run mode (Proxy / VPN only; ROOT stays available via settings, not on home)
     var prefMode by remember {
         mutableStateOf(MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN)
     }
-    val currentMode = when {
-        rootEnabled -> AppConfig.MODE_ROOT
-        prefMode == AppConfig.MODE_PROXY_ONLY -> AppConfig.MODE_PROXY_ONLY
-        else -> AppConfig.VPN
-    }
+    val currentMode = if (prefMode == AppConfig.MODE_PROXY_ONLY) AppConfig.MODE_PROXY_ONLY else AppConfig.VPN
     val modeHint = when (currentMode) {
         AppConfig.MODE_PROXY_ONLY -> stringResource(R.string.home_mode_hint_proxy)
-        AppConfig.MODE_ROOT -> stringResource(R.string.home_mode_hint_root)
         else -> stringResource(R.string.home_mode_hint_vpn)
     }
     fun switchMode(next: String) {
         val changed = when (next) {
             AppConfig.MODE_PROXY_ONLY -> {
-                val wasRoot = rootEnabled
                 val was = prefMode
                 MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
                 if (was != AppConfig.MODE_PROXY_ONLY) {
                     MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.MODE_PROXY_ONLY)
                 }
-                (was != AppConfig.MODE_PROXY_ONLY || wasRoot)
+                was != AppConfig.MODE_PROXY_ONLY
             }
             AppConfig.VPN -> {
-                val wasRoot = rootEnabled
                 val was = prefMode
                 MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, false)
                 if (was != AppConfig.VPN) {
                     MmkvManager.encodeSettings(AppConfig.PREF_MODE, AppConfig.VPN)
                 }
-                (was != AppConfig.VPN || wasRoot)
-            }
-            AppConfig.MODE_ROOT -> {
-                val wasRoot = rootEnabled
-                MmkvManager.encodeSettings(AppConfig.PREF_ROOT_MODE_ENABLE, true)
-                !wasRoot
+                was != AppConfig.VPN
             }
             else -> false
         }
-        rootEnabled = MmkvManager.decodeSettingsBool(AppConfig.PREF_ROOT_MODE_ENABLE, false)
         prefMode = MmkvManager.decodeSettingsString(AppConfig.PREF_MODE, AppConfig.VPN) ?: AppConfig.VPN
         if (changed && isRunning) {
             context.toast(R.string.home_mode_switch_restart)
@@ -168,18 +146,7 @@ fun MainHomeScreen(
     }
 
     fun onModeClick(next: String) {
-        if (next == AppConfig.MODE_ROOT) {
-            scope.launch {
-                val ok = withContext(Dispatchers.IO) { RootManager.refresh() }
-                if (ok) {
-                    switchMode(AppConfig.MODE_ROOT)
-                } else {
-                    context.toast(R.string.toast_root_mode_unavailable)
-                }
-            }
-        } else {
-            switchMode(next)
-        }
+        switchMode(next)
     }
 
     Column(
@@ -358,12 +325,6 @@ fun MainHomeScreen(
                     label = stringResource(R.string.home_mode_vpn),
                     selected = currentMode == AppConfig.VPN,
                     onClick = { onModeClick(AppConfig.VPN) },
-                    modifier = Modifier.weight(1f)
-                )
-                ModeButton(
-                    label = stringResource(R.string.home_mode_root),
-                    selected = currentMode == AppConfig.MODE_ROOT,
-                    onClick = { onModeClick(AppConfig.MODE_ROOT) },
                     modifier = Modifier.weight(1f)
                 )
             }
