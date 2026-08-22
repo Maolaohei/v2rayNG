@@ -3,6 +3,13 @@ package com.v2ray.ang.ui.subscription
 import android.os.Bundle
 import android.text.TextUtils
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -194,49 +201,72 @@ fun SubEditScreen(
                 .padding(vertical = 8.dp)
                 .padding(bottom = 36.dp)
         ) {
+            // ---- Basic ----
+            SectionLabel(stringResource(R.string.title_section_basic))
             FormTextField(stringResource(R.string.sub_setting_remarks), remarks, { remarks = it })
             FormTextField(stringResource(R.string.sub_setting_url), url, { url = it })
-            FormTextField(stringResource(R.string.sub_setting_user_agent), userAgent, { userAgent = it })
-            FormTextField(stringResource(R.string.sub_setting_request_headers), requestHeaders, { requestHeaders = it })
-            FormTextField(stringResource(R.string.sub_setting_filter), filter, { filter = it })
             SettingsSwitchItem(
                 title = stringResource(R.string.sub_setting_enable),
                 checked = enabled,
                 onCheckedChange = { enabled = it }
             )
-
             SettingsSwitchItem(
                 title = stringResource(R.string.sub_auto_update),
                 checked = autoUpdate,
                 onCheckedChange = { autoUpdate = it }
             )
-
             FormTextField(
                 stringResource(R.string.title_pref_auto_update_interval),
-                updateInterval, { updateInterval = it }, keyboardType = KeyboardType.Number
+                updateInterval, { updateInterval = it }, keyboardType = KeyboardType.Number,
+                enabled = autoUpdate
             )
 
-            SettingsSwitchItem(
-                title = stringResource(R.string.sub_allow_insecure_url),
-                checked = allowInsecureUrl,
-                onCheckedChange = { allowInsecureUrl = it }
-            )
-            FormDropdownField(
-                label = stringResource(R.string.sub_setting_pre_profile),
-                placeholder = stringResource(R.string.sub_setting_pre_profile_tip),
-                value = prevProfile,
-                options = profileSuggestions,
-                onValueChange = { prevProfile = it },
-                editable = true
-            )
-            FormDropdownField(
-                label = stringResource(R.string.sub_setting_next_profile),
-                placeholder = stringResource(R.string.sub_setting_pre_profile_tip),
-                value = nextProfile,
-                options = profileSuggestions,
-                onValueChange = { nextProfile = it },
-                editable = true
-            )
+            // ---- Advanced (collapsed by default) ----
+            var showAdvanced by rememberSaveable { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showAdvanced = !showAdvanced }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.title_section_advanced),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    painterResource(R.drawable.ic_expand_more_24dp),
+                    contentDescription = null,
+                    modifier = Modifier.rotate(if (showAdvanced) 180f else 0f)
+                )
+            }
+            if (showAdvanced) {
+                FormTextField(stringResource(R.string.sub_setting_filter), filter, { filter = it })
+                FormTextField(stringResource(R.string.sub_setting_user_agent), userAgent, { userAgent = it })
+                FormTextField(stringResource(R.string.sub_setting_request_headers), requestHeaders, { requestHeaders = it })
+                SettingsSwitchItem(
+                    title = stringResource(R.string.sub_allow_insecure_url),
+                    checked = allowInsecureUrl,
+                    onCheckedChange = { allowInsecureUrl = it }
+                )
+                FormDropdownField(
+                    label = stringResource(R.string.sub_setting_pre_profile),
+                    placeholder = stringResource(R.string.sub_setting_pre_profile_tip),
+                    value = prevProfile,
+                    options = profileSuggestions,
+                    onValueChange = { prevProfile = it },
+                    editable = true
+                )
+                FormDropdownField(
+                    label = stringResource(R.string.sub_setting_next_profile),
+                    placeholder = stringResource(R.string.sub_setting_pre_profile_tip),
+                    value = nextProfile,
+                    options = profileSuggestions,
+                    onValueChange = { nextProfile = it },
+                    editable = true
+                )
+            }
         }
     }
 
@@ -247,4 +277,14 @@ fun SubEditScreen(
             onDismiss = { showDeleteConfirm = false }
         )
     }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+    )
 }
