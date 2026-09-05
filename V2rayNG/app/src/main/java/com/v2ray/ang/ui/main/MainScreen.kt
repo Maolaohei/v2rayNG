@@ -72,7 +72,7 @@ fun MainScreen(
     val isLoading by mainViewModel.isLoading.collectAsStateWithLifecycle()
     val isRunning = uiState.isRunning
     val isTesting = uiState.isTesting
-    val displayText = uiState.statusText
+    val displayText = remember(uiState.status) { mainViewModel.formatStatus(uiState.status) }
     val selectedGuid = uiState.selectedGuid
     val doubleColumnDisplay = uiState.doubleColumnDisplay
     val confirmRemove = uiState.confirmRemove
