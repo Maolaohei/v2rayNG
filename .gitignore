@@ -67,3 +67,7 @@ V2rayNG/app/google-services.json
 # Ignore OS-specific files
 Thumbs.db
 .DS_Store
+
+# Local agent/tooling state and third-party build output
+.freebuff/
+V2rayNG/third_party/libxposed-api/build/
