@@ -55,7 +55,6 @@ import com.v2ray.ang.ui.settings.SettingsScreen
 import com.v2ray.ang.ui.settings.SettingsViewModel
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.Utils
-import android.content.Intent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
