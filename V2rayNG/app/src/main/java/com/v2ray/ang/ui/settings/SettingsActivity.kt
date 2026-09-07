@@ -1,7 +1,9 @@
 package com.v2ray.ang.ui.settings
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -38,7 +40,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.ui.AboutActivity
 import com.v2ray.ang.ui.backup.BackupActivity
@@ -67,6 +72,8 @@ import com.v2ray.ang.ui.compose.SettingsMenuItem
 import com.v2ray.ang.ui.compose.SettingsSwitchItem
 import com.v2ray.ang.ui.compose.ThemeManager
 import com.v2ray.ang.ui.compose.verticalScrollbar
+import com.v2ray.ang.extension.toastError
+import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import com.v2ray.ang.xposed.PrivilegePortsManager
 import com.v2ray.ang.xposed.PrivilegeSettingsClient
@@ -77,11 +84,30 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class SettingsActivity : BaseComponentActivity() {
-
     private val viewModel: SettingsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                viewModel.refreshSystemVpnSettingsAvailability()
+            }
+        }
+    }
+
+    private fun openSystemVpnSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
+        } catch (error: ActivityNotFoundException) {
+            reportSystemVpnSettingsFailure(error)
+        } catch (error: SecurityException) {
+            reportSystemVpnSettingsFailure(error)
+        }
+    }
+
+    private fun reportSystemVpnSettingsFailure(error: RuntimeException) {
+        LogUtil.e(AppConfig.TAG, "Cannot open system VPN settings", error)
+        toastError(R.string.toast_system_vpn_settings_unavailable)
     }
 
     @Composable
@@ -89,7 +115,8 @@ class SettingsActivity : BaseComponentActivity() {
         SettingsScreen(
             viewModel = viewModel,
             onBackClick = { finish() },
-            onModeHelpClicked = { Utils.openUri(this, AppConfig.APP_WIKI_MODE) }
+            onModeHelpClicked = { Utils.openUri(this, AppConfig.APP_WIKI_MODE) },
+            onSystemVpnSettingsClicked = ::openSystemVpnSettings
         )
     }
 }
@@ -100,11 +127,13 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBackClick: () -> Unit,
     onModeHelpClicked: () -> Unit,
+    onSystemVpnSettingsClicked: () -> Unit = {},
     modifier: Modifier = Modifier,
     showTopBar: Boolean = true,
 ) {
     val scrollState = rememberScrollState()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val systemVpnSettingsAvailable by viewModel.systemVpnSettingsAvailable.collectAsStateWithLifecycle()
     var selectedCategory by rememberSaveable { mutableIntStateOf(-1) }
 
     // Back key pops sub pages first (fork MoreFragment back-stack behavior)
@@ -713,6 +742,13 @@ fun SettingsScreen(
                     checked = isBooted,
                     onCheckedChange = { isBooted = it }
                 )
+                if (systemVpnSettingsAvailable) {
+                    SettingsMenuItem(
+                        title = stringResource(R.string.title_system_vpn_settings),
+                        subtitle = stringResource(R.string.summary_system_vpn_settings),
+                        onClick = onSystemVpnSettingsClicked
+                    )
+                }
                 SettingsSwitchItem(
                     title = stringResource(R.string.title_pref_speed_enabled),
                     summary = stringResource(R.string.summary_pref_speed_enabled),

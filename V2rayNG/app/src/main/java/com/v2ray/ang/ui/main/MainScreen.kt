@@ -1,5 +1,7 @@
 package com.v2ray.ang.ui.main
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -328,6 +330,13 @@ fun MainScreen(
                         viewModel = viewModel(),
                         onBackClick = {},
                         onModeHelpClicked = { Utils.openUri(context, AppConfig.APP_WIKI_MODE) },
+                        onSystemVpnSettingsClicked = {
+                            try {
+                                context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
+                            } catch (e: Exception) {
+                                context.toastError(R.string.toast_system_vpn_settings_unavailable)
+                            }
+                        },
                         showTopBar = false,
                         modifier = Modifier.padding(innerPadding)
                     )
