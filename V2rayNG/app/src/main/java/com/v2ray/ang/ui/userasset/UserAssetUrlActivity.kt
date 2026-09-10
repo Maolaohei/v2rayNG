@@ -5,15 +5,19 @@ import android.text.TextUtils
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -139,9 +143,9 @@ fun UserAssetUrlScreen(
     onSave: (String, String) -> Boolean,
     onDelete: () -> Unit
 ) {
-    var remarks by remember { mutableStateOf(initialRemarks) }
-    var url by remember { mutableStateOf(initialUrl) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var remarks by rememberSaveable(editAssetId, initialRemarks) { mutableStateOf(initialRemarks) }
+    var url by rememberSaveable(editAssetId, initialUrl) { mutableStateOf(initialUrl) }
+    var showDeleteConfirm by rememberSaveable(editAssetId) { mutableStateOf(false) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
@@ -172,6 +176,9 @@ fun UserAssetUrlScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp)
         ) {
             FormTextField(
