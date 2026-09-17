@@ -365,9 +365,9 @@ private fun RoutingTab(
         onAddRule = {
             context.startActivity(Intent(context, RoutingEditActivity::class.java))
         },
-        onEditRule = { position ->
+        onEditRule = { rulesetId ->
             context.startActivity(
-                Intent(context, RoutingEditActivity::class.java).putExtra("position", position)
+                Intent(context, RoutingEditActivity::class.java).putExtra("ruleset_id", rulesetId)
             )
         },
         onDomainStrategySelected = { value ->
