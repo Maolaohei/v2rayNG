@@ -194,8 +194,6 @@ class MainViewModel(
             applyTestDelayResults(current, updates)
         }
     }
-        }
-    }
 
     internal fun formatStatus(status: MainStatus): String = when (status) {
         MainStatus.Disconnected -> dataSource.getString(R.string.connection_not_connected)
