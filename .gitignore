@@ -1,3 +1,6 @@
+# Ignore local agent tool state
+.workbuddy-ai/
+
 # Ignore data and key store files
 *.dat
 *.jks
