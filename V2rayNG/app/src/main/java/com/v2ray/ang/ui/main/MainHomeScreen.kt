@@ -48,7 +48,7 @@ import com.v2ray.ang.extension.toTrafficString
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.TrafficStatsManager
-import com.v2ray.ang.root.RootManager
+import com.v2ray.ang.core.LauncherManager
 import com.v2ray.ang.ui.compose.extendedColors
 
 /**
@@ -72,6 +72,11 @@ fun MainHomeScreen(
     }
 
     val context = LocalContext.current
+
+    // Prewarm root cache off the main thread so the first toggle start never spawns `su` on UI.
+    LaunchedEffect(Unit) {
+        LauncherManager.prewarmRootCache()
+    }
 
     // Cached latency from last test
     var latencyMs by remember { mutableStateOf<Long?>(null) }

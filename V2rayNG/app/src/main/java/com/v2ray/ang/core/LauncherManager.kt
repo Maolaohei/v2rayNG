@@ -18,8 +18,22 @@ import com.v2ray.ang.service.CoreRootService
 import com.v2ray.ang.service.CoreVpnService
 import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 object LauncherManager {
+
+    /**
+     * Warms the root cache off the main thread so later toggle/receiver starts
+     * (which run on the main thread) never block spawning `su`.
+     */
+    fun prewarmRootCache() {
+        if (!SettingsManager.isRootMode()) return
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { RootManager.refresh() }
+        }
+    }
 
     fun startServiceFromToggle(context: Context): Boolean {
         if (MmkvManager.getSelectServer().isNullOrEmpty()) {

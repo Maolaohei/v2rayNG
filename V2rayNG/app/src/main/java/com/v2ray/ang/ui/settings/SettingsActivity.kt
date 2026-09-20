@@ -259,17 +259,25 @@ fun SettingsScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    fun refreshModuleSummary() {
+        scope.launch {
+            val summary = withContext(Dispatchers.IO) { moduleStatusSummary(context.applicationContext) }
+            privilegeModuleSummary = summary
+        }
+    }
     LaunchedEffect(Unit) {
-        privilegeModuleSummary = moduleStatusSummary(context)
+        refreshModuleSummary()
     }
     val privilegePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val selected = AppPickerActivity.getSelectedPackages(result.data)
         MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS, selected.toMutableSet())
-        runCatching { PrivilegeSettingsClient.sync() }
         privilegeTargetsCount = selected.size
-        privilegeModuleSummary = moduleStatusSummary(context)
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { PrivilegeSettingsClient.sync() } }
+            refreshModuleSummary()
+        }
     }
     fun addSelfToHideTargets() {
         val pkg = context.packageName
@@ -278,8 +286,11 @@ fun SettingsScreen(
         if (set.add(pkg)) {
             MmkvManager.encodeSettings(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS, set)
         }
-        runCatching { PrivilegeSettingsClient.sync() }
         privilegeTargetsCount = set.size
+        scope.launch {
+            withContext(Dispatchers.IO) { runCatching { PrivilegeSettingsClient.sync() } }
+            refreshModuleSummary()
+        }
         Toast.makeText(context, R.string.toast_privilege_add_self_ok, Toast.LENGTH_SHORT).show()
     }
 
@@ -841,13 +852,17 @@ fun SettingsScreen(
                         if (newValue && (MmkvManager.decodeSettingsStringSet(AppConfig.PREF_PRIVILEGE_HIDE_VPN_APPS)?.size ?: 0) == 0) {
                             Toast.makeText(context, R.string.privilege_empty_target_warning, Toast.LENGTH_LONG).show()
                         }
-                        val ok = runCatching { PrivilegeSettingsClient.sync() }.getOrDefault(false)
-                        Toast.makeText(
-                            context,
-                            if (ok) R.string.toast_privilege_sync_ok else R.string.toast_privilege_sync_fail,
-                            if (ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
-                        ).show()
-                        privilegeModuleSummary = moduleStatusSummary(context)
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                runCatching { PrivilegeSettingsClient.sync() }.getOrDefault(false)
+                            }
+                            Toast.makeText(
+                                context,
+                                if (ok) R.string.toast_privilege_sync_ok else R.string.toast_privilege_sync_fail,
+                                if (ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                            ).show()
+                            refreshModuleSummary()
+                        }
                     }
                 )
                 SettingsMenuItem(
@@ -874,8 +889,10 @@ fun SettingsScreen(
                     checked = privilegeHideSelfPackage,
                     onCheckedChange = { newValue ->
                         privilegeHideSelfPackage = newValue
-                        runCatching { PrivilegeSettingsClient.sync() }
-                        privilegeModuleSummary = moduleStatusSummary(context)
+                        scope.launch {
+                            withContext(Dispatchers.IO) { runCatching { PrivilegeSettingsClient.sync() } }
+                            refreshModuleSummary()
+                        }
                     }
                 )
                 SettingsSwitchItem(
@@ -901,24 +918,26 @@ fun SettingsScreen(
                     title = stringResource(R.string.title_pref_privilege_module_status),
                     subtitle = privilegeModuleSummary,
                     onClick = {
-                        val probe = PrivilegeSettingsClient.refresh()
-                        val toastText = when (probe.result) {
-                            PrivilegeSettingsClient.ProbeResult.ACTIVE ->
-                                context.getString(R.string.toast_privilege_module_active)
-                            PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
-                                context.getString(R.string.toast_privilege_module_loaded_inactive)
-                            PrivilegeSettingsClient.ProbeResult.TRANSACTION_UNHANDLED ->
-                                context.getString(R.string.toast_privilege_module_unhandled)
-                            PrivilegeSettingsClient.ProbeResult.UNAUTHORIZED ->
-                                context.getString(R.string.toast_privilege_module_unauthorized)
-                            PrivilegeSettingsClient.ProbeResult.BINDER_UNAVAILABLE ->
-                                context.getString(R.string.toast_privilege_module_binder)
-                            PrivilegeSettingsClient.ProbeResult.ERROR ->
-                                context.getString(R.string.toast_privilege_module_error, probe.detail ?: "unknown")
+                        scope.launch {
+                            val probe = withContext(Dispatchers.IO) { PrivilegeSettingsClient.refresh() }
+                            val toastText = when (probe.result) {
+                                PrivilegeSettingsClient.ProbeResult.ACTIVE ->
+                                    context.getString(R.string.toast_privilege_module_active)
+                                PrivilegeSettingsClient.ProbeResult.HOOK_LOADED_INACTIVE ->
+                                    context.getString(R.string.toast_privilege_module_loaded_inactive)
+                                PrivilegeSettingsClient.ProbeResult.TRANSACTION_UNHANDLED ->
+                                    context.getString(R.string.toast_privilege_module_unhandled)
+                                PrivilegeSettingsClient.ProbeResult.UNAUTHORIZED ->
+                                    context.getString(R.string.toast_privilege_module_unauthorized)
+                                PrivilegeSettingsClient.ProbeResult.BINDER_UNAVAILABLE ->
+                                    context.getString(R.string.toast_privilege_module_binder)
+                                PrivilegeSettingsClient.ProbeResult.ERROR ->
+                                    context.getString(R.string.toast_privilege_module_error, probe.detail ?: "unknown")
+                            }
+                            Toast.makeText(context, toastText, Toast.LENGTH_LONG).show()
+                            withContext(Dispatchers.IO) { runCatching { PrivilegeSettingsClient.sync() } }
+                            refreshModuleSummary()
                         }
-                        Toast.makeText(context, toastText, Toast.LENGTH_LONG).show()
-                        runCatching { PrivilegeSettingsClient.sync() }
-                        privilegeModuleSummary = moduleStatusSummary(context)
                     }
                 )
                 SettingsMenuItem(
