@@ -2,7 +2,10 @@ package com.v2ray.ang.xposed.hooks
 
 import com.v2ray.ang.xposed.HookErrorStore
 import io.github.libxposed.api.XposedInterface
+import java.lang.reflect.Field
 import java.lang.reflect.Member
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -99,7 +102,9 @@ abstract class SafeMethodHook(private val source: String) {
                 }
             }
         override var returnEarly: Boolean = false
-        private val mutableArgs: Array<Any?> = chain.args.toTypedArray()
+        // Copied lazily: most hooks never touch args, so avoid an unconditional
+        // array copy on every intercepted call.
+        private val mutableArgs: Array<Any?> by lazy { chain.args.toTypedArray() }
         var argsOverride: Array<Any?>? = null
             private set
         override val args: Array<Any?>
@@ -113,55 +118,80 @@ abstract class SafeMethodHook(private val source: String) {
         }
     }
 
+    /**
+     * Reflective handles for one classic hook-param class.
+     * [ClassicReflectParam] used to run getField/getMethod lookups on every
+     * property access; those lookups are hot (every hooked call, several per
+     * call) and never change, so resolve them once per class.
+     */
+    private class ClassicHandles(cls: Class<*>) {
+        val method: Field? = runCatching { cls.getField("method") }.getOrNull()
+        val thisObject: Field? = runCatching { cls.getField("thisObject") }.getOrNull()
+        val getResult: Method? = runCatching { cls.getMethod("getResult") }.getOrNull()
+        val setResult: Method? = runCatching { cls.getMethod("setResult", Any::class.java) }.getOrNull()
+        val result: Field? = runCatching { cls.getField("result") }.getOrNull()
+        val getThrowable: Method? = runCatching { cls.getMethod("getThrowable") }.getOrNull()
+        val setThrowable: Method? = runCatching { cls.getMethod("setThrowable", Throwable::class.java) }.getOrNull()
+        val throwable: Field? = runCatching { cls.getField("throwable") }.getOrNull()
+        val returnEarly: Field? = runCatching { cls.getField("returnEarly") }.getOrNull()
+        val args: Field? = runCatching { cls.getField("args") }.getOrNull()
+
+        companion object {
+            private val cache = ConcurrentHashMap<Class<*>, ClassicHandles>()
+
+            fun of(cls: Class<*>): ClassicHandles = cache.getOrPut(cls) { ClassicHandles(cls) }
+        }
+    }
+
     private class ClassicReflectParam(private val raw: Any) : HookParam {
-        private val cls = raw.javaClass
+        private val h = ClassicHandles.of(raw.javaClass)
 
         override val method: Member?
-            get() = runCatching { cls.getField("method").get(raw) as? Member }.getOrNull()
+            get() = h.method?.let { runCatching { it.get(raw) as? Member }.getOrNull() }
         override val thisObject: Any?
-            get() = runCatching { cls.getField("thisObject").get(raw) }.getOrNull()
+            get() = h.thisObject?.let { runCatching { it.get(raw) }.getOrNull() }
         override var result: Any?
-            get() = runCatching { cls.getMethod("getResult").invoke(raw) }.getOrNull()
-                ?: runCatching { cls.getField("result").get(raw) }.getOrNull()
+            get() = h.getResult?.let { runCatching { it.invoke(raw) }.getOrNull() }
+                ?: h.result?.let { runCatching { it.get(raw) }.getOrNull() }
             set(value) {
-                runCatching {
-                    cls.getMethod("setResult", Any::class.java).invoke(raw, value)
-                }.recoverCatching {
-                    cls.getField("result").set(raw, value)
-                    runCatching { cls.getField("returnEarly").setBoolean(raw, true) }
+                val applied = h.setResult?.let { runCatching { it.invoke(raw, value) }.isSuccess } == true
+                if (!applied) {
+                    runCatching {
+                        h.result?.set(raw, value)
+                        h.returnEarly?.setBoolean(raw, true)
+                    }
                 }
             }
         override var throwable: Throwable?
-            get() = runCatching { cls.getMethod("getThrowable").invoke(raw) as? Throwable }.getOrNull()
-                ?: runCatching { cls.getField("throwable").get(raw) as? Throwable }.getOrNull()
+            get() = h.getThrowable?.let { runCatching { it.invoke(raw) as? Throwable }.getOrNull() }
+                ?: h.throwable?.let { runCatching { it.get(raw) as? Throwable }.getOrNull() }
             set(value) {
-                runCatching {
-                    cls.getMethod("setThrowable", Throwable::class.java).invoke(raw, value)
-                }.recoverCatching {
-                    cls.getField("throwable").set(raw, value)
-                    if (value != null) {
-                        runCatching { cls.getField("returnEarly").setBoolean(raw, true) }
+                val applied = h.setThrowable?.let { runCatching { it.invoke(raw, value) }.isSuccess } == true
+                if (!applied) {
+                    runCatching {
+                        h.throwable?.set(raw, value)
+                        if (value != null) {
+                            h.returnEarly?.setBoolean(raw, true)
+                        }
                     }
                 }
             }
         override var returnEarly: Boolean
-            get() = runCatching { cls.getField("returnEarly").getBoolean(raw) }.getOrDefault(false)
+            get() = h.returnEarly?.let { runCatching { it.getBoolean(raw) }.getOrDefault(false) } ?: false
             set(value) {
                 if (value) {
                     result = result
                 } else {
-                    runCatching { cls.getField("returnEarly").setBoolean(raw, false) }
+                    runCatching { h.returnEarly?.setBoolean(raw, false) }
                 }
             }
+        @Suppress("UNCHECKED_CAST")
         override val args: Array<Any?>
-            get() {
-                @Suppress("UNCHECKED_CAST")
-                return (runCatching { cls.getField("args").get(raw) as? Array<Any?> }.getOrNull())
-                    ?: emptyArray()
-            }
+            get() = h.args?.let { runCatching { it.get(raw) as? Array<Any?> }.getOrNull() } ?: emptyArray()
 
+        @Suppress("UNCHECKED_CAST")
         override fun setArg(index: Int, value: Any?) {
-            val arr = runCatching { cls.getField("args").get(raw) as? Array<Any?> }.getOrNull() ?: return
+            val arr = h.args?.let { runCatching { it.get(raw) as? Array<Any?> }.getOrNull() } ?: return
             arr[index] = value
         }
     }
