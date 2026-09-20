@@ -285,16 +285,23 @@ private fun ServerItemRow(
     onRemoveServer: (String) -> Unit
 ) {
     val profile = serverCache.profile
-    val subRemarks = if (subscriptionId.isEmpty()) {
-        MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()
-            ?.toString() ?: ""
-    } else ""
+    // MMKV decode + description building are disk/CPU work: memoize them so a
+    // recomposition triggered by an unrelated field (e.g. test delay) is cheap.
+    val subRemarks = remember(profile.subscriptionId, subscriptionId) {
+        if (subscriptionId.isEmpty()) {
+            MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()
+                ?.toString() ?: ""
+        } else ""
+    }
+    val statistics = remember(profile) {
+        profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile)
+    }
+    val typeDescription = remember(profile) { getProtocolDescription(profile) }
 
     ServerListItem(
         remarks = profile.remarks,
-        statistics = profile.description.nullIfBlank()
-            ?: AngConfigManager.generateDescription(profile),
-        typeDescription = getProtocolDescription(profile),
+        statistics = statistics,
+        typeDescription = typeDescription,
         testDelayMillis = serverCache.testDelayMillis,
         isSelected = serverCache.guid == selectedGuid,
         subscriptionRemarks = subRemarks,
@@ -320,14 +327,21 @@ private fun ServerItemColumn(
     onRemoveServer: (String) -> Unit
 ) {
     val profile = serverCache.profile
-    val subRemarks = if (subscriptionId.isEmpty()) {
-        MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()?.toString() ?: ""
-    } else ""
+    // See ServerItemRow: memoize disk/CPU work across unrelated recompositions.
+    val subRemarks = remember(profile.subscriptionId, subscriptionId) {
+        if (subscriptionId.isEmpty()) {
+            MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()?.toString() ?: ""
+        } else ""
+    }
+    val statistics = remember(profile) {
+        profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile)
+    }
+    val typeDescription = remember(profile) { getProtocolDescription(profile) }
     Column {
         ServerListItem(
             remarks = profile.remarks,
-            statistics = profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile),
-            typeDescription = getProtocolDescription(profile),
+            statistics = statistics,
+            typeDescription = typeDescription,
             testDelayMillis = serverCache.testDelayMillis,
             isSelected = serverCache.guid == selectedGuid,
             subscriptionRemarks = subRemarks,
