@@ -25,14 +25,23 @@ object TrafficStatsManager {
     private const val SAMPLES_KEY = "traffic_24h_hour_samples"
     private const val HOUR_MS = 60L * 60L * 1000L
     private const val WINDOW_MS = 24L * HOUR_MS
+    // Throttle MMKV persistence: memory map is the source of truth, disk is a backup.
+    private const val PERSIST_INTERVAL_MS = 60_000L
 
     data class SpeedSample(val upBytesPerSec: Long, val downBytesPerSec: Long)
 
     private val speedListeners = CopyOnWriteArrayList<(SpeedSample) -> Unit>()
     private val dayListeners = CopyOnWriteArrayList<(Long) -> Unit>()
+    @Volatile
     private var pollJob: Job? = null
     private var lastQueryTime = 0L
     private val serviceTracking = AtomicBoolean(false)
+
+    // In-memory 24h window (hour -> bytes); MMKV is only a restore/persist backup.
+    private val daySamples = linkedMapOf<Long, Long>()
+    private var daySamplesLoaded = false
+    private var daySamplesDirty = false
+    private var lastPersistMs = 0L
 
     private val lastUpBps = AtomicLong(0)
     private val lastDownBps = AtomicLong(0)
@@ -64,7 +73,9 @@ object TrafficStatsManager {
 
     fun addDayTrafficListener(listener: (Long) -> Unit) {
         dayListeners.addIfAbsent(listener)
-        listener(currentDayBytes())
+        // Never touch disk on the caller (composition) thread: serve the cached
+        // value now and let the polling coroutine backfill after hydration.
+        listener(lastDayBytes.get())
         ensurePolling()
     }
 
@@ -73,21 +84,26 @@ object TrafficStatsManager {
         stopIfIdle()
     }
 
-    fun currentDayBytes(): Long {
-        val cached = lastDayBytes.get()
-        return if (cached > 0L || pollJob != null) cached else readDayBytes()
-    }
+    fun currentDayBytes(): Long = lastDayBytes.get()
 
     fun currentSpeed(): SpeedSample = SpeedSample(lastUpBps.get(), lastDownBps.get())
+
+    /** Persist pending samples (e.g. app background). No-op when nothing changed. */
+    @Synchronized
+    fun flushDaySamples() {
+        persistLocked(force = true)
+    }
 
     @Synchronized
     private fun ensurePolling() {
         if (pollJob != null) return
         if (!serviceTracking.get() && speedListeners.isEmpty() && dayListeners.isEmpty()) return
         lastQueryTime = System.currentTimeMillis()
-        // hydrate day total once
-        lastDayBytes.set(readDayBytes())
+        lastPersistMs = System.currentTimeMillis()
         pollJob = CoroutineScope(Dispatchers.IO).launch {
+            // Hydrate the 24h window off the main thread, then publish it.
+            hydrate()
+            notifyDay()
             while (isActive) {
                 delay(QUERY_INTERVAL_MS)
                 pollOnce()
@@ -99,6 +115,8 @@ object TrafficStatsManager {
     private fun stopIfIdle() {
         if (serviceTracking.get()) return
         if (speedListeners.isNotEmpty() || dayListeners.isNotEmpty()) return
+        // Final backup before stopping the loop.
+        persistLocked(force = true)
         pollJob?.cancel()
         pollJob = null
         lastUpBps.set(0)
@@ -145,8 +163,8 @@ object TrafficStatsManager {
         if (delta > 0L) {
             addToDayWindow(now, delta)
         } else {
-            // Keep window pruned even with idle traffic
-            lastDayBytes.set(readDayBytes())
+            // Idle tick: prune the in-memory window only, no disk I/O.
+            pruneIdle(now)
         }
 
         notifySpeed()
@@ -165,51 +183,76 @@ object TrafficStatsManager {
 
     @Synchronized
     private fun addToDayWindow(now: Long, delta: Long) {
+        ensureLoadedLocked(now)
         val hour = now / HOUR_MS
-        val map = linkedMapOf<Long, Long>()
+        daySamples[hour] = (daySamples[hour] ?: 0L) + delta
+        pruneLocked(now)
+        daySamplesDirty = true
+        lastDayBytes.set(daySamples.values.sum())
+        persistLocked(now = now)
+    }
+
+    @Synchronized
+    private fun pruneIdle(now: Long) {
+        if (!daySamplesLoaded) return
+        val before = daySamples.size
+        pruneLocked(now)
+        if (daySamples.size != before) daySamplesDirty = true
+        lastDayBytes.set(daySamples.values.sum())
+        persistLocked(now = now)
+    }
+
+    @Synchronized
+    private fun readDayBytes(): Long {
+        ensureLoadedLocked(System.currentTimeMillis())
+        return lastDayBytes.get()
+    }
+
+    /** Loads the window from MMKV (once per process) and publishes the total. */
+    private fun hydrate() {
+        readDayBytes()
+    }
+
+    /** Must hold the object monitor. Loads MMKV once per process. */
+    private fun ensureLoadedLocked(now: Long) {
+        if (daySamplesLoaded) return
+        daySamples.clear()
         val raw = MmkvManager.decodeSettingsString(SAMPLES_KEY).orEmpty()
         if (raw.isNotEmpty()) {
+            val minHour = (now - WINDOW_MS) / HOUR_MS
             raw.split(',').forEach { part ->
                 val kv = part.split(':', limit = 2)
                 if (kv.size == 2) {
                     val h = kv[0].toLongOrNull()
                     val b = kv[1].toLongOrNull()
-                    if (h != null && b != null) map[h] = b
+                    if (h != null && b != null && h >= minHour) {
+                        daySamples[h] = (daySamples[h] ?: 0L) + b
+                    }
                 }
             }
+            // Drop expired buckets on next persist instead of writing immediately.
+            daySamplesDirty = true
         }
-        map[hour] = (map[hour] ?: 0L) + delta
-        val minHour = (now - WINDOW_MS) / HOUR_MS
-        val pruned = map.filterKeys { it >= minHour }
-        val encoded = pruned.entries.joinToString(",") { "${it.key}:${it.value}" }
-        MmkvManager.encodeSettings(SAMPLES_KEY, encoded)
-        lastDayBytes.set(pruned.values.sum())
+        daySamplesLoaded = true
+        lastDayBytes.set(daySamples.values.sum())
     }
 
-    @Synchronized
-    private fun readDayBytes(): Long {
-        val now = System.currentTimeMillis()
+    /** Must hold the object monitor. */
+    private fun pruneLocked(now: Long) {
         val minHour = (now - WINDOW_MS) / HOUR_MS
-        val raw = MmkvManager.decodeSettingsString(SAMPLES_KEY).orEmpty()
-        if (raw.isEmpty()) {
-            lastDayBytes.set(0)
-            return 0
+        val it = daySamples.keys.iterator()
+        while (it.hasNext()) {
+            if (it.next() < minHour) it.remove()
         }
-        var total = 0L
-        val kept = mutableListOf<String>()
-        raw.split(',').forEach { part ->
-            val kv = part.split(':', limit = 2)
-            if (kv.size == 2) {
-                val h = kv[0].toLongOrNull()
-                val b = kv[1].toLongOrNull()
-                if (h != null && b != null && h >= minHour) {
-                    total += b
-                    kept.add("$h:$b")
-                }
-            }
-        }
-        MmkvManager.encodeSettings(SAMPLES_KEY, kept.joinToString(","))
-        lastDayBytes.set(total)
-        return total
+    }
+
+    /** Must hold the object monitor. Throttled MMKV backup. */
+    private fun persistLocked(now: Long = System.currentTimeMillis(), force: Boolean = false) {
+        if (!daySamplesDirty) return
+        if (!force && now - lastPersistMs < PERSIST_INTERVAL_MS) return
+        val encoded = daySamples.entries.joinToString(",") { "${it.key}:${it.value}" }
+        MmkvManager.encodeSettings(SAMPLES_KEY, encoded)
+        daySamplesDirty = false
+        lastPersistMs = now
     }
 }
