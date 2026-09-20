@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.viewModels
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -235,38 +234,7 @@ fun RoutingSettingScreen(
             if (showTopBar) {
                 AppTopBar(
                     title = stringResource(R.string.routing_settings_title),
-                    onBackClick = onBackClick,
-                    actions = {
-                        IconButton(onClick = onAddRule) {
-                            Icon(
-                                painterResource(R.drawable.ic_add_24dp),
-                                contentDescription = stringResource(R.string.acc_add_rule)
-                            )
-                        }
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(
-                                    painterResource(R.drawable.ic_more_vert_24dp),
-                                    contentDescription = stringResource(R.string.acc_more)
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false },
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ) {
-                                AppDropdownMenuItems(RoutingMenuAction.entries, { it.labelRes }) { action ->
-                                    showMenu = false
-                                    when (action) {
-                                        RoutingMenuAction.ImportPredefined -> showPresetDialog = true
-                                        RoutingMenuAction.ImportClipboard -> onImportClipboard()
-                                        RoutingMenuAction.ImportQRCode -> onImportQRcode()
-                                        RoutingMenuAction.ExportClipboard -> onExportClipboard()
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    onBackClick = onBackClick
                 )
             }
         }
@@ -279,14 +247,24 @@ fun RoutingSettingScreen(
                 .verticalScrollbar(lazyListState),
             contentPadding = NavigationBarsBottomPadding()
         ) {
-            if (!showTopBar) {
-                // Embedded in Main tab: keep add/import actions reachable
-                item(key = "actions") {
+            // Domain strategy and the add/import actions share one row, both in the
+            // standalone activity and in the embedded Main tab: no separate action row,
+            // no "Routing Rule Settings" header and no separator before the list.
+            item(key = "domain_strategy") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SettingsListItem(
+                        title = stringResource(R.string.routing_settings_domain_strategy),
+                        entries = domainStrategies,
+                        values = domainStrategies,
+                        selectedValue = domainStrategy,
+                        onSelected = { onDomainStrategySelected(it) },
+                        modifier = Modifier.weight(1f)
+                    )
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.End,
+                        modifier = Modifier.padding(end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onAddRule) {
@@ -320,22 +298,6 @@ fun RoutingSettingScreen(
                         }
                     }
                 }
-            }
-            item(key = "domain_strategy") {
-                SettingsListItem(
-                    title = stringResource(R.string.routing_settings_domain_strategy),
-                    entries = domainStrategies,
-                    values = domainStrategies,
-                    selectedValue = domainStrategy,
-                    onSelected = { onDomainStrategySelected(it) }
-                )
-            }
-            item {
-                Text(
-                    text = stringResource(R.string.routing_settings_rule_title),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(16.dp)
-                )
             }
 
             itemsIndexed(
