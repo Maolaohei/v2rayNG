@@ -24,8 +24,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class SubscriptionUpdateService : Service() {
 
@@ -39,7 +40,7 @@ class SubscriptionUpdateService : Service() {
     private val runningTasks = AtomicInteger(0)
 
     // manage active batch workers so each batch is independent and cancellable
-    private val activeWorkers = Collections.synchronizedList(mutableListOf<RealPingWorkerService>())
+    private val activeWorkers: MutableSet<RealPingWorkerService> = ConcurrentHashMap.newKeySet()
 
     private val updateSemaphore = Semaphore(2)
 
@@ -168,17 +169,20 @@ class SubscriptionUpdateService : Service() {
         val guids = MmkvManager.decodeServerList(subId)
         if (guids.isNotEmpty()) {
             val deferred = CompletableDeferred<Unit>()
-            lateinit var worker: RealPingWorkerService
-            worker = RealPingWorkerService(
+            // Holder avoids capturing the worker before it is initialized: a
+            // synchronous callback during construction must not read a lateinit var.
+            val workerRef = AtomicReference<RealPingWorkerService>()
+            val worker = RealPingWorkerService(
                 context = this,
                 guids = guids,
                 onEvent = { event ->
                     handleWorkerEvent(event, sub.subscription.remarks) {
-                        activeWorkers.remove(worker)
+                        workerRef.get()?.let { activeWorkers.remove(it) }
                         deferred.complete(Unit)
                     }
                 }
             )
+            workerRef.set(worker)
             activeWorkers.add(worker)
             worker.start()
             deferred.await()

@@ -21,6 +21,7 @@ import com.v2ray.ang.helper.MessageHelper
 import com.v2ray.ang.helper.NotificationHelper
 import com.v2ray.ang.util.LogUtil
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 class CoreTestService : Service() {
 
@@ -118,17 +119,21 @@ class CoreTestService : Service() {
         }
 
         if (guidsList.isNotEmpty()) {
-            lateinit var worker: RealPingWorkerService
-            worker = RealPingWorkerService(
+            // Holder avoids capturing the worker before it is initialized: a
+            // synchronous callback during construction must not read a lateinit var.
+            val workerRef = AtomicReference<RealPingWorkerService>()
+            val worker = RealPingWorkerService(
                 context = this,
                 guids = guidsList,
                 onlyTcp = message.onlyTcp,
                 onEvent = { event ->
-                    if (activeWorkers.containsKey(worker)) {
-                        handleWorkerEvent(event, message, requestId) { activeWorkers.remove(worker) }
+                    val current = workerRef.get()
+                    if (current != null && activeWorkers.containsKey(current)) {
+                        handleWorkerEvent(event, message, requestId) { activeWorkers.remove(current) }
                     }
                 }
             )
+            workerRef.set(worker)
             activeWorkers[worker] = requestId
             worker.start()
         } else {
