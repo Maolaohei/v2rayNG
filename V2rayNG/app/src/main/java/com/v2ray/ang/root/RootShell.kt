@@ -4,7 +4,6 @@ import android.content.Context
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.util.LogUtil
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Minimal root command runner backed by the `su` binary.
@@ -32,22 +31,18 @@ object RootShell {
 
     private fun exec(command: String, timeoutSeconds: Long = 30): Result {
         return try {
-            val process = ProcessBuilder("su", "-c", command)
-                .redirectErrorStream(true)
-                .start()
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
-            if (!finished) {
-                process.destroy()
+            val outcome = RootProcessRunner.run(listOf("su", "-c", command), timeoutSeconds * 1000)
+            if (outcome.code == -1) {
                 LogUtil.e(AppConfig.TAG, "RootShell: timed out: $command")
-                return Result(-1, output)
+                return Result(-1, outcome.output)
             }
-            val result = Result(process.exitValue(), output)
+            val result = Result(outcome.code, outcome.output)
             if (!result.success) {
-                LogUtil.w(AppConfig.TAG, "RootShell: '$command' exited ${result.code}: ${output.trim()}")
+                LogUtil.w(AppConfig.TAG, "RootShell: '$command' exited ${result.code}: ${result.output.trim()}")
             }
             result
         } catch (e: Exception) {
+            if (e is InterruptedException) Thread.currentThread().interrupt()
             LogUtil.e(AppConfig.TAG, "RootShell: failed to run '$command'", e)
             Result(-1, e.message ?: e.javaClass.simpleName)
         }
