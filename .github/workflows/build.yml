@@ -102,6 +102,13 @@ jobs:
         fileName: 'libv2ray.aar'
         out-file-path: V2rayNG/app/libs/
 
+    - name: Run unit tests
+      run: |
+        cd ${{ github.workspace }}/V2rayNG
+        echo "sdk.dir=${ANDROID_HOME}" > local.properties
+        chmod 755 gradlew
+        ./gradlew testFdroidDebugUnitTest
+
     - name: Build APK
       run: |
         cd ${{ github.workspace }}/V2rayNG
