@@ -70,19 +70,35 @@ jobs:
       run: |
         cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
 
-    - name: Fetch AndroidLibXrayLite tag
+    # Always pull the newest published libv2ray instead of the tag the
+    # AndroidLibXrayLite submodule happens to be pinned to, so the APKs carry the
+    # latest xray-core fixes without waiting for a submodule bump. The submodule
+    # checkout is kept only as a source reference; the drift is reported below.
+    - name: Resolve latest AndroidLibXrayLite release
+      id: libxray
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
-        pushd AndroidLibXrayLite
-        CURRENT_TAG=$(git describe --tags --abbrev=0)
-        echo "Current tag in this repo: $CURRENT_TAG"
-        echo "CURRENT_TAG=$CURRENT_TAG" >> $GITHUB_ENV
-        popd
+        TAG=$(gh api repos/2dust/AndroidLibXrayLite/releases/latest --jq '.tag_name')
+        if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+          echo "::error::Could not resolve the latest AndroidLibXrayLite release"
+          exit 1
+        fi
+        PINNED=$(git -C AndroidLibXrayLite describe --tags --abbrev=0 2>/dev/null || echo 'unknown')
+        echo "Using libv2ray $TAG (submodule pinned at $PINNED)"
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        {
+          echo "### libv2ray"
+          echo ""
+          echo "- latest release: \`$TAG\`"
+          echo "- submodule pin (informational): \`$PINNED\`"
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Download libv2ray
       uses: robinraju/release-downloader@v1.13
       with:
         repository: '2dust/AndroidLibXrayLite'
-        tag: ${{ env.CURRENT_TAG }}
+        tag: ${{ steps.libxray.outputs.tag }}
         fileName: 'libv2ray.aar'
         out-file-path: V2rayNG/app/libs/
 
