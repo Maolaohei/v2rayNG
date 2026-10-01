@@ -344,13 +344,11 @@ class CoreVpnService : VpnService(), ServiceControl {
             //which means the first v2ray core somehow failed to stop and release the port.
             stopSelf()
 
-            // Add a small delay to allow the async core stop operation to complete
-            // before closing the VPN interface, preventing a race condition that can
-            // leave the VPN icon in the status bar after stopping the service.
-            try {
-                Thread.sleep(100)
-            } catch (e: InterruptedException) {
-                LogUtil.w(AppConfig.TAG, "StartCore-VPN: Sleep interrupted", e)
+            // Wait for the async core stop to complete before closing the VPN interface: the core
+            // has to release the tun descriptor on its own, and closing it first leaves the VPN
+            // icon in the status bar after the service stopped.
+            if (!CoreServiceManager.awaitCoreStoppedBlocking()) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: Core still running, closing the interface anyway")
             }
 
             try {

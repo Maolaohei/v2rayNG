@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.system.OsConstants
 import androidx.core.content.ContextCompat
 import com.v2ray.ang.AppConfig
@@ -33,12 +34,15 @@ import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.jvm.Volatile
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
@@ -48,6 +52,14 @@ import java.net.InetSocketAddress
 
 object CoreServiceManager {
 
+    /** How long the core may take to release its sockets before a restart continues anyway. */
+    private const val CORE_STOP_TIMEOUT_MS = 5_000L
+
+    /** Upper bound for waiting on the core teardown while the service itself is going away. */
+    private const val SERVICE_TEARDOWN_BLOCK_MS = 1_000L
+
+    private const val CORE_STOP_POLL_INTERVAL_MS = 20L
+
     private val coreController: CoreController = CoreNativeManager.newCoreController(CoreCallback())
     private val mMsgReceive = ReceiveMessageHandler()
     private var currentConfig: ProfileItem? = null
@@ -55,6 +67,16 @@ object CoreServiceManager {
     private var browserDialer: IDialerService? = null
     private var networkMonitor: NetworkMonitor? = null
     private val connectionTestScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Scope for the core start/stop work that outlives a single caller. Tracked through
+     * [stopJob] so a stop can be awaited instead of guessed at with a fixed sleep.
+     */
+    private val coreOpScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Teardown started by [stopCoreLoop], null while no stop is in flight. */
+    @Volatile
+    private var stopJob: Job? = null
 
     @Volatile
     private var isReloading = false
@@ -202,7 +224,7 @@ object CoreServiceManager {
         currentVpnInterface = null
 
         if (isRunning()) {
-            CoroutineScope(Dispatchers.IO).launch {
+            stopJob = coreOpScope.launch {
                 try {
                     coreController.stopLoop()
                 } catch (e: Exception) {
@@ -229,6 +251,37 @@ object CoreServiceManager {
 
         return true
     }
+
+    /**
+     * Waits for the teardown started by [stopCoreLoop] to finish, so callers that have to act on a
+     * stopped core no longer guess with a fixed sleep.
+     *
+     * @param timeoutMs upper bound for the wait; the core is reported as stopped when the Go side
+     *   is no longer running.
+     * @return True when the core is stopped, false when the wait timed out with it still running.
+     */
+    suspend fun awaitCoreStopped(timeoutMs: Long = CORE_STOP_TIMEOUT_MS): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        stopJob?.let { job ->
+            withTimeoutOrNull(timeoutMs) { job.join() }
+        }
+        // A stop that was never started leaves the flag to the Go side, so poll the last bit out.
+        while (isRunning() && SystemClock.elapsedRealtime() < deadline) {
+            delay(CORE_STOP_POLL_INTERVAL_MS)
+        }
+
+        if (!isRunning()) return true
+
+        LogUtil.w(AppConfig.TAG, "StartCore-Manager: Core still running after ${timeoutMs}ms")
+        return false
+    }
+
+    /**
+     * Blocking [awaitCoreStopped] for the service teardown, which has to close the tun descriptor
+     * only after the core released it. Bounded, so a stuck core cannot hold the teardown open.
+     */
+    fun awaitCoreStoppedBlocking(timeoutMs: Long = SERVICE_TEARDOWN_BLOCK_MS): Boolean =
+        runBlocking { awaitCoreStopped(timeoutMs) }
 
     /**
      * Subscribes to upstream network changes for whichever run mode is active.
@@ -492,10 +545,12 @@ object CoreServiceManager {
                     if (isOrderedBroadcast) resultCode = Activity.RESULT_OK
 
                     val pendingResult = goAsync()
-                    CoroutineScope(Dispatchers.Default).launch {
+                    coreOpScope.launch {
                         try {
                             serviceControl.stopService()
-                            delay(500L)
+                            // Wait for the old daemon to release its port before the new one binds it,
+                            // instead of sleeping a fixed 500ms and hoping the teardown won the race.
+                            awaitCoreStopped()
                             LauncherManager.startService(serviceControl.getService())
                         } finally {
                             pendingResult.finish()
