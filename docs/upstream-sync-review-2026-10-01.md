@@ -58,6 +58,51 @@ xray-core 版本要等有人 bump 子模块指针才能前进。改成用 `gh ap
 - xposed/root 相关路径的其余裸 scope 未系统清理（本轮只动了停止路径）。
 - Coil 3 已无自定义 ImageLoader 单例，若后续要缓存 appicon 图标，需要引入 `SingletonImageLoader` 配置。
 
+## 第二轮（同日）：评估结论与三个 UI 修复
+
+### e2dc37ba（行移出 composition）——不移植
+
+上游做三件事：行展示模型在 ViewModel 算、原始数据与行数据原子发布、缩小行 API，并新增 `MainServerRowModels.kt`（`ServerRowUiModel` 仍持有 `ProfileItem`）。fork 侧逐条已等价：`MainViewModel.buildServersCache()` 直接产出
+`ServersCache(guid, profile, testDelayMillis)`（profile 不在 composition 里解）；每个 group 只有一份
+`groupPageFlows[groupId]`（行数据内嵌 profile，reorder 只有一份表示，`moveServer()` 同时更新流与持久化）；
+`subRemarks`/`statistics`/`typeDescription` 全部 `remember(...)`；测速结果有 `pendingTestResults` +
+`testResultFlushJob` 合并（等价 `a9b12426`），`applyTestDelayResults` 对未变行保持同一实例。
+剩余差距只是「行首次进入 composition」的 `generateDescription()`/`getProtocolDescription()`（以及「全部」页一次
+`MmkvManager.decodeSubscription()`），上限为每滚入一行一次；而上游 row model 仍含 40 个 `var` 的 `ProfileItem`，
+也没解决行不稳定的重组问题。故整体移植收益被稀释，若将来真机 profiling 显示滚入卡顿，只把三个字符串预计算进
+`ServersCache` 即可。
+
+### xposed/root 裸 scope——无同类缺陷遗留
+
+xposed 包 0 个 `CoroutineScope`、0 个 `Thread.sleep`；`NotificationManager`/`TrafficStatsManager`/`NetworkMonitor`
+虽有裸 scope 但都有 job 变量并在 `cancelNotification`/`stopIfIdle`/`unregister` 里 cancel（NetworkMonitor 还取消未决换网去抖）；
+`RootLanSharing`/`CoreRootService` 的 `runBlocking { cancelAndJoin() }` 是带注释的有意设计；
+`PrivilegeSelfTest` 的 `Thread.sleep` 在 `withContext(Dispatchers.IO)` 内。仅剩两个洁癖项（`LauncherManager.prewarmRootCache`
+的 fire-and-forget、`LogcatViewModel.clearLogcat` 的 `waitFor()` 无超时但调用点在 IO 协程），不值得单独动。
+
+### a1cfa2aa 删除确认显示名字（已合并）
+
+实测 `git cherry-pick -n`：25 个文件里 24 个自动合并，只有 `MainServerPager.kt` 冲突；9 个语言目录各只有 1 行
+（`confirm_delete_asset_file` 去掉内嵌 `%1$s`），补丁尺度 +102/-29。最终方案不新增字符串（复用现有问句），
+所以上一轮审计「77 行 + 9 语言改写」的估计是早期迭代的成本。fork 适配：不引入上游的 `ServerRowActions`
+（fork 用独立 lambda），`onRemoveServer` 变 `(String, String) -> Unit` 并沿 pager/行组件传播；
+`showRemoveConfirm` 换成 `rememberSaveable(ServerDeleteTarget.Saver)`（旋转后仍显示正确名字）。
+随补丁引入的 `ServerDeleteTargetTest` 已迁到 Jupiter。
+
+### 1ad5f30e + e4c0b09e 表单内联校验（已合并）
+
+按上游时序先 `e4c0b09e` 再 `1ad5f30e`：前者 8 个文件自动合并、仅 `SubEditActivity` 冲突；后者的
+`ServerUiState` 冲突是纯插入 4 个 `isXxxError` 状态变量，`SubEditActivity` 剩两个字段冲突。
+fork 的编辑器结构基本就是上游的（`FormFields.kt`/`ServerUiState.kt`/多个 `Server*Activity` 与上游改动前逐字相同），
+上一轮「依赖上游表单结构」的顾虑不成立。保留 fork 差异：订阅编辑器保留 section 标签与折叠的 Advanced 区
+（user agent/request headers/filter 不重复到 Basic），interval 字段保留 `enabled = autoUpdate`。
+
+### 顺带修复
+
+`MainScreen` 的「节点数」标签原用 `serversForGroup(group.id).value.size` 读非 Compose 状态：读 StateFlow
+不是 snapshot read，删除非当前选中节点时 `MainUiState` 与旧值相等、`MutableStateFlow` 吞掉发射，计数会保持旧值。
+改为 `collectAsStateWithLifecycle()`。
+
 ## 验证
 
 环境：Windows 本机，JDK 21.0.10，Gradle 9.8.0（独立发行版），AGP 9.4.1，Kotlin 2.4.20，
@@ -66,7 +111,8 @@ SDK `platforms;android-37.0` + `build-tools;36.0.0`，NDK r30（30.0.16248370）
 
 ```
 gradle :app:compileFdroidDebugKotlin      → BUILD SUCCESSFUL
-gradle :app:testFdroidDebugUnitTest       → BUILD SUCCESSFUL，19 suites / 92 tests / 0 failures / 0 errors
+gradle :app:testFdroidDebugUnitTest       → BUILD SUCCESSFUL，20 suites / 94 tests / 0 failures / 0 errors
+gradle :app:assembleDebug                 → BUILD SUCCESSFUL，10 个 APK（fdroid + playstore × 5 ABI）
 NDK_HOME=<ndk-r30> bash compile-hevtun.sh → 4 ABI 全部产出 libhev-socks5-tunnel.so + libhevsockstun.so（ELF 架构校验通过）
 gradle :app:assembleFdroidDebug           → 5 个 APK；arm64-v8a 内 libgojni.so / libhev-socks5-tunnel.so / libhevsockstun.so 均在位
 ```
