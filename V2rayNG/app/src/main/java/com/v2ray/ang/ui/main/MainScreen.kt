@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.dto.entities.ProfileItem
+import com.v2ray.ang.dto.entities.ServersCache
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
@@ -246,6 +247,13 @@ fun MainScreen(
                     ) {
                         // Fork layout: nodes count + Test all above group tabs
                         val currentGroup = groups.getOrNull(pagerState.currentPage)
+                        // Collect the group's own state instead of reading .value once: a plain read
+                        // is not a snapshot read, so the count kept the stale value after a removal
+                        // that did not change any other observed state.
+                        val currentGroupServers by remember(currentGroup?.id) {
+                            currentGroup?.id?.let { mainViewModel.serversForGroup(it) }
+                                ?: MutableStateFlow(emptyList<ServersCache>())
+                        }.collectAsStateWithLifecycle()
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -256,9 +264,7 @@ fun MainScreen(
                             Text(
                                 text = stringResource(
                                     R.string.home_nodes_count,
-                                    currentGroup?.let { group ->
-                                        mainViewModel.serversForGroup(group.id).value.size
-                                    } ?: 0
+                                    currentGroupServers.size
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
