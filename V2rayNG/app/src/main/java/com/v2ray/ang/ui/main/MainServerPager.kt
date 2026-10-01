@@ -81,7 +81,7 @@ fun GroupPagerPage(
     onEditServer: (String, ProfileItem) -> Unit,
     onShareServer: (String, ProfileItem) -> Unit,
     onMoreServer: (String, ProfileItem) -> Unit,
-    onRemoveServer: (String) -> Unit,
+    onRemoveServer: (String, String) -> Unit,
     contentPadding: PaddingValues
 ) {
     val serverFlow = remember(groupId) {
@@ -127,7 +127,7 @@ private fun ServerListPage(
     onEditServer: (String, ProfileItem) -> Unit,
     onShareServer: (String, ProfileItem) -> Unit,
     onMoreServer: (String, ProfileItem) -> Unit,
-    onRemoveServer: (String) -> Unit,
+    onRemoveServer: (String, String) -> Unit,
     onLocateHandled: () -> Unit,
     onMoveServer: (Int, Int) -> Unit,
     contentPadding: PaddingValues
@@ -282,7 +282,7 @@ private fun ServerItemRow(
     onEditServer: (String, ProfileItem) -> Unit,
     onShareServer: (String, ProfileItem) -> Unit,
     onMoreServer: (String, ProfileItem) -> Unit,
-    onRemoveServer: (String) -> Unit
+    onRemoveServer: (String, String) -> Unit
 ) {
     val profile = serverCache.profile
     // MMKV decode + description building are disk/CPU work: memoize them so a
@@ -309,7 +309,7 @@ private fun ServerItemRow(
         onClick = { onSelectServer(serverCache.guid) },
         onShare = { onShareServer(serverCache.guid, profile) },
         onEdit = { onEditServer(serverCache.guid, profile) },
-        onRemove = { onRemoveServer(serverCache.guid) },
+        onRemove = { onRemoveServer(serverCache.guid, profile.remarks) },
         onMore = { onMoreServer(serverCache.guid, profile) }
     )
 }
@@ -324,7 +324,7 @@ private fun ServerItemColumn(
     onEditServer: (String, ProfileItem) -> Unit,
     onShareServer: (String, ProfileItem) -> Unit,
     onMoreServer: (String, ProfileItem) -> Unit,
-    onRemoveServer: (String) -> Unit
+    onRemoveServer: (String, String) -> Unit
 ) {
     val profile = serverCache.profile
     // See ServerItemRow: memoize disk/CPU work across unrelated recompositions.
@@ -349,7 +349,7 @@ private fun ServerItemColumn(
             onClick = { onSelectServer(serverCache.guid) },
             onEdit = { onEditServer(serverCache.guid, profile) },
             onShare = { onShareServer(serverCache.guid, profile) },
-            onRemove = { onRemoveServer(serverCache.guid) },
+            onRemove = { onRemoveServer(serverCache.guid, profile.remarks) },
             onMore = { onMoreServer(serverCache.guid, profile) }
         )
         ItemDivider()

@@ -62,6 +62,8 @@ private enum class SubscriptionShareAction(@StringRes val labelRes: Int) {
     Clipboard(R.string.share_subscription_clipboard)
 }
 
+private data class SubscriptionDeleteTarget(val guid: String, val name: String)
+
 class SubSettingActivity : BaseComponentActivity() {
     private val viewModel: SubscriptionsViewModel by viewModels()
 
@@ -114,7 +116,7 @@ fun SubSettingScreen(
 ) {
     val subscriptions by viewModel.subsFlow.collectAsStateWithLifecycle()
     var showUpdateDialog by remember { mutableStateOf(false) }
-    var removeTarget by remember { mutableStateOf<String?>(null) }
+    var removeTarget by remember { mutableStateOf<SubscriptionDeleteTarget?>(null) }
     val confirmRemove = MmkvManager.decodeSettingsBool(AppConfig.PREF_CONFIRM_REMOVE, false)
 
     var shareTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -213,7 +215,7 @@ fun SubSettingScreen(
                                         )
                                     }
                                     IconButton(onClick = {
-                                        if (confirmRemove) removeTarget = subCache.guid
+                                        if (confirmRemove) removeTarget = SubscriptionDeleteTarget(subCache.guid, subCache.subscription.remarks)
                                         else onRemoveSub(subCache.guid)
                                     }) {
                                         Icon(
@@ -269,12 +271,13 @@ fun SubSettingScreen(
         )
     }
 
-    if (removeTarget != null) {
+    removeTarget?.let { target ->
         DeleteConfirmDialog(
             message = stringResource(R.string.confirm_delete_subscription_group),
+            itemName = target.name,
             onConfirm = {
-                onRemoveSub(removeTarget!!)
                 removeTarget = null
+                onRemoveSub(target.guid)
             },
             onDismiss = { removeTarget = null }
         )
