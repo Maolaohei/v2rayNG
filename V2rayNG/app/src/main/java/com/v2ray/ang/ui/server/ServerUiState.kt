@@ -114,6 +114,11 @@ class ServerUiState(
     var pinnedCA256 by mutableStateOf(pinnedCA256)
     var isFetchingCert by mutableStateOf(isFetchingCert)
 
+    var isRemarksError by mutableStateOf(false)
+    var isAddressError by mutableStateOf(false)
+    var isPortError by mutableStateOf(false)
+    var isPasswordError by mutableStateOf(false)
+
     fun toProfileItem(initialConfig: ProfileItem): ProfileItem {
         val isVmess = configType == EConfigType.VMESS
         val isVless = configType == EConfigType.VLESS
