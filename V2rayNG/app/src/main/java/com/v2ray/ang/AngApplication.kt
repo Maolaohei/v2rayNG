@@ -40,8 +40,6 @@ class AngApplication : Application() {
 
         AppLocaleManager.initialize(this)
 
-        AppLocaleManager.initialize(this)
-
         // Initialize WorkManager with the custom configuration
         WorkManager.initialize(this, workManagerConfiguration)
 
