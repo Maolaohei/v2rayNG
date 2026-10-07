@@ -257,15 +257,18 @@ object CoreOutboundBuilder {
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }
             ?.ifEmpty { null }
-            ?: listOf(AppConfig.WIREGUARD_LOCAL_REMOTE_DNS)
+            // The core parses every entry with netip.MustParseAddr and panics on anything
+            // that is not a literal address: "local" (accepted before and gone in the new
+            // core), hostnames, or a comma-joined default that was never split.
+            ?.filter { Utils.isPureIpAddress(it) }
+            ?.ifEmpty { null }
+            ?: defaultRemoteDns()
 
-        val remotes = if (rawDNS.size == 1 && rawDNS[0] == "local") {
-            rawDNS
-        } else if (MmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED) == true) {
+        val remotes = if (MmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED) == true) {
             rawDNS
         } else {
             val ipv4Dns = rawDNS.filter { !it.contains(":") }
-            ipv4Dns.ifEmpty { listOf(AppConfig.WIREGUARD_LOCAL_REMOTE_DNS) }
+            ipv4Dns.ifEmpty { defaultRemoteDns() }
         }
 
         outboundBean?.settings?.let { wireguard ->
@@ -291,6 +294,14 @@ object CoreOutboundBuilder {
         }
         return outboundBean
     }
+
+    /**
+     * The default remote DNS servers of the core, as individual addresses.
+     * [AppConfig.WIREGUARD_LOCAL_REMOTE_DNS] is comma-separated and must be split
+     * before it reaches the core (the wireguard outbound takes an array).
+     */
+    private fun defaultRemoteDns(): List<String> =
+        AppConfig.WIREGUARD_LOCAL_REMOTE_DNS.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
     private fun toOutboundHysteria2(profileItem: ProfileItem): OutboundBean? {
         val outboundBean = createInitOutbound(EConfigType.HYSTERIA2) ?: return null
