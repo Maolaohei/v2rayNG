@@ -312,17 +312,29 @@ class MainViewModel(
     }
 
     // ---------- Group & server loading ----------
-    private suspend fun buildServersCache(guids: List<String>): List<ServersCache> =
-        guids.mapNotNull { guid ->
+    private suspend fun buildServersCache(guids: List<String>): List<ServersCache> {
+        // Subscription remarks are resolved once per distinct subscription: doing it
+        // per row made the "all" group re-parse the subscription index N times.
+        val subscriptionRemarks = HashMap<String, String>()
+        return guids.mapNotNull { guid ->
             currentCoroutineContext().ensureActive()
             val profile = dataSource.decodeServerConfig(guid) ?: return@mapNotNull null
             val affiliation = dataSource.decodeAffiliationInfo(guid)
+            val remarks = profile.subscriptionId.takeIf { it.isNotEmpty() }
+                ?.let { id ->
+                    subscriptionRemarks.getOrPut(id) {
+                        dataSource.getSubscriptionItem(id)?.remarks?.firstOrNull()?.toString().orEmpty()
+                    }
+                }
+                .orEmpty()
             ServersCache(
                 guid = guid,
                 profile = profile.copy(),
-                testDelayMillis = affiliation?.testDelayMillis ?: 0L
+                testDelayMillis = affiliation?.testDelayMillis ?: 0L,
+                subscriptionRemarks = remarks
             )
         }
+    }
 
     private suspend fun loadGroup(
         groupId: String,

@@ -53,7 +53,6 @@ import com.v2ray.ang.dto.entities.ServersCache
 import com.v2ray.ang.extension.isComplexType
 import com.v2ray.ang.extension.nullIfBlank
 import com.v2ray.ang.handler.AngConfigManager
-import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.ui.compose.ItemDivider
 import com.v2ray.ang.ui.compose.ReorderableGridItem
 import com.v2ray.ang.ui.compose.ReorderableListItem
@@ -285,14 +284,9 @@ private fun ServerItemRow(
     onRemoveServer: (String, String) -> Unit
 ) {
     val profile = serverCache.profile
-    // MMKV decode + description building are disk/CPU work: memoize them so a
-    // recomposition triggered by an unrelated field (e.g. test delay) is cheap.
-    val subRemarks = remember(profile.subscriptionId, subscriptionId) {
-        if (subscriptionId.isEmpty()) {
-            MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()
-                ?.toString() ?: ""
-        } else ""
-    }
+    // The subscription badge comes precomputed in ServersCache: decoding the
+    // subscription index here would re-parse it once per row in the "all" group.
+    val subRemarks = if (subscriptionId.isEmpty()) serverCache.subscriptionRemarks else ""
     val statistics = remember(profile) {
         profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile)
     }
@@ -327,12 +321,8 @@ private fun ServerItemColumn(
     onRemoveServer: (String, String) -> Unit
 ) {
     val profile = serverCache.profile
-    // See ServerItemRow: memoize disk/CPU work across unrelated recompositions.
-    val subRemarks = remember(profile.subscriptionId, subscriptionId) {
-        if (subscriptionId.isEmpty()) {
-            MmkvManager.decodeSubscription(profile.subscriptionId)?.remarks?.firstOrNull()?.toString() ?: ""
-        } else ""
-    }
+    // See ServerItemRow: the badge is precomputed by the ViewModel.
+    val subRemarks = if (subscriptionId.isEmpty()) serverCache.subscriptionRemarks else ""
     val statistics = remember(profile) {
         profile.description.nullIfBlank() ?: AngConfigManager.generateDescription(profile)
     }
