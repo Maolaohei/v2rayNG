@@ -57,7 +57,8 @@ gradle :app:assembleFdroidDebug      → BUILD SUCCESSFUL，5 个 APK（2.3.13-f
 widget 三个资源文件与上游 master 逐字节一致（`git diff upstream/master -- <paths>` 为空，
 仅剩 fork 自有的 AppConfig 常量、`xposed_scope`、Language.kt 空行等既有差异）。
 
-## 未做
+## 发版
 
-- 版本号/发版不进本次提交（如需出包，按惯例补 `chore(release): 2.3.14 (754)`）；
+- `chore(release): 2.3.14 (754)` + 轻量 tag `2026.10.13`（沿用 `2026.10.8` 的日期 tag 惯例）；
+  push 到 master 后 CI 自动出 debug 包。
 - 上游更早窗口里已判定跳过/暂缓的项（Monet 色系、FAB 动画、toast 透明度、纯翻译刷新等）不重开。
