@@ -40,5 +40,10 @@ gradle :app:testFdroidDebugUnitTest :app:assembleFdroidDebug
 
 ## 发版
 
-- `chore(release): 2.3.15 (755)` + 轻量 tag `2026.10.22`；
-- push 后另行触发 `Build APK` workflow 发布预发布版本，并核验 10 个 APK 资产。
+- `chore(release): 2.3.15 (755)`，commit `ad4ced413`；
+- 轻量 tag `2026.10.22` 指向同一 commit；
+- `workflow_dispatch` run `39631380443` 成功，日志确认使用
+  `libv2ray v26.10.17 (submodule pinned at v26.10.17)`，单元测试与 APK 构建均
+  `BUILD SUCCESSFUL`；
+- GitHub Release：<https://github.com/Maolaohei/v2rayNG/releases/tag/2026.10.22>，
+  预发布状态，共 10 个 APK（fdroid/playstore 各 5 个 ABI 产物）。
