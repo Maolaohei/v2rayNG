@@ -24,6 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import com.v2ray.ang.AppConfig.TAG_PROXY
 import com.v2ray.ang.R
 import com.v2ray.ang.dto.entities.RulesetItem
 import com.v2ray.ang.extension.nullIfBlank
+import com.v2ray.ang.extension.toastInfo
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.ui.apppicker.AppPickerActivity
@@ -48,12 +50,16 @@ import com.v2ray.ang.ui.compose.FormTextField
 import com.v2ray.ang.ui.compose.NavigationBarsSpacer
 import com.v2ray.ang.ui.compose.SettingsSwitchItem
 import com.v2ray.ang.ui.compose.verticalScrollbar
+import com.v2ray.ang.util.PackageUidResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private val ROUTING_NETWORK_OPTIONS = listOf("tcp", "udp", "tcp,udp")
+
+private fun parsePackageNames(text: String): List<String> =
+    text.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
 class RoutingEditActivity : BaseComponentActivity() {
     private val rulesetId by lazy { intent.getStringExtra("ruleset_id") }
@@ -145,7 +151,27 @@ fun RoutingEditScreen(
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val selectedPackages = AppPickerActivity.getSelectedPackages(result.data)
-            processText = selectedPackages.joinToString(",")
+            // Routing matches per UID, so keep the stored value naming every package the rule
+            // will actually cover instead of a single representative.
+            val expanded = PackageUidResolver.expandToUidGroups(context, selectedPackages)
+            if (expanded.size > selectedPackages.size) {
+                context.toastInfo(
+                    context.getString(
+                        R.string.routing_settings_process_uid_expanded,
+                        expanded.size - selectedPackages.size
+                    )
+                )
+            }
+            processText = expanded.joinToString(",")
+        }
+    }
+
+    val processUidGroups = remember(processText, canUseProcess) {
+        if (!canUseProcess) {
+            emptyMap()
+        } else {
+            PackageUidResolver.packageUidGroups(context, parsePackageNames(processText))
+                .filterValues { it.size > 1 }
         }
     }
 
@@ -263,11 +289,7 @@ fun RoutingEditScreen(
             if (canUseProcess) {
                 TextButton(
                     onClick = {
-                        val current = processText
-                            .split(",")
-                            .map { it.trim() }
-                            .filter { it.isNotEmpty() }
-                            .distinct()
+                        val current = parsePackageNames(processText)
                         processPickerLauncher.launch(
                             AppPickerActivity.createIntent(
                                 context = context,
@@ -284,6 +306,19 @@ fun RoutingEditScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(processSelectTitle)
+                }
+                if (processUidGroups.isNotEmpty()) {
+                    Text(
+                        text = stringResource(
+                            R.string.routing_settings_process_uid_groups,
+                            processUidGroups.entries.joinToString("; ") { (uid, packages) ->
+                                "$uid: ${packages.joinToString(", ")}"
+                            }
+                        ),
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             FormTextField(

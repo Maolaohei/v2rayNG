@@ -138,9 +138,11 @@ object CoreConfigManager {
                 val packages = process.mapNotNull {
                     it.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
                 }.takeIf { it.isNotEmpty() } ?: continue
-                val uids = PackageUidResolver.packageNamesToUids(context, packages).takeIf { it.isNotEmpty() } ?: continue
+                val uidGroups = PackageUidResolver.packageUidGroups(context, packages)
+                    .takeIf { it.isNotEmpty() } ?: continue
+                logRoutingUidGroups("custom rule (${rule.get("outboundTag")})", uidGroups)
 
-                rule.add("process", JsonArray().apply { uids.forEach { add(it) } })
+                rule.add("process", JsonArray().apply { uidGroups.keys.forEach { add(it) } })
             }
         }
 
@@ -1210,11 +1212,13 @@ object CoreConfigManager {
         }
 
         if (SettingsManager.canUseProcessRouting()) {
-            // Convert process package names to UIDs
+            // Convert process package names to UIDs. A UID rule matches every package that
+            // reports the UID, so the group is resolved once and logged for auditability.
             rule.process?.let { processList ->
                 if (processList.isNotEmpty()) {
-                    val uids = PackageUidResolver.packageNamesToUids(context, processList)
-                    rule.process = uids.ifEmpty { null }
+                    val uidGroups = PackageUidResolver.packageUidGroups(context, processList)
+                    logRoutingUidGroups(item.remarks.orEmpty(), uidGroups)
+                    rule.process = uidGroups.keys.toList().ifEmpty { null }
                 }
             }
         } else {
@@ -1242,6 +1246,24 @@ object CoreConfigManager {
         v2rayConfig.routing.rules.add(rule)
     }
 
+
+    /**
+     * Records which packages each routing UID actually covers.
+     *
+     * Routing `process` rules are evaluated per UID, so listing one package silently matches every
+     * sibling sharing that UID (for example the downloads provider under the media UID). Logging
+     * the resolved group keeps that expansion visible instead of implied.
+     */
+    private fun logRoutingUidGroups(source: String, groups: Map<String, List<String>>) {
+        groups.forEach { (uid, packages) ->
+            if (packages.size > 1) {
+                LogUtil.d(
+                    AppConfig.TAG,
+                    "Routing $source: UID $uid also matches ${packages.joinToString()}"
+                )
+            }
+        }
+    }
 
     /**
      * Build balancer and probe settings from one policy-group strategy value.

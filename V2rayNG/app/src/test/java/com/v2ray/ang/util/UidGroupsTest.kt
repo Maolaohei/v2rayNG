@@ -159,4 +159,88 @@ class UidGroupsTest {
 
         assertEquals(listOf("com.example.browser"), invertible)
     }
+
+    // Routing rules are stored as package names, so they need the same grouping without an
+    // AppInfo list: one listed package must report every sibling its UID covers.
+
+    private val uidByName = mediaGroup.associate { it.packageName to it.uid.toString() }
+    private val namesByUid = mediaGroup.groupBy({ it.uid.toString() }) { it.packageName }
+    private val resolveName: (String) -> String? = { uidByName[it] }
+    private val namesForUid: (String) -> List<String>? = { namesByUid[it] }
+
+    @Test
+    fun `groupByUid expands one listed package to its whole uid`() {
+        val groups = UidGroups.groupByUid(
+            packageNames = listOf("com.android.providers.media"),
+            resolveUid = resolveName,
+            packagesForUid = namesForUid
+        )
+
+        assertEquals(listOf("10052"), groups.keys.toList())
+        assertEquals(4, groups.getValue("10052").size)
+        assertTrue("com.android.providers.downloads" in groups.getValue("10052"))
+    }
+
+    @Test
+    fun `groupByUid collapses sibling packages into one uid entry`() {
+        val groups = UidGroups.groupByUid(
+            packageNames = listOf(
+                "com.android.providers.media",
+                "com.android.mtp",
+                "com.example.browser"
+            ),
+            resolveUid = resolveName,
+            packagesForUid = namesForUid
+        )
+
+        assertEquals(listOf("10052", "10123"), groups.keys.toList())
+        assertEquals(1, groups.values.count { it.size > 1 })
+    }
+
+    @Test
+    fun `groupByUid drops packages without a uid`() {
+        val groups = UidGroups.groupByUid(
+            packageNames = listOf("com.example.missing"),
+            resolveUid = resolveName,
+            packagesForUid = namesForUid
+        )
+
+        assertTrue(groups.isEmpty())
+    }
+
+    @Test
+    fun `groupByUid falls back to the listed package when siblings are unknown`() {
+        val groups = UidGroups.groupByUid(
+            packageNames = listOf("com.example.browser"),
+            resolveUid = resolveName,
+            packagesForUid = { null }
+        )
+
+        assertEquals(listOf("com.example.browser"), groups.getValue("10123"))
+    }
+
+    @Test
+    fun `expandByUid adds every sibling and keeps input order`() {
+        val expanded = UidGroups.expandByUid(
+            packageNames = listOf("com.android.providers.media", "com.example.browser"),
+            resolveUid = resolveName,
+            packagesForUid = namesForUid
+        )
+
+        assertEquals("com.android.providers.media", expanded.first())
+        assertEquals(5, expanded.size)
+        assertTrue("com.android.providers.downloads.ui" in expanded)
+        assertEquals(expanded.distinct(), expanded)
+    }
+
+    @Test
+    fun `expandByUid keeps names that never resolve`() {
+        val expanded = UidGroups.expandByUid(
+            packageNames = listOf("com.example.missing"),
+            resolveUid = resolveName,
+            packagesForUid = namesForUid
+        )
+
+        assertEquals(listOf("com.example.missing"), expanded)
+    }
 }

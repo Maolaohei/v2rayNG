@@ -82,4 +82,48 @@ object UidGroups {
         val group = groups[pkgToUid[packageName] ?: UNRESOLVED_UID]
         group == null || !group.isShared
     }
+
+    /**
+     * Groups package names by UID for callers that only know names, such as routing rules.
+     *
+     * Every group lists the whole UID: [packagesForUid] supplies the sibling packages of a
+     * resolved UID, and the selected package stands in when the platform cannot report them.
+     * Unresolvable packages are dropped because no UID rule can target them.
+     */
+    fun groupByUid(
+        packageNames: List<String>,
+        resolveUid: (String) -> String?,
+        packagesForUid: (String) -> List<String>?
+    ): LinkedHashMap<String, List<String>> {
+        val groups = LinkedHashMap<String, List<String>>()
+        packageNames.distinct().forEach { packageName ->
+            val uid = resolveUid(packageName) ?: return@forEach
+            if (groups.containsKey(uid)) return@forEach
+            val members = packagesForUid(uid)?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
+                ?: listOf(packageName)
+            groups[uid] = if (packageName in members) members else members + packageName
+        }
+        return groups
+    }
+
+    /**
+     * Expands package names to every package the same UID covers, preserving input order.
+     *
+     * Used before a selection is written back to the UI so the stored value names everything a
+     * UID-scoped rule will actually match.
+     */
+    fun expandByUid(
+        packageNames: List<String>,
+        resolveUid: (String) -> String?,
+        packagesForUid: (String) -> List<String>?
+    ): List<String> {
+        val expanded = LinkedHashSet<String>()
+        packageNames.forEach { packageName ->
+            expanded.add(packageName)
+            val uid = resolveUid(packageName)
+            if (uid == null) return@forEach
+            packagesForUid(uid)?.let { expanded.addAll(it) }
+        }
+        return expanded.toList()
+    }
 }
