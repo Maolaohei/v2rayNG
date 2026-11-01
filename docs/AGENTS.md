@@ -15,7 +15,7 @@ Kotlin 2.4.0, AGP 9.2.1, Gradle Kotlin DSL. No lint/format/typecheck tasks confi
 cd V2rayNG && ./gradlew test
 ```
 
-JUnit 4 + Mockito. Unit tests only under `app/src/test/java/`. No instrumented tests beyond defaults.
+JUnit 5 (Jupiter) + Mockito. Unit tests only under `app/src/test/java/`. No instrumented tests beyond defaults.
 
 ## Project structure
 
@@ -78,6 +78,7 @@ V2rayNG/
 - **Core**: Native AAR (`libv2ray`) from [AndroidLibV2rayLite](https://github.com/2dust/AndroidLibV2rayLite) or [AndroidLibXrayLite](https://github.com/2dust/AndroidLibXrayLite). Prebuilt `.aar` files go in `app/libs/`.
 - **Services** run in dedicated process `:RunSoLibV2RayDaemon`. `CoreServiceManager` controls start/stop lifecycle.
 - **Two modes**: VPN (`CoreVpnService`, uses `VpnService.Builder`) or proxy-only (`CoreProxyOnlyService`, local SOCKS/HTTP).
+- **Per-app and process rules are UID-scoped**: `VpnService.Builder` and core `process` rules resolve package names to UIDs, so every app sharing a UID is always matched together (e.g. `com.android.providers.media`, `com.android.mtp` and the downloads providers are all uid 10052). `UidGroups` holds the pure grouping/normalization logic; `PackageUidResolver` applies it with `PackageManager`. Never persist or display a partially selected UID group.
 - **Flavors**: `fdroid` (suffix `.fdroid`) and `playstore` (no suffix). ABI version codes differ per flavor.
 - **hev-socks5-tunnel**: Optional tun2socks binary. Build with `./compile-hevtun.sh` (requires `NDK_HOME`).
 - **ViewBinding** enabled, no DataBinding.
