@@ -14,11 +14,13 @@ object PackageUidResolver {
         get() = packageUidCache
 
     fun packageNamesToUids(context: Context, packageNames: List<String>): List<String> {
+        // Packages sharing one UID collapse to a single entry: the UID list is consumed by
+        // root-mode iptables rules and routing `process` rules, where duplicates are noise.
         return packageNames.mapNotNull { pkg ->
             packageUidCache[pkg] ?: resolveUid(context, pkg)?.also { uid ->
                 packageUidCache[pkg] = uid
             }
-        }
+        }.distinct()
     }
 
     fun uidsToPackageNames(uids: List<String>): List<String> {

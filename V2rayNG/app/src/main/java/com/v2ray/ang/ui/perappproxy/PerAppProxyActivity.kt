@@ -11,11 +11,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll as foundationVerticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +58,8 @@ import com.v2ray.ang.ui.compose.ItemDivider
 import com.v2ray.ang.ui.compose.NavigationBarsBottomPadding
 import com.v2ray.ang.ui.compose.colorFabActive
 import com.v2ray.ang.ui.compose.verticalScrollbar
+import com.v2ray.ang.util.UidGroup
+import com.v2ray.ang.util.UidGroups
 import com.v2ray.ang.util.Utils
 
 private enum class PerAppMenuAction(@StringRes val labelRes: Int) {
@@ -78,6 +86,9 @@ class PerAppProxyActivity : BaseComponentActivity() {
         val blacklist by viewModel.blacklist.collectAsStateWithLifecycle()
         val perAppProxyEnabled by viewModel.perAppProxyEnabled.collectAsStateWithLifecycle()
         val bypassApps by viewModel.bypassApps.collectAsStateWithLifecycle()
+        val uidGroups by viewModel.uidGroups.collectAsStateWithLifecycle()
+        val pkgToUid by viewModel.pkgToUid.collectAsStateWithLifecycle()
+        val peers by viewModel.peers.collectAsStateWithLifecycle()
 
         PerAppProxyScreen(
             apps = apps,
@@ -85,10 +96,16 @@ class PerAppProxyActivity : BaseComponentActivity() {
             blacklist = blacklist,
             perAppProxyEnabled = perAppProxyEnabled,
             bypassApps = bypassApps,
+            uidGroups = uidGroups,
+            pkgToUid = pkgToUid,
+            peers = peers,
             onBackClick = { finish() },
             onPerAppProxyChanged = { viewModel.setPerAppProxyEnabled(it) },
             onBypassAppsChanged = { viewModel.setBypassAppsEnabled(it) },
             onToggleApp = { viewModel.toggle(it) },
+            onShowUidPeers = { viewModel.showPeers(it) },
+            onDismissUidPeers = { viewModel.dismissPeers() },
+            onSetGroupSelected = { uid, selected -> viewModel.setGroupSelected(uid, selected) },
             onSearch = { viewModel.filterApps(it) },
             onSelectAll = { viewModel.selectAll() },
             onInvertSelection = { viewModel.invertSelection() },
@@ -113,10 +130,16 @@ fun PerAppProxyScreen(
     blacklist: Set<String>,
     perAppProxyEnabled: Boolean,
     bypassApps: Boolean,
+    uidGroups: Map<Int, UidGroup>,
+    pkgToUid: Map<String, Int>,
+    peers: UidGroup?,
     onBackClick: () -> Unit,
     onPerAppProxyChanged: (Boolean) -> Unit,
     onBypassAppsChanged: (Boolean) -> Unit,
     onToggleApp: (String) -> Unit,
+    onShowUidPeers: (String) -> Unit,
+    onDismissUidPeers: () -> Unit,
+    onSetGroupSelected: (Int, Boolean) -> Unit,
     onSearch: (String) -> Unit,
     onSelectAll: () -> Unit,
     onInvertSelection: () -> Unit,
@@ -268,12 +291,23 @@ fun PerAppProxyScreen(
             ) {
                 items(items = apps, key = { it.packageName }) { app ->
                     val checked = blacklist.contains(app.packageName)
+                    val group = uidGroups[pkgToUid[app.packageName] ?: UidGroups.UNRESOLVED_UID]
                     AppListItem(
                         appName = app.appName,
                         packageName = app.packageName,
                         icon = null,
                         checked = checked,
-                        onCheckedChange = { onToggleApp(app.packageName) }
+                        onCheckedChange = { onToggleApp(app.packageName) },
+                        uidLabel = if (group?.isShared == true) {
+                            stringResource(
+                                R.string.per_app_uid_group_label,
+                                group.uid,
+                                group.packages.size
+                            )
+                        } else null,
+                        onUidLabelClick = if (group?.isShared == true) {
+                            { onShowUidPeers(app.packageName) }
+                        } else null
                     )
                     ItemDivider()
                 }
@@ -287,6 +321,60 @@ fun PerAppProxyScreen(
             dismissText = null,
             onConfirm = {},
             onDismiss = { showInfoDialog = false },
+        )
+    }
+
+    peers?.let { group ->
+        val groupSelected = group.packages.all { it in blacklist }
+        AlertDialog(
+            onDismissRequest = onDismissUidPeers,
+            title = { Text(stringResource(R.string.per_app_uid_group_title, group.uid)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 260.dp)
+                        .foundationVerticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = stringResource(R.string.per_app_uid_group_message),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    group.packages.forEach { packageName ->
+                        Text(
+                            text = packageName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.per_app_uid_group_master_switch),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = groupSelected,
+                            onCheckedChange = { onSetGroupSelected(group.uid, it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onSecondary,
+                                checkedTrackColor = colorFabActive
+                            )
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissUidPeers) {
+                    Text(stringResource(R.string.action_ok))
+                }
+            }
         )
     }
 }

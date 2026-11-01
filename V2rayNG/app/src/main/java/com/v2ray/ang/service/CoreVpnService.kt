@@ -260,17 +260,21 @@ class CoreVpnService : VpnService(), ServiceControl {
     /**
      * Configures per-app proxy rules for the VPN builder.
      *
+     * Per-app rules are UID-scoped: the platform turns every package name into a UID before the
+     * rule reaches the kernel, so packages sharing one UID (for example the media provider, MTP
+     * and the download manager at 10052) are always affected together. The selection is therefore
+     * deduplicated by UID and each group is configured exactly once.
+     *
      * - If per-app proxy is not enabled, disallow the VPN service's own package.
      * - If no apps are selected, disallow the VPN service's own package.
-     * - If bypass mode is enabled, disallow all selected apps (including self).
-     * - If proxy mode is enabled, only allow the selected apps (excluding self).
+     * - If bypass mode is enabled, disallow the selected UID groups, plus self.
+     * - If proxy mode is enabled, only allow the selected UID groups, excluding self.
      *
      * @param builder The VPN Builder to configure.
      */
     private fun configurePerAppProxy(builder: Builder) {
         val selfPackageName = BuildConfig.APPLICATION_ID
 
-        // If per-app proxy is not enabled, disallow the VPN service's own package and return
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_PER_APP_PROXY) == false) {
             builder.addDisallowedApplication(selfPackageName)
             return
@@ -284,22 +288,61 @@ class CoreVpnService : VpnService(), ServiceControl {
         }
 
         val bypassApps = MmkvManager.decodeSettingsBool(AppConfig.PREF_BYPASS_APPS)
-        // Handle the VPN service's own package according to the mode
-        if (bypassApps) apps.add(selfPackageName) else apps.remove(selfPackageName)
+        val selfUid = runCatching { packageManager.getPackageUid(selfPackageName, 0) }
+            .getOrDefault(-1)
 
-        apps.forEach {
+        // uid -> one representative package; the platform resolves it back to the same UID.
+        val representatives = LinkedHashMap<Int, String>()
+        apps.forEach { packageName ->
+            val uid = runCatching { packageManager.getPackageUid(packageName, 0) }.getOrNull()
+            if (uid == null) {
+                LogUtil.w(AppConfig.TAG, "StartCore-VPN: package not installed, skipped: $packageName")
+                return@forEach
+            }
+            representatives.putIfAbsent(uid, packageName)
+        }
+
+        representatives.forEach { (uid, packageName) ->
+            // Self must stay out of the tunnel: allowing it would route the VPN's own traffic
+            // back into the tun device.
+            if (uid == selfUid && !bypassApps) {
+                LogUtil.w(
+                    AppConfig.TAG,
+                    "StartCore-VPN: self uid $uid shares with $packageName, excluded"
+                )
+                return@forEach
+            }
             try {
                 if (bypassApps) {
-                    // In bypass mode, disallow the selected apps
-                    builder.addDisallowedApplication(it)
+                    builder.addDisallowedApplication(packageName)
                 } else {
-                    // In proxy mode, only allow the selected apps
-                    builder.addAllowedApplication(it)
+                    builder.addAllowedApplication(packageName)
                 }
             } catch (e: PackageManager.NameNotFoundException) {
-                LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to configure app", e)
+                LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to configure app $packageName", e)
+            } catch (e: UnsupportedOperationException) {
+                LogUtil.e(
+                    AppConfig.TAG,
+                    "StartCore-VPN: allow/disallow rules mixed at $packageName",
+                    e
+                )
             }
         }
+
+        // In bypass mode the service's own package is always excluded from the tunnel.
+        if (bypassApps) {
+            try {
+                builder.addDisallowedApplication(selfPackageName)
+            } catch (e: PackageManager.NameNotFoundException) {
+                LogUtil.e(AppConfig.TAG, "StartCore-VPN: Failed to configure self", e)
+            }
+        }
+
+        LogUtil.d(
+            AppConfig.TAG,
+            "StartCore-VPN: per-app uids=${representatives.keys} " +
+                "packages=${apps.size} bypass=$bypassApps"
+        )
     }
 
     /**

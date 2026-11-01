@@ -166,7 +166,9 @@ fun AppListItem(
     icon: Any?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    uidLabel: String? = null,
+    onUidLabelClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Row(
@@ -212,6 +214,21 @@ fun AppListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            if (uidLabel != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = uidLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colorFabActive,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .clickable(enabled = onUidLabelClick != null) {
+                            onUidLabelClick?.invoke()
+                        }
+                        .padding(vertical = 2.dp)
+                )
+            }
         }
         Checkbox(
             checked = checked,

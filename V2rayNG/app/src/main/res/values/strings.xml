@@ -168,6 +168,12 @@
     <string name="per_app_proxy_settings">Per-app settings</string>
     <string name="per_app_proxy_settings_enable">Enable per-app</string>
     <string name="app_picker_unknown_app">Unknown app (UID not recognized)</string>
+    <string name="per_app_uid_group_label">Shared UID %1$d · %2$d apps</string>
+    <string name="per_app_uid_group_title">Apps sharing UID %1$d</string>
+    <string name="per_app_uid_group_message">Android applies VPN rules per UID. The apps below share one UID, so they are always proxied or bypassed together and cannot be configured separately.</string>
+    <string name="per_app_uid_group_master_switch">Apply to the whole group</string>
+    <string name="per_app_uid_normalized_toast">%1$d app(s) synced with their shared UID group</string>
+    <string name="per_app_uid_invert_skipped">%1$d shared UID group(s) skipped: they cannot be inverted partially</string>
 
     <!-- Preferences -->
     <string name="title_settings">Settings</string>

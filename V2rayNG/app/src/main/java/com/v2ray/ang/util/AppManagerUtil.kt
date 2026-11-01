@@ -26,7 +26,9 @@ object AppManagerUtil {
                 val appName = applicationInfo.loadLabel(packageManager).toString()
                 val isSystemApp = applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM > 0
 
-                val appInfo = AppInfo(appName, pkg.packageName, isSystemApp, 0)
+                // The UID is what per-app VPN rules actually act on; keep it so shared groups
+                // stay visible instead of being flattened into unrelated package rows.
+                val appInfo = AppInfo(appName, pkg.packageName, isSystemApp, 0, applicationInfo.uid)
                 apps.add(appInfo)
             }
 
