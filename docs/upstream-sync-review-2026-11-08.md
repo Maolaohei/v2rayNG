@@ -67,3 +67,13 @@ gradle :app:assembleFdroidDebug
   -> BUILD SUCCESSFUL in 31s
   -> 5 个 fdroid debug APK（arm64-v8a / armeabi-v7a / universal / x86 / x86_64）
 ```
+
+## 发版
+
+- 版本：`2.3.18 (758)`，提交 `cfa7a656`，标签 `2026.11.08`，已推送 `fec874f9..cfa7a656`。
+- CI：`push` 触发的 `Build APK` 与 `workflow_dispatch -f release_tag=2026.11.08`
+  两次运行均 success（run `42454454410` / `42454467153`）。
+- GitHub Release `2026.11.08`（pre-release）挂载 10 个 APK：fdroid 与 playstore 各
+  arm64-v8a / armeabi-v7a / universal / x86 / x86_64，universal 为 84.3 MB。
+- 本次流水线的 AndroidLibXrayLite 由 `build.yml` 按 pin 解析为 `v26.10.31`，
+  即 `libv2ray.aar` 的 sha256 `2efdf731…8630b6`。
