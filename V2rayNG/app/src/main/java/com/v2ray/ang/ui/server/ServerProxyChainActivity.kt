@@ -81,7 +81,7 @@ class ServerProxyChainActivity : BaseComponentActivity() {
         )
         val config = MmkvManager.decodeServerConfig(editGuid)
         initialRemarks = config?.remarks ?: ""
-        initialMembers = config?.proxyChainProfiles?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: listOf("", "")
+        initialMembers = config?.proxyChainProfileList?.map { it.trim() }?.filter { it.isNotEmpty() } ?: listOf("", "")
     }
 
     @Composable
@@ -140,8 +140,7 @@ class ServerProxyChainActivity : BaseComponentActivity() {
                 ?: ProfileItem.create(EConfigType.PROXYCHAIN)
 
         config.remarks = remarks.trim()
-        config.proxyChainProfiles =
-            chainMembers.joinToString(",")
+        config.proxyChainProfileList = chainMembers
 
         config.description =
             chainMembers.joinToString(" -> ")
