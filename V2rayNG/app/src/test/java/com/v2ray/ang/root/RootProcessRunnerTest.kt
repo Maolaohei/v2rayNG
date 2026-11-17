@@ -29,6 +29,8 @@ class RootProcessRunnerTest {
         assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 1500)
     }
     @Test fun `inherited stdout cannot hold a completed command open`() {
+        // Git Bash on Windows keeps the shell alive until background children exit, unlike POSIX sh.
+        assumeTrue(!System.getProperty("os.name").orEmpty().startsWith("Windows"), "Git Bash waits for background jobs")
         val start = System.nanoTime()
         val result = run("sleep 5 & echo complete", 3000)
         assertEquals(0, result.code)
