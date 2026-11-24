@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
@@ -21,7 +19,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -105,15 +102,6 @@ fun MainScreen(
         initialPage = 0,
         pageCount = { groups.size.coerceAtLeast(1) }
     )
-
-    val lazyListStates = remember { mutableStateMapOf<String, LazyListState>() }
-    val lazyGridStates = remember { mutableStateMapOf<String, LazyGridState>() }
-
-    LaunchedEffect(groups) {
-        val validGroupIds = groups.map { it.id }.toSet()
-        lazyListStates.keys.retainAll(validGroupIds)
-        lazyGridStates.keys.retainAll(validGroupIds)
-    }
 
     val latestDoubleColumnDisplay by rememberUpdatedState(doubleColumnDisplay)
 
@@ -306,8 +294,6 @@ fun MainScreen(
                                 doubleColumnDisplay = doubleColumnDisplay,
                                 confirmRemove = confirmRemove,
                                 searchQuery = searchQuery,
-                                lazyListStates = lazyListStates,
-                                lazyGridStates = lazyGridStates,
                                 onSelectServer = { guid -> onAction(MainAction.SelectServer(guid)) },
                                 onEditServer = { guid, profile -> onAction(MainAction.EditServer(guid, profile)) },
                                 onShareServer = { guid, profile ->

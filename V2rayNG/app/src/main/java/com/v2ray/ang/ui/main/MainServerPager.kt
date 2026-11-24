@@ -24,7 +24,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
@@ -82,8 +84,6 @@ fun GroupPagerPage(
     doubleColumnDisplay: Boolean,
     confirmRemove: Boolean,
     searchQuery: String,
-    lazyListStates: MutableMap<String, LazyListState>,
-    lazyGridStates: MutableMap<String, LazyGridState>,
     onSelectServer: (String) -> Unit,
     onEditServer: (String, ProfileItem) -> Unit,
     onShareServer: (String, ProfileItem) -> Unit,
@@ -124,8 +124,6 @@ fun GroupPagerPage(
             subscriptionId = groupId,
             confirmRemove = confirmRemove,
             groupId = groupId,
-            lazyListStates = lazyListStates,
-            lazyGridStates = lazyGridStates,
             onSelectServer = onSelectServer,
             onEditServer = onEditServer,
             onShareServer = onShareServer,
@@ -159,8 +157,6 @@ private fun ServerListPage(
     subscriptionId: String,
     confirmRemove: Boolean,
     groupId: String,
-    lazyListStates: MutableMap<String, LazyListState>,
-    lazyGridStates: MutableMap<String, LazyGridState>,
     onSelectServer: (String) -> Unit,
     onEditServer: (String, ProfileItem) -> Unit,
     onShareServer: (String, ProfileItem) -> Unit,
@@ -170,10 +166,9 @@ private fun ServerListPage(
     onMoveServer: (Int, Int) -> Unit,
     contentPadding: PaddingValues
 ) {
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
     if (doubleColumnDisplay) {
-        val gridState = remember(groupId) {
-            lazyGridStates.getOrPut(groupId) { LazyGridState() }
-        }
         val reorderableGridState = if (canReorder) {
             rememberReorderableLazyGridState(gridState) { from, to ->
                 onMoveServer(from.index, to.index)
@@ -220,9 +215,6 @@ private fun ServerListPage(
             }
         }
     } else {
-        val listState = remember(groupId) {
-            lazyListStates.getOrPut(groupId) { LazyListState() }
-        }
         val reorderableState = if (canReorder) {
             rememberReorderableLazyListState(listState) { from, to ->
                 onMoveServer(from.index, to.index)
