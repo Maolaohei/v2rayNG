@@ -98,5 +98,12 @@ hev-socks5-tunnel   75dbc1e9ace6c70d3d1b94df7c283efe1de7effc  (2.20.0)
 
 ## 发版
 
-- 版本：`2.4.2 (762)`，标签 `2026.11.26`。
-- 推送与 CI：（待回填）。
+- 版本：`2.4.2 (762)`，提交 `904937aa`，标签 `2026.11.26`，已推送
+  `7b509db4..904937aa`。
+- push 触发 `Build APK`：run `45816806903` success；`Validate Fastlane metadata`：
+  run `45816806963` success。
+- `workflow_dispatch -f release_tag=2026.11.26`：run `45816858972` success。
+- GitHub Release `2026.11.26`（pre-release）：
+  https://github.com/Maolaohei/v2rayNG/releases/tag/2026.11.26
+  挂载 10 个 APK：fdroid 与 playstore 各 arm64-v8a / armeabi-v7a / universal /
+  x86 / x86_64，fdroid universal 86,179,755 字节。
